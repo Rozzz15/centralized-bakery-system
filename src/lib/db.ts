@@ -6,13 +6,6 @@ import type {
   BranchBatch, DeliveryReport, KitchenFeedback, DecoSubTask, DecoQCResult,
 } from "../types";
 
-function parseInventory(d: any): InventoryItem {
-  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, expiryDate: d.expiry_date || undefined };
-}
-function toInventoryRow(i: InventoryItem) {
-  return { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: i.onHand, threshold: i.threshold, cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category };
-}
-
 function parseDOS(d: any): DOSItem {
   return { id: d.id, product: d.product, qty: d.qty, branch1: d.branch1, branch2: d.branch2, priority: d.priority, status: d.status, scheduledDate: d.scheduled_date || undefined };
 }
@@ -35,16 +28,61 @@ function toDeliveryRow(d: Delivery) {
 }
 
 // ─── Inventory ───
-export async function fetchInventory(): Promise<InventoryItem[]> {
-  const { data, error } = await supabase.from("inventory_items").select("*").order("name");
-  if (error) throw error;
-  return (data ?? []).map(parseInventory);
+// Table name mapping for separate inventory tables
+const INVENTORY_TABLES: Record<string, string> = {
+  "ingredients": "ingredients",
+  "packaging-materials": "packaging_materials",
+  "decoration-supplies": "decoration_supplies",
+  "operational-supplies": "operational_supplies",
+};
+
+function parseInventoryItem(d: any, group: string): InventoryItem {
+  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: group as InventoryItem["group"], expiryDate: d.expiry_date || undefined };
 }
+function toInventoryRow(i: InventoryItem) {
+  return { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: i.onHand, threshold: i.threshold, cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category, expiry_date: i.expiryDate || null };
+}
+
+export async function fetchInventoryByGroup(group: string): Promise<InventoryItem[]> {
+  const table = INVENTORY_TABLES[group];
+  if (!table) return [];
+  const { data, error } = await supabase.from(table).select("*").order("name");
+  if (error) throw error;
+  return (data ?? []).map((d: any) => parseInventoryItem(d, group));
+}
+
+export async function fetchAllInventory(): Promise<InventoryItem[]> {
+  const results = await Promise.all(
+    Object.keys(INVENTORY_TABLES).map(group => fetchInventoryByGroup(group).catch(() => [] as InventoryItem[]))
+  );
+  return results.flat();
+}
+
+export async function upsertInventoryItem(item: InventoryItem) {
+  const table = INVENTORY_TABLES[item.group];
+  if (!table) throw new Error(`Unknown inventory group: ${item.group}`);
+  const { error } = await supabase.from(table).upsert(toInventoryRow(item), { onConflict: "id" });
+  if (error) throw error;
+}
+
 export async function upsertInventory(items: InventoryItem[]) {
-  const { error } = await supabase.from("inventory_items").upsert(items.map(toInventoryRow), { onConflict: "id" });
-  if (error) throw error;
+  // Group items by table, then batch-upsert each table with one call
+  const grouped = new Map<string, InventoryItem[]>();
+  for (const item of items) {
+    const table = INVENTORY_TABLES[item.group];
+    if (!table) continue;
+    if (!grouped.has(table)) grouped.set(table, []);
+    grouped.get(table)!.push(item);
+  }
+  await Promise.all([...grouped.entries()].map(([table, tableItems]) =>
+    supabase.from(table).upsert(tableItems.map(toInventoryRow), { onConflict: "id" }).then(r => { if (r.error) throw r.error; })
+  ));
 }
+
 export async function updateInventoryItem(id: string, updates: Partial<InventoryItem>) {
+  const group = updates.group;
+  const table = group ? INVENTORY_TABLES[group] : null;
+  if (!table) throw new Error(`Cannot update — group is required`);
   const row: any = {};
   if ("onHand" in updates) row.on_hand = updates.onHand;
   if ("name" in updates) row.name = updates.name;
@@ -55,12 +93,31 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
   if ("supplier" in updates) row.supplier = updates.supplier;
   if ("lastIn" in updates) row.last_in = updates.lastIn;
   if ("category" in updates) row.category = updates.category;
-  const { error } = await supabase.from("inventory_items").update(row).eq("id", id);
+  const { error } = await supabase.from(table).update(row).eq("id", id);
   if (error) throw error;
 }
-export async function deleteInventoryItem(id: string) {
-  const { error } = await supabase.from("inventory_items").delete().eq("id", id);
+
+export async function deleteInventoryItem(id: string, group?: string) {
+  if (group) {
+    const table = INVENTORY_TABLES[group];
+    if (table) {
+      const { error } = await supabase.from(table).delete().eq("id", id);
+      if (error) throw error;
+      return;
+    }
+  }
+  // Fallback: try all tables
+  for (const table of Object.values(INVENTORY_TABLES)) {
+    const { error } = await supabase.from(table).delete().eq("id", id);
+    if (error && !error.message.includes("PGRST116")) throw error;
+  }
+}
+
+// Legacy: fetch from old inventory_items table (backward compat)
+export async function fetchInventory(): Promise<InventoryItem[]> {
+  const { data, error } = await supabase.from("inventory_items").select("*").order("name");
   if (error) throw error;
+  return (data ?? []).map((d: any) => ({ id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: d.group || "ingredients", expiryDate: d.expiry_date || undefined }));
 }
 export async function deleteDOSItem(id: string) {
   const { error } = await supabase.from("dos_items").delete().eq("id", id);
@@ -153,15 +210,30 @@ export async function addToCatalog(name: string) {
 export async function fetchRecipes(): Promise<ProductRecipe[]> {
   const { data, error } = await supabase.from("product_recipes").select("*");
   if (error) throw error;
-  return (data ?? []).map((r: any) => ({ productId: r.product_id, productName: r.product_name, ingredients: r.ingredients ?? [] }));
+  return (data ?? []).map((r: any) => ({
+    productId: r.product_id,
+    productName: r.product_name,
+    ingredients: r.ingredients ?? [],
+    packagingMaterials: r.packaging_materials ?? [],
+    decorationSupplies: r.decoration_supplies ?? [],
+  }));
 }
 export async function upsertRecipe(recipe: ProductRecipe) {
   const { error } = await supabase.from("product_recipes").upsert({
     product_id: recipe.productId,
     product_name: recipe.productName,
     ingredients: recipe.ingredients,
+    packaging_materials: recipe.packagingMaterials ?? [],
+    decoration_supplies: recipe.decorationSupplies ?? [],
   }, { onConflict: "product_id" });
-  if (error) throw error;
+  if (error) {
+    const fallback = await supabase.from("product_recipes").upsert({
+      product_id: recipe.productId,
+      product_name: recipe.productName,
+      ingredients: recipe.ingredients,
+    }, { onConflict: "product_id" });
+    if (fallback.error) console.error("recipe upsert failed:", fallback.error);
+  }
 }
 
 // ─── Stock Transactions ───

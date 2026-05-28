@@ -8,6 +8,14 @@ import BranchDashboard from "./components/BranchDashboard";
 import DOSBuilderModal from "./components/DOSBuilderModal";
 import LoginPage from "./components/LoginPage";
 import { getCurrentUser, getProfile, signOut as authSignOut, updateProfile, updatePassword } from "./lib/auth";
+
+// Philippines timezone helper (UTC+8)
+function getPHToday(): string {
+  return new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+}
+function getPHTimestamp(): string {
+  return new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
 import { supabase } from "./lib/supabase";
 import * as db from "./lib/db";
 
@@ -36,9 +44,12 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "requests", label: "Requests", icon: "⬢" },
   ],
   deco: [
-    { id: "dashboard", label: "Batch Work", icon: "◼" },
-    { id: "recipes", label: "Recipes", icon: "◈" },
-    { id: "materials", label: "Materials", icon: "⬢" },
+    { id: "dashboard", label: "Batch Work", icon: "" },
+    { id: "free-mix", label: "Free Mix", icon: "" },
+    { id: "ingredients", label: "Ingredients", icon: "" },
+    { id: "decoration-supplies", label: "Decoration", icon: "" },
+    { id: "recipes", label: "Recipes", icon: "" },
+    { id: "materials", label: "Materials", icon: "" },
   ],
   kitchen: [
     { id: "dashboard", label: "Dispatch", icon: "◼" },
@@ -54,19 +65,19 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
 
 // Seed demo data if the database is empty
 async function seedIfEmpty() {
-  const existing = await db.fetchInventory();
+  const existing = await db.fetchAllInventory();
   if (existing.length > 0) return;
 
   const demoInventory: InventoryItem[] = [
-    { id: "INV-001", name: "Eggs (Grade A)", sku: "EGG-30", unit: "trays", onHand: 42, threshold: 50, cost: 245, supplier: "Sunrise Farms", lastIn: "2026-05-24", category: "dairy", expiryDate: "2026-05-28" },
-    { id: "INV-002", name: "Bread Flour", sku: "FLR-25", unit: "kg", onHand: 850, threshold: 200, cost: 48, supplier: "Golden Mill", lastIn: "2026-05-22", category: "dry", expiryDate: "2026-08-15" },
-    { id: "INV-003", name: "Unsalted Butter", sku: "BTR-1", unit: "kg", onHand: 120, threshold: 40, cost: 420, supplier: "DairyCo", lastIn: "2026-05-23", category: "dairy", expiryDate: "2026-06-10" },
-    { id: "INV-004", name: "Cocoa Powder", sku: "COC-5", unit: "kg", onHand: 65, threshold: 20, cost: 380, supplier: "Cacao Prime", lastIn: "2026-05-20", category: "dry", expiryDate: "2026-07-01" },
-    { id: "INV-005", name: "Granulated Sugar", sku: "SUG-50", unit: "kg", onHand: 420, threshold: 100, cost: 62, supplier: "SweetSource", lastIn: "2026-05-21", category: "dry" },
-    { id: "INV-006", name: "Fresh Milk", sku: "MLK-1L", unit: "L", onHand: 180, threshold: 60, cost: 85, supplier: "DairyCo", lastIn: "2026-05-24", category: "dairy", expiryDate: "2026-05-20" },
-    { id: "INV-007", name: "Cake Boxes (8\")", sku: "PKG-8", unit: "pcs", onHand: 1250, threshold: 300, cost: 8.5, supplier: "PackPro", lastIn: "2026-05-18", category: "packaging" },
-    { id: "INV-008", name: "Whipping Cream", sku: "CRM-1L", unit: "L", onHand: 30, threshold: 25, cost: 180, supplier: "DairyCo", lastIn: "2026-05-25", category: "dairy", expiryDate: "2026-05-27" },
-    { id: "INV-009", name: "Vanilla Extract", sku: "VAN-500", unit: "ml", onHand: 15, threshold: 10, cost: 320, supplier: "FlavorHouse", lastIn: "2026-04-10", category: "dry", expiryDate: "2026-05-26" },
+    { id: "INV-001", name: "Eggs (Grade A)", sku: "EGG-30", unit: "trays", onHand: 42, threshold: 50, cost: 245, supplier: "Sunrise Farms", lastIn: "2026-05-24", category: "dairy", group: "ingredients", expiryDate: "2026-05-28" },
+    { id: "INV-002", name: "Bread Flour", sku: "FLR-25", unit: "kg", onHand: 850, threshold: 200, cost: 48, supplier: "Golden Mill", lastIn: "2026-05-22", category: "dry", group: "ingredients", expiryDate: "2026-08-15" },
+    { id: "INV-003", name: "Unsalted Butter", sku: "BTR-1", unit: "kg", onHand: 120, threshold: 40, cost: 420, supplier: "DairyCo", lastIn: "2026-05-23", category: "dairy", group: "ingredients", expiryDate: "2026-06-10" },
+    { id: "INV-004", name: "Cocoa Powder", sku: "COC-5", unit: "kg", onHand: 65, threshold: 20, cost: 380, supplier: "Cacao Prime", lastIn: "2026-05-20", category: "dry", group: "ingredients", expiryDate: "2026-07-01" },
+    { id: "INV-005", name: "Granulated Sugar", sku: "SUG-50", unit: "kg", onHand: 420, threshold: 100, cost: 62, supplier: "SweetSource", lastIn: "2026-05-21", category: "dry", group: "ingredients" },
+    { id: "INV-006", name: "Fresh Milk", sku: "MLK-1L", unit: "L", onHand: 180, threshold: 60, cost: 85, supplier: "DairyCo", lastIn: "2026-05-24", category: "dairy", group: "ingredients", expiryDate: "2026-05-20" },
+    { id: "INV-007", name: "Cake Boxes (8\")", sku: "PKG-8", unit: "pcs", onHand: 1250, threshold: 300, cost: 8.5, supplier: "PackPro", lastIn: "2026-05-18", category: "packaging", group: "packaging-materials" },
+    { id: "INV-008", name: "Whipping Cream", sku: "CRM-1L", unit: "L", onHand: 30, threshold: 25, cost: 180, supplier: "DairyCo", lastIn: "2026-05-25", category: "dairy", group: "ingredients", expiryDate: "2026-05-27" },
+    { id: "INV-009", name: "Vanilla Extract", sku: "VAN-500", unit: "ml", onHand: 15, threshold: 10, cost: 320, supplier: "FlavorHouse", lastIn: "2026-04-10", category: "dry", group: "ingredients", expiryDate: "2026-05-26" },
   ];
 
   const demoSOS: DOSItem[] = [
@@ -91,7 +102,7 @@ async function seedIfEmpty() {
   ];
 
   await Promise.all([
-    db.upsertInventory(demoInventory),
+    db.upsertInventory(demoInventory.map(i => ({ ...i, group: "ingredients" as const }))),
     db.upsertDOS(demoSOS),
     db.upsertProduction(demoProduction),
     db.upsertDeliveries(demoDeliveries),
@@ -128,7 +139,7 @@ export default function App() {
   const [productCatalog, setProductCatalog] = useState<string[]>(["Pandesal", "Loaf Bread", "Choco Moist Cake", "Sponge Fudge", "Ensaymada"]);
   const [recipes, setRecipes] = useState<ProductRecipe[]>([]);
   const [now, setNow] = useState(new Date());
-  const prevDayRef = useRef(now.toISOString().split("T")[0]);
+  const prevDayRef = useRef(getPHToday());
   const [dosNotifs, setDosNotifs] = useState<{ id: string; message: string }[]>([]);
   const [readNotifs, setReadNotifs] = useState<Set<string>>(new Set());
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
@@ -143,7 +154,7 @@ export default function App() {
     try {
       if (!auditCleaned.current) { auditCleaned.current = true; await db.clearAuditLogs().catch(() => {}); }
       const [inv, dos, prod, del, audit, catalog, rec] = await Promise.all([
-        db.fetchInventory(),
+        db.fetchAllInventory(),
         db.fetchDOS(),
         db.fetchProduction(),
         db.fetchDeliveries(),
@@ -180,8 +191,8 @@ export default function App() {
           roleConfig[profile.role].name = profile.displayName;
           await seedIfEmpty();
           const loadedDOS = await loadAllData();
-          // Activate any scheduled DOS for today
-          const today = new Date().toISOString().split("T")[0];
+          // Activate any scheduled DOS for today (Philippines time)
+          const today = getPHToday();
           const scheduled = loadedDOS.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
           if (scheduled.length > 0) {
             const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
@@ -208,7 +219,7 @@ export default function App() {
   useEffect(() => {
     if (!loggedIn) return;
     const interval = setInterval(async () => {
-      const today = new Date().toISOString().split("T")[0];
+      const today = getPHToday();
       const prevDay = prevDayRef.current;
 
       // Midnight reset: archive yesterday's incomplete items
@@ -316,7 +327,7 @@ export default function App() {
     const lowStockCount = inventory.filter(i => i.onHand > 0 && i.onHand < i.threshold).length;
     const noStockCount = inventory.filter(i => i.onHand === 0).length;
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
+    const todayStr = getPHToday();
     const expiredCount = inventory.filter(i => i.expiryDate && i.expiryDate < todayStr).length;
     const expiringCount = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000).length;
     return {
@@ -352,8 +363,8 @@ export default function App() {
     logAudit("LOGIN", `${name} logged in as ${selectedRole}`);
     await seedIfEmpty();
     const loadedDOS = await loadAllData();
-    // Activate any scheduled DOS for today
-    const today = new Date().toISOString().split("T")[0];
+    // Activate any scheduled DOS for today (Philippines time)
+    const today = getPHToday();
     const scheduled = loadedDOS.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
     if (scheduled.length > 0) {
       const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
@@ -367,7 +378,7 @@ export default function App() {
   };
 
   const logAudit = (action: string, details: string) => {
-    const entry = { timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), user: displayName, role, action, details };
+    const entry = { timestamp: getPHTimestamp(), user: displayName, role, action, details };
     db.addAuditLog(entry).catch(console.error);
     setAuditLogs(prev => [{ ...entry, id: `AUD-${Date.now()}-${prev.length}` }, ...prev]);
   };
@@ -610,11 +621,13 @@ export default function App() {
                       : 'text-zinc-700 hover:bg-white hover:shadow-sm'
                   }`}
                 >
-                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[16px] leading-none ${
-                    activeTab === item.id ? 'bg-white/10' : 'bg-zinc-100'
-                  }`}>
-                    <span className={activeTab === item.id ? 'opacity-100' : 'opacity-60'}>{item.icon}</span>
-                  </span>
+                  {item.icon && (
+                    <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[16px] leading-none ${
+                      activeTab === item.id ? 'bg-white/10' : 'bg-zinc-100'
+                    }`}>
+                      <span className={activeTab === item.id ? 'opacity-100' : 'opacity-60'}>{item.icon}</span>
+                    </span>
+                  )}
                   <span className="text-[14px] font-medium" style={{ fontFamily: "Instrument Sans, system-ui" }}>{item.label}</span>
                 </button>
               ))}
@@ -665,8 +678,8 @@ export default function App() {
             {role === "baker" && ["dashboard", "recipes", "requests"].includes(activeTab) && (
               <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} />
             )}
-            {role === "deco" && ["dashboard", "recipes", "materials"].includes(activeTab) && (
-              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} />
+            {role === "deco" && ["dashboard", "recipes", "materials", "free-mix", "ingredients", "decoration-supplies"].includes(activeTab) && (
+              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (
               <KitchenDashboard production={production} deliveries={deliveries} dosItems={dosItems} onUpdateDeliveries={setDeliveries} activeTab={activeTab} />

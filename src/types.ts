@@ -11,6 +11,7 @@ export type InventoryItem = {
   supplier: string;
   lastIn: string;
   category: "dry" | "dairy" | "produce" | "packaging";
+  group: "ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies";
   expiryDate?: string;
 };
 
@@ -166,4 +167,6 @@ export type ProductRecipe = {
   productId: string;
   productName: string;
   ingredients: RecipeIngredient[];
+  packagingMaterials: RecipeIngredient[];
+  decorationSupplies: RecipeIngredient[];
 };

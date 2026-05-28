@@ -51,7 +51,6 @@ export default function AdminDashboard({
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [invSearch, setInvSearch] = useState("");
-  const [invCategoryFilter, setInvCategoryFilter] = useState<string | null>(null);
   const [expandedDOS, setExpandedDOS] = useState<Set<string>>(new Set());
   const toggleDOSHistory = (id: string) => setExpandedDOS(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [expandedSched, setExpandedSched] = useState<Set<string>>(new Set());
@@ -64,6 +63,7 @@ export default function AdminDashboard({
   const [editingInvItem, setEditingInvItem] = useState<InventoryItem | null>(null);
 
   // Stockroom
+  const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "history">("ingredients");
   const [transactions, setTransactions] = useState<StockTransaction[]>([]);
   const [showReceive, setShowReceive] = useState(false);
   const [showRelease, setShowRelease] = useState(false);
@@ -103,7 +103,7 @@ export default function AdminDashboard({
     if (activeTab !== "warehouse" || prevTab.current === "warehouse") { prevTab.current = activeTab; return; }
     prevTab.current = activeTab;
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
+    const todayStr = now.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
     const lowStock = inventory.filter(i => i.onHand > 0 && i.onHand < i.threshold);
     const noStock = inventory.filter(i => i.onHand === 0);
     const expired = inventory.filter(i => i.expiryDate && i.expiryDate < todayStr);
@@ -116,10 +116,6 @@ export default function AdminDashboard({
     if (sections.length > 0) showToast(sections);
   }, [activeTab]);
 
-  // Recipes (Bill of Materials) — lifted to App
-  const [showRecipe, setShowRecipe] = useState(false);
-  const [recipeProduct, setRecipeProduct] = useState<{ id: string; name: string } | null>(null);
-
   /* ── Products Tab ── */
   if (activeTab === "products") {
     const filteredProducts = productCatalog.filter(p => {
@@ -127,7 +123,12 @@ export default function AdminDashboard({
       const q = invSearch.toLowerCase();
       if (p.toLowerCase().includes(q)) return true;
       const recipe = recipes.find(r => r.productName === p);
-      return recipe?.ingredients.some(i => i.name.toLowerCase().includes(q));
+      if (!recipe) return false;
+      return (
+        recipe.ingredients.some(i => i.name.toLowerCase().includes(q)) ||
+        (recipe.packagingMaterials ?? []).some(i => i.name.toLowerCase().includes(q)) ||
+        (recipe.decorationSupplies ?? []).some(i => i.name.toLowerCase().includes(q))
+      );
     });
     return (
       <div className="space-y-5">
@@ -143,7 +144,7 @@ export default function AdminDashboard({
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Ingredients</th><th className="px-4 py-3 text-right">DOS Count</th><th className="px-4 py-3 text-right">Actions</th></tr>
+                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Ingredients</th><th className="px-4 py-3">Packaging Materials</th><th className="px-4 py-3">Deco Supplies</th><th className="px-4 py-3 text-right">DOS Count</th></tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 text-[13px]">
                 {filteredProducts.map(product => {
@@ -156,13 +157,24 @@ export default function AdminDashboard({
                         {recipe && recipe.ingredients.length > 0 ? (
                           <span className="text-[12px] text-zinc-500">{recipe.ingredients.map(i => i.name).join(", ")}</span>
                         ) : (
-                          <span className="text-[12px] text-zinc-400 italic">No recipe set</span>
+                          <span className="text-[12px] text-zinc-400 italic">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {(recipe?.packagingMaterials ?? []).length > 0 ? (
+                          <span className="text-[12px] text-zinc-500">{(recipe?.packagingMaterials ?? []).map(i => i.name).join(", ")}</span>
+                        ) : (
+                          <span className="text-[12px] text-zinc-400 italic">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {(recipe?.decorationSupplies ?? []).length > 0 ? (
+                          <span className="text-[12px] text-zinc-500">{(recipe?.decorationSupplies ?? []).map(i => i.name).join(", ")}</span>
+                        ) : (
+                          <span className="text-[12px] text-zinc-400 italic">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-zinc-700" style={{ fontFamily: "Fragment Mono, monospace" }}>{dosCount}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button onClick={() => { setRecipeProduct({ id: product, name: product }); setShowRecipe(true); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300 transition-all">Recipe</button>
-                      </td>
                     </tr>
                   );
                 })}
@@ -171,8 +183,7 @@ export default function AdminDashboard({
           </div>
           {filteredProducts.length === 0 && <div className="text-center py-12"><p className="text-[14px] text-zinc-500">{productCatalog.length === 0 ? "No products yet. Add one above." : "No products match your search."}</p></div>}
         </div>
-        {showRecipe && recipeProduct && <RecipeModal product={recipeProduct} recipes={recipes} inventory={inventory} onSave={(r) => { onUpdateRecipes(prev => { const idx = prev.findIndex(p => p.productId === r.productId); if (idx >= 0) { const next = [...prev]; next[idx] = r; return next; } return [...prev, r]; }); db.upsertRecipe(r).catch(console.error); setShowRecipe(false); setRecipeProduct(null); }} onClose={() => { setShowRecipe(false); setRecipeProduct(null); }} />}
-        {showAddProduct && <AddProductWithRecipeModal inventory={inventory} onSave={(name, ingredients) => { onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]); db.addToCatalog(name).catch(console.error); if (ingredients.length > 0) { const recipe: ProductRecipe = { productId: name, productName: name, ingredients }; onUpdateRecipes(prev => { const idx = prev.findIndex(p => p.productId === recipe.productId); if (idx >= 0) { const next = [...prev]; next[idx] = recipe; return next; } return [...prev, recipe]; }); db.upsertRecipe(recipe).catch(console.error); } setShowAddProduct(false); }} onClose={() => setShowAddProduct(false)} />}
+        {showAddProduct && <AddProductModal onSave={(name) => { onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]); db.addToCatalog(name).catch(console.error); setShowAddProduct(false); }} onClose={() => setShowAddProduct(false)} />}
       </div>
     );
   }
@@ -180,83 +191,141 @@ export default function AdminDashboard({
   /* ── Stockroom Tab ── */
   if (activeTab === "warehouse") {
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
+    const todayStr = now.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
     const lowStock = inventory.filter(i => i.onHand > 0 && i.onHand < i.threshold);
     const noStock = inventory.filter(i => i.onHand === 0);
     const expired = inventory.filter(i => i.expiryDate && i.expiryDate < todayStr);
     const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000);
 
+    const groupItems = (g: typeof warehouseSection) => inventory.filter(i => g === "history" ? false : i.group === g);
+
+    const sidebarItems: { key: typeof warehouseSection; label: string; icon: string }[] = [
+      { key: "ingredients", label: "Ingredients", icon: "◇" },
+      { key: "packaging-materials", label: "Packaging Materials", icon: "□" },
+      { key: "decoration-supplies", label: "Decoration Supplies", icon: "○" },
+      { key: "operational-supplies", label: "Operational Supplies", icon: "△" },
+      { key: "history", label: "Stock History", icon: "▽" },
+    ];
+
     return (
-      <div className="space-y-5">
-        <div className="flex items-center justify-between">
-          <div><h1 className="text-[24px] font-semibold">Warehouse</h1><p className="mt-1 text-[13px] text-zinc-600">Manage all material IN and OUT movements.</p></div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button onClick={() => { setReleaseTarget("baker"); setShowRelease(true); }} className="rounded-xl bg-stone-600 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-stone-700">Release to Baker</button>
-            <button onClick={() => { setReleaseTarget("deco"); setShowRelease(true); }} className="rounded-xl bg-rose-600 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-rose-700">Release to Deco</button>
-            <button onClick={() => setShowReceive(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Receive from Supplier</button>
-            <button onClick={() => setEditingInvItem({ id: `INV-${Date.now()}`, name: "", sku: "", unit: "", onHand: 0, threshold: 10, cost: 0, supplier: "", lastIn: new Date().toISOString().split("T")[0], category: "dry" })} className="rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ New Item</button>
-          </div>
+      <div className="flex gap-5">
+        {/* Sidebar */}
+        <div className="w-52 shrink-0 space-y-1">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400 mb-2 px-3">Stock Room</div>
+          {sidebarItems.map(item => (
+            <button key={item.key} onClick={() => setWarehouseSection(item.key)}
+              className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium text-left transition-all ${warehouseSection === item.key ? "bg-zinc-900 text-white shadow-sm" : "text-zinc-600 hover:bg-zinc-100"}`}>
+              <span className="text-[15px]">{item.icon}</span>
+              <span>{item.label}</span>
+              {item.key !== "history" && (
+                <span className="ml-auto rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-mono font-medium text-zinc-600">{groupItems(item.key).length}</span>
+              )}
+            </button>
+          ))}
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-5 gap-3">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Items</div><div className="text-[24px] font-semibold mt-1">{inventory.length}</div></div>
-          <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Low Stock</div><div className="text-[24px] font-semibold mt-1 text-red-600">{lowStock.length}</div></button>
-          <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">No Stock</div><div className="text-[24px] font-semibold mt-1 text-zinc-800">{noStock.length}</div></button>
-          <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-purple-300 hover:bg-purple-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expired</div><div className="text-[24px] font-semibold mt-1 text-purple-600">{expired.length}</div></button>
-          <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expiring ≤3 Days</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{expiring.length}</div></button>
-        </div>
-
-        {/* All Items Stock Card */}
-        <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[16px] font-semibold">Stock Levels</h2>
-            <div className="flex items-center gap-2">
-              <select value={invCategoryFilter || ""} onChange={e => setInvCategoryFilter(e.target.value || null)} className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] outline-none focus:border-zinc-400">
-                <option value="">All Categories</option>
-                {[...new Set(inventory.map(i => i.category).filter(Boolean))].map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-              </select>
-              <div className="relative max-w-[220px]">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
-                <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search items..." className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-2 pl-8 pr-3 text-[12px] outline-none focus:border-zinc-400" />
-              </div>
+        {/* Main Content */}
+        <div className="flex-1 min-w-0 space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-[24px] font-semibold">
+                {warehouseSection === "history" ? "Stock History" : sidebarItems.find(s => s.key === warehouseSection)?.label}
+              </h1>
+              <p className="mt-1 text-[13px] text-zinc-600">Manage all material IN and OUT movements.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => { setReleaseTarget("baker"); setShowRelease(true); }} className="rounded-xl bg-stone-600 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-stone-700">Release to Baker</button>
+              <button onClick={() => { setReleaseTarget("deco"); setShowRelease(true); }} className="rounded-xl bg-rose-600 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-rose-700">Release to Deco</button>
+              <button onClick={() => setShowReceive(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Receive from Supplier</button>
+              <button onClick={() => setEditingInvItem({ id: `INV-${Date.now()}`, name: "", sku: "", unit: "", onHand: 0, threshold: 10, cost: 0, supplier: "", lastIn: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0], category: warehouseSection === "packaging-materials" ? "packaging" : "dry", group: warehouseSection === "history" ? "ingredients" : warehouseSection })} className="rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ New Item</button>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <div className="min-w-[500px] space-y-2">
-            {inventory.filter(i => (!invCategoryFilter || i.category === invCategoryFilter) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.category.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).map(item => {
-              const pct = Math.min(100, (item.onHand / item.threshold) * 100);
-              const isCritical = item.onHand < item.threshold;
-              const isExpired = item.expiryDate && item.expiryDate < todayStr;
-              const isExpiring = item.expiryDate && item.expiryDate >= todayStr && new Date(item.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000;
-              return (
-                <div key={item.id} className="flex items-center gap-4 rounded-xl border border-zinc-100 px-4 py-3 hover:bg-zinc-50/60">
-                  <div className="min-w-[160px]">
-                    <div className="text-[13px] font-medium text-zinc-900">{item.name}</div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[11px] text-zinc-500">{item.sku} · {item.category}</span>
-                      {isExpired && <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-medium text-purple-700">Expired</span>}
-                      {isExpiring && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">Expiring</span>}
-                    </div>
+
+          {/* Quick Stats (shown for group views, not history) */}
+          {warehouseSection !== "history" && (
+            <div className="grid grid-cols-5 gap-3">
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Items</div><div className="text-[24px] font-semibold mt-1">{groupItems(warehouseSection).length}</div></div>
+              <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Low Stock</div><div className="text-[24px] font-semibold mt-1 text-red-600">{lowStock.filter(i => i.group === warehouseSection).length}</div></button>
+              <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">No Stock</div><div className="text-[24px] font-semibold mt-1 text-zinc-800">{noStock.filter(i => i.group === warehouseSection).length}</div></button>
+              <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-purple-300 hover:bg-purple-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expired</div><div className="text-[24px] font-semibold mt-1 text-purple-600">{expired.filter(i => i.group === warehouseSection).length}</div></button>
+              <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expiring ≤3 Days</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{expiring.filter(i => i.group === warehouseSection).length}</div></button>
+            </div>
+          )}
+
+          {/* Stock History View */}
+          {warehouseSection === "history" ? (
+            <div>
+              {transactions.length > 0 ? (
+                <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-[16px] font-semibold">Transaction History</h2>
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 font-mono">{transactions.length} entries</span>
                   </div>
-                  <div className="flex-1"><div className="h-2 rounded-full bg-zinc-100"><div className={`h-full rounded-full ${isExpired ? "bg-purple-500" : isCritical ? "bg-red-500" : item.onHand < item.threshold * 1.5 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} /></div></div>
-                  <div className="text-right min-w-[80px]"><div className={`text-[13px] font-semibold ${isCritical ? "text-red-600" : "text-zinc-900"}`}>{item.onHand} <span className="text-[11px] font-normal text-zinc-500">/ {item.threshold}</span></div><div className="text-[11px] text-zinc-500">{item.unit}</div></div>
-                  <div className="text-[12px] text-zinc-500 min-w-[120px] text-right">{item.supplier}{item.expiryDate ? <span className="block text-[11px] text-zinc-400">Exp: {item.expiryDate}</span> : <span className="block text-[11px] text-zinc-300">No expiry</span>}</div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => setEditingInvItem(item)} className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100 hover:border-zinc-400 transition-all">Edit</button>
-                    <button onClick={async () => { if (confirm(`Delete "${item.name}"?`)) { await db.deleteInventoryItem(item.id); onUpdateInventory(inventory.filter(i => i.id !== item.id)); onAddAuditLog?.("INVENTORY_DELETED", `${item.name} removed from inventory`); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-500 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
+                  <div className="space-y-1">
+                    {[...transactions].reverse().map(tx => (
+                      <div key={tx.id} className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px]">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${tx.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{tx.type}</span>
+                        <span className="font-medium text-zinc-900 min-w-[100px]">{tx.itemName}</span>
+                        <span className="text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{tx.type === "in" ? "+" : "-"}{tx.qty} {tx.unit}</span>
+                        <span className="text-zinc-500">{tx.reference}</span>
+                        {tx.target && <span className="text-zinc-500 capitalize">→ {tx.target}</span>}
+                        <span className="ml-auto text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{tx.timestamp}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              );
-            })}
-            {inventory.filter(i => (!invCategoryFilter || i.category === invCategoryFilter) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.category.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).length === 0 && <div className="text-center py-10 text-[14px] text-zinc-400">{invSearch || invCategoryFilter ? "No items match your filters." : "No inventory items yet."}</div>}
-          </div>
-          </div>
-        </div>
+              ) : (
+                <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No transactions yet.</p></div>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Items filtered by group */}
+              <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-[16px] font-semibold">{sidebarItems.find(s => s.key === warehouseSection)?.label}</h2>
+                  <div className="flex items-center gap-2">
+                    <div className="relative max-w-[220px]">
+                      <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+                      <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search items..." className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-2 pl-8 pr-3 text-[12px] outline-none focus:border-zinc-400" />
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[500px] space-y-2">
+                  {groupItems(warehouseSection).filter(i => !invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase())).map(item => {
+                    const pct = Math.min(100, (item.onHand / item.threshold) * 100);
+                    const isCritical = item.onHand < item.threshold;
+                    const isExpired = item.expiryDate && item.expiryDate < todayStr;
+                    const isExpiring = item.expiryDate && item.expiryDate >= todayStr && new Date(item.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000;
+                    return (
+                      <div key={item.id} className="flex items-center gap-4 rounded-xl border border-zinc-100 px-4 py-3 hover:bg-zinc-50/60">
+                        <div className="min-w-[160px]">
+                          <div className="text-[13px] font-medium text-zinc-900">{item.name}</div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[11px] text-zinc-500">{item.sku} · {item.category}</span>
+                            {isExpired && <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-medium text-purple-700">Expired</span>}
+                            {isExpiring && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">Expiring</span>}
+                          </div>
+                        </div>
+                        <div className="flex-1"><div className="h-2 rounded-full bg-zinc-100"><div className={`h-full rounded-full ${isExpired ? "bg-purple-500" : isCritical ? "bg-red-500" : item.onHand < item.threshold * 1.5 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} /></div></div>
+                        <div className="text-right min-w-[80px]"><div className={`text-[13px] font-semibold ${isCritical ? "text-red-600" : "text-zinc-900"}`}>{item.onHand} <span className="text-[11px] font-normal text-zinc-500">/ {item.threshold}</span></div><div className="text-[11px] text-zinc-500">{item.unit}</div></div>
+                        <div className="text-[12px] text-zinc-500 min-w-[120px] text-right">{item.supplier}{item.expiryDate ? <span className="block text-[11px] text-zinc-400">Exp: {item.expiryDate}</span> : <span className="block text-[11px] text-zinc-300">No expiry</span>}</div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => setEditingInvItem(item)} className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100 hover:border-zinc-400 transition-all">Edit</button>
+                          <button onClick={async () => { if (confirm(`Delete "${item.name}"?`)) { await db.deleteInventoryItem(item.id, item.group); onUpdateInventory(inventory.filter(i => i.id !== item.id)); onAddAuditLog?.("INVENTORY_DELETED", `${item.name} removed from ${item.group}`); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-500 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {groupItems(warehouseSection).filter(i => !invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase())).length === 0 && <div className="text-center py-10 text-[14px] text-zinc-400">{invSearch ? "No items match your search." : "No items in this group yet."}</div>}
+                  </div>
+                </div>
+              </div>
 
-        {/* Pending Material Requests */}
-        {(bakerReqs.filter(r => r.status === "pending-approval" || r.status === "approved").length > 0 ||
-          decoReqs.filter(r => r.status === "pending-approval" || r.status === "approved").length > 0) && (
+              {/* Pending Material Requests */}
+              {(bakerReqs.filter(r => r.status === "pending-approval" || r.status === "approved").length > 0 ||
+                decoReqs.filter(r => r.status === "pending-approval" || r.status === "approved").length > 0) && (
           <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
             <h2 className="text-[16px] font-semibold mb-4">Pending Material Requests</h2>
             <div className="space-y-3">
@@ -353,30 +422,12 @@ export default function AdminDashboard({
             </div>
           </div>
         )}
-
-        {/* Transaction History */}
-        {transactions.length > 0 && (
-          <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-            <h2 className="text-[16px] font-semibold mb-4">Transaction History</h2>
-            <div className="space-y-1">
-              {[...transactions].reverse().map(tx => (
-                <div key={tx.id} className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px]">
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${tx.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{tx.type}</span>
-                  <span className="font-medium text-zinc-900 min-w-[100px]">{tx.itemName}</span>
-                  <span className="text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{tx.type === "in" ? "+" : "-"}{tx.qty} {tx.unit}</span>
-                  <span className="text-zinc-500">{tx.reference}</span>
-                  {tx.target && <span className="text-zinc-500 capitalize">→ {tx.target}</span>}
-                  <span className="ml-auto text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{tx.timestamp}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        </>)}
 
         {/* Receive Modal */}
         {showReceive && <ReceiveModal inventory={inventory} onUpdateInventory={onUpdateInventory} onTransaction={async (tx) => { setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); onAddAuditLog?.("STOCK_RECEIVED", `${tx.itemName} x${tx.qty} ${tx.unit} — ${tx.reference}`); }} onClose={() => setShowReceive(false)} />}
         {showRelease && <ReleaseModal inventory={inventory} target={releaseTarget} onUpdateInventory={onUpdateInventory} onTransaction={async (tx) => { setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); onAddAuditLog?.("STOCK_RELEASED", `${tx.itemName} x${tx.qty} ${tx.unit} — ${tx.reference}`); }} onClose={() => setShowRelease(false)} />}
-        {editingInvItem && <EditInventoryModal item={editingInvItem} onSave={async (updated) => { try { const exists = inventory.some(i => i.id === updated.id); if (exists) { onUpdateInventory(inventory.map(i => i.id === updated.id ? updated : i)); await db.updateInventoryItem(updated.id, updated); onAddAuditLog?.("INVENTORY_EDITED", `${updated.name} (${updated.sku}) updated`); } else { await db.upsertInventory([updated]); onUpdateInventory([...inventory, updated]); onAddAuditLog?.("INVENTORY_ADDED", `${updated.name} (${updated.sku}) added`); } } catch (err) { console.error("Save inventory failed:", err); alert("Failed to save item"); } setEditingInvItem(null); }} onClose={() => setEditingInvItem(null)} />}
+        {editingInvItem && <EditInventoryModal item={editingInvItem} onSave={async (updated) => { try { const exists = inventory.some(i => i.id === updated.id); if (exists) { onUpdateInventory(inventory.map(i => i.id === updated.id ? updated : i)); onAddAuditLog?.("INVENTORY_EDITED", `${updated.name} (${updated.sku}) updated`); } else { onUpdateInventory([...inventory, updated]); onAddAuditLog?.("INVENTORY_ADDED", `${updated.name} (${updated.sku}) added to ${updated.group}`); } } catch (err) { console.error("Save inventory failed:", err); alert("Failed to save item"); } setEditingInvItem(null); }} onClose={() => setEditingInvItem(null)} />}
 
         {/* Toast Container */}
         {toast && (
@@ -417,6 +468,7 @@ export default function AdminDashboard({
           );
         })()}
       </div>
+    </div>
     );
   }
 
@@ -535,7 +587,7 @@ export default function AdminDashboard({
                   const isOpen = expandedSched.has(date);
                   return (
                     <div key={date} className="rounded-2xl border border-blue-200 bg-white overflow-hidden">
-                      <button onClick={() => toggleSched(date)} className="w-full flex items-center justify-between bg-blue-100/60 px-4 py-2.5 hover:bg-blue-200/60 transition-colors text-left">
+                      <div onClick={() => toggleSched(date)} className="w-full flex items-center justify-between bg-blue-100/60 px-4 py-2.5 hover:bg-blue-200/60 transition-colors text-left cursor-pointer">
                         <span className="text-[13px] font-semibold text-blue-900">{fmtDate(date)}</span>
                         <div className="flex items-center gap-2">
                           <span className="rounded-full bg-blue-200/80 px-2 py-0.5 text-[10px] font-medium text-blue-800 font-mono">{items.length} item{items.length !== 1 ? "s" : ""}</span>
@@ -543,7 +595,7 @@ export default function AdminDashboard({
                           <button onClick={e => { e.stopPropagation(); if (confirm(`Delete entire scheduled DOS for ${fmtDate(date)} (${items.length} item${items.length !== 1 ? "s" : ""})?`)) { items.forEach(i => onDeleteDOS(i.id)); } }} className="rounded-lg border border-red-300 bg-white px-2 py-0.5 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del All</button>
                           <span className="text-blue-500 text-[12px]">{isOpen ? "▾" : "▸"}</span>
                         </div>
-                      </button>
+                        </div>
                       {isOpen && (
                         <div className="divide-y divide-blue-50">
                           {items.map(item => (
@@ -849,8 +901,8 @@ export default function AdminDashboard({
     rows.push([]);
 
     rows.push(["=== INVENTORY ===", "", "", ""]);
-    rows.push(["ID", "Name", "SKU", "On Hand", "Threshold", "Unit", "Cost", "Supplier", "Category"]);
-    inventory.forEach(i => rows.push([i.id, i.name, i.sku, String(i.onHand), String(i.threshold), i.unit, String(i.cost), i.supplier, i.category]));
+    rows.push(["ID", "Name", "SKU", "On Hand", "Threshold", "Unit", "Cost", "Supplier", "Category", "Group"]);
+    inventory.forEach(i => rows.push([i.id, i.name, i.sku, String(i.onHand), String(i.threshold), i.unit, String(i.cost), i.supplier, i.category, i.group]));
     rows.push([]);
 
     rows.push(["=== DOS ITEMS ===", "", "", ""]);
@@ -1179,151 +1231,29 @@ function CompactTaskCard({ task, color }: { task: ProductionTask; color: string 
   );
 }
 
-function AddProductWithRecipeModal({ inventory, onSave, onClose }: {
-  inventory: InventoryItem[]; onSave: (name: string, ingredients: RecipeIngredient[]) => void; onClose: () => void;
+function AddProductModal({ onSave, onClose }: {
+  onSave: (name: string) => void; onClose: () => void;
 }) {
   const [name, setName] = useState("");
-  const [ingredients, setIngredients] = useState<RecipeIngredient[]>([]);
-  const [selectedIngredient, setSelectedIngredient] = useState("");
-
-  function addIngredient() {
-    if (!selectedIngredient) return;
-    const inv = inventory.find(i => i.id === selectedIngredient);
-    if (!inv) return;
-    if (ingredients.some(i => i.inventoryId === inv.id)) return;
-    setIngredients(prev => [...prev, { inventoryId: inv.id, name: inv.name, qtyPerBatch: 1, unit: inv.unit }]);
-    setSelectedIngredient("");
-  }
-
-  function removeIngredient(id: string) {
-    setIngredients(prev => prev.filter(i => i.inventoryId !== id));
-  }
-
-  function updateQty(id: string, qty: number) {
-    setIngredients(prev => prev.map(i => i.inventoryId === id ? { ...i, qtyPerBatch: qty } : i));
-  }
-
-  const available = inventory.filter(i => !ingredients.some(ing => ing.inventoryId === i.id));
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(name.trim(), ingredients);
+    onSave(name.trim());
   }
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-[520px] rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-[420px] rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between"><h3 className="text-[16px] font-semibold">Add Product</h3><button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button></div>
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Product Name</label><input required value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. Pandesal" autoFocus /></div>
-
-          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Ingredients</label>
-            <div className="mt-1 flex items-center gap-2">
-              <select value={selectedIngredient} onChange={e => setSelectedIngredient(e.target.value)} className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none">
-                <option value="">Select ingredient…</option>
-                {available.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
-              </select>
-              <button type="button" onClick={addIngredient} disabled={!selectedIngredient} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">+ Add</button>
-            </div>
-          </div>
-
-          {ingredients.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-zinc-200 p-6 text-center">
-              <p className="text-[13px] text-zinc-400">No ingredients added yet. You can add them now or later.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-zinc-100 rounded-2xl border border-zinc-200">
-              {ingredients.map(ing => (
-                <div key={ing.inventoryId} className="flex items-center gap-3 px-4 py-3">
-                  <span className="flex-1 text-[13px] font-medium text-zinc-900">{ing.name}</span>
-                  <span className="text-[11px] text-zinc-500">{ing.unit}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-zinc-500">Qty/batch</span>
-                    <input type="number" min="0.01" step="0.01" value={ing.qtyPerBatch} onChange={e => updateQty(ing.inventoryId, Number(e.target.value))} className="w-20 rounded-lg border border-zinc-200 px-2 py-1.5 text-[13px] text-right outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
-                  </div>
-                  <button type="button" onClick={() => removeIngredient(ing.inventoryId)} className="grid h-7 w-7 place-items-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-all">✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-
+          <p className="text-[12px] text-zinc-400">Recipe will be set up by the Deco team.</p>
           <div className="flex gap-2 pt-1 border-t border-[#E8E0D5]">
             <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-            <button type="submit" disabled={!name.trim()} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Add Product{ingredients.length > 0 ? " with Recipe" : ""}</button>
+            <button type="submit" disabled={!name.trim()} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Add Product</button>
           </div>
         </form>
-      </div>
-    </div>
-  );
-}
-
-function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
-  product: { id: string; name: string }; recipes: ProductRecipe[]; inventory: InventoryItem[];
-  onSave: (recipe: ProductRecipe) => void; onClose: () => void;
-}) {
-  const existing = recipes.find(r => r.productId === product.id);
-  const [ingredients, setIngredients] = useState<RecipeIngredient[]>(existing?.ingredients || []);
-  const [selectedIngredient, setSelectedIngredient] = useState("");
-
-  function addIngredient() {
-    if (!selectedIngredient) return;
-    const inv = inventory.find(i => i.id === selectedIngredient);
-    if (!inv) return;
-    if (ingredients.some(i => i.inventoryId === inv.id)) return;
-    setIngredients(prev => [...prev, { inventoryId: inv.id, name: inv.name, qtyPerBatch: 1, unit: inv.unit }]);
-    setSelectedIngredient("");
-  }
-
-  function removeIngredient(id: string) {
-    setIngredients(prev => prev.filter(i => i.inventoryId !== id));
-  }
-
-  function updateQty(id: string, qty: number) {
-    setIngredients(prev => prev.map(i => i.inventoryId === id ? { ...i, qtyPerBatch: qty } : i));
-  }
-
-  const available = inventory.filter(i => !ingredients.some(ing => ing.inventoryId === i.id));
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-[520px] rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between"><div><h3 className="text-[16px] font-semibold">Recipe: {product.name}</h3></div><button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button></div>
-
-        <div className="mt-5 space-y-3">
-          <div className="flex items-center gap-2">
-            <select value={selectedIngredient} onChange={e => setSelectedIngredient(e.target.value)} className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none">
-              <option value="">Select ingredient…</option>
-              {available.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
-            </select>
-            <button onClick={addIngredient} disabled={!selectedIngredient} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">+ Add</button>
-          </div>
-
-          {ingredients.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-zinc-200 p-6 text-center">
-              <p className="text-[13px] text-zinc-400">No ingredients added yet. Select from the dropdown above.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-zinc-100 rounded-2xl border border-zinc-200">
-              {ingredients.map(ing => (
-                <div key={ing.inventoryId} className="flex items-center gap-3 px-4 py-3">
-                  <span className="flex-1 text-[13px] font-medium text-zinc-900">{ing.name}</span>
-                  <span className="text-[11px] text-zinc-500">{ing.unit}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-zinc-500">Qty/batch</span>
-                    <input type="number" min="0.01" step="0.01" value={ing.qtyPerBatch} onChange={e => updateQty(ing.inventoryId, Number(e.target.value))} className="w-20 rounded-lg border border-zinc-200 px-2 py-1.5 text-[13px] text-right outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
-                  </div>
-                  <button onClick={() => removeIngredient(ing.inventoryId)} className="grid h-7 w-7 place-items-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-all">✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-5 flex gap-2 border-t border-[#E8E0D5] pt-4">
-          <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-          <button onClick={() => onSave({ productId: product.id, productName: product.name, ingredients })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
-        </div>
       </div>
     </div>
   );
@@ -1474,6 +1404,7 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
   const [cost, setCost] = useState(String(item.cost));
   const [supplier, setSupplier] = useState(item.supplier);
   const [category, setCategory] = useState(item.category);
+  const [group, setGroup] = useState(item.group);
   const [expiryDate, setExpiryDate] = useState(item.expiryDate || "");
   const [customCat, setCustomCat] = useState(false);
 
@@ -1482,7 +1413,7 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave({ ...item, name: name.trim(), sku: sku.trim(), unit: unit.trim(), onHand: Number(onHand), threshold: Number(threshold), cost: Number(cost), supplier: supplier.trim(), category, expiryDate: expiryDate || undefined });
+    onSave({ ...item, name: name.trim(), sku: sku.trim(), unit: unit.trim(), onHand: Number(onHand), threshold: Number(threshold), cost: Number(cost), supplier: supplier.trim(), category, group, expiryDate: expiryDate || undefined });
   };
 
   return (
@@ -1501,7 +1432,24 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">SKU</label><input value={sku} onChange={e => setSku(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Unit</label><input value={unit} onChange={e => setUnit(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Unit</label>
+  <select value={unit} onChange={e => setUnit(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">
+    <option value="">-- Select --</option>
+    <option value="kg">kg</option>
+    <option value="g">g</option>
+    <option value="L">L</option>
+    <option value="ml">ml</option>
+    <option value="pcs">pcs</option>
+    <option value="trays">trays</option>
+    <option value="packs">packs</option>
+    <option value="boxes">boxes</option>
+    <option value="sacks">sacks</option>
+    <option value="bottles">bottles</option>
+    <option value="rolls">rolls</option>
+    <option value="sheets">sheets</option>
+    <option value="cans">cans</option>
+  </select>
+</div>
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cost (₱)</label><input required type="number" min="0" step="0.01" value={cost} onChange={e => setCost(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Threshold</label><input required type="number" min="0" value={threshold} onChange={e => setThreshold(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
           </div>
@@ -1520,9 +1468,19 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
                 </div>
               )}
             </div>
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Expiry Date</label><input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+            <div>{group === "ingredients" || group === "decoration-supplies" ? <><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Expiry Date</label><input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></> : <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">&nbsp;</label><div className="mt-1 flex h-[42px] items-center rounded-xl border border-dashed border-zinc-200 px-3.5 text-[12px] text-zinc-400">No expiry</div></div>}</div>
           </div>
-          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">On Hand</label><input required type="number" min="0" value={onHand} onChange={e => setOnHand(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Group</label>
+              <select value={group} onChange={e => setGroup(e.target.value as InventoryItem["group"])} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">
+                <option value="ingredients">Ingredients</option>
+                <option value="packaging-materials">Packaging Materials</option>
+                <option value="decoration-supplies">Decoration Supplies</option>
+                <option value="operational-supplies">Operational Supplies</option>
+              </select>
+            </div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">On Hand</label><input required type="number" min="0" value={onHand} onChange={e => setOnHand(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+          </div>
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Cancel</button>
             <button type="submit" className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 transition-all">{isNew ? "Add Item" : "Save Changes"}</button>

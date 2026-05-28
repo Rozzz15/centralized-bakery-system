@@ -28,12 +28,12 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
   const [priority, setPriority] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
   const [newProductName, setNewProductName] = useState("");
   const [addingNew, setAddingNew] = useState(false);
-  const todayStr = new Date().toISOString().split("T")[0];
-  const defaultDate = presetDate || (hasTodayItems ? (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toISOString().split("T")[0]; })() : todayStr);
+  const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+  const defaultDate = presetDate || (hasTodayItems ? (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]; })() : todayStr);
   const [scheduledDate, setScheduledDate] = useState(defaultDate);
   const isFuture = scheduledDate > todayStr;
-  const dayAfterStr = (() => { const t = new Date(); t.setDate(t.getDate() + 2); return t.toISOString().split("T")[0]; })();
-  const tomorrowStr = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toISOString().split("T")[0]; })();
+  const dayAfterStr = (() => { const t = new Date(); t.setDate(t.getDate() + 2); return t.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]; })();
+  const tomorrowStr = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]; })();
 
   const toggleRole = (role: "baker" | "deco") => {
     setSelectedRoles(prev => {

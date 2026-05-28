@@ -50,7 +50,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const bakerDOS = todayDOS.filter(d => bakerTaskProducts.has(d.product));
   const bakerProducts = new Set(bakerDOS.map(d => d.product));
   const myTasks = production.filter(p => p.assignedTo === "baker" && bakerProducts.has(p.product));
-  const tomorrowStr = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toISOString().split("T")[0]; })();
+  const tomorrowStr = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]; })();
   const allBakerTasks = production.filter(p => p.assignedTo === "baker");
   const bakerScheduled = dosItems.filter(d => d.status === "scheduled" && d.scheduledDate === tomorrowStr && allBakerTasks.some(t => t.product === d.product));
   const allDone = myTasks.length > 0 && myTasks.every(t => t.status === "completed");
@@ -333,6 +333,15 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                       );
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t border-zinc-200 bg-stone-50 text-[13px] font-semibold text-zinc-800">
+                      <td colSpan={3} className="px-3 py-2.5">Total</td>
+                      <td className="px-2 py-2.5 text-right font-mono">{bakerDOS.reduce((s, d) => s + d.qty, 0)}</td>
+                      <td className="px-2 py-2.5 text-right font-mono">{bakerDOS.reduce((s, d) => s + d.branch1, 0)}</td>
+                      <td className="px-2 py-2.5 text-right font-mono">{bakerDOS.reduce((s, d) => s + d.branch2, 0)}</td>
+                      <td className="px-3 py-2.5" />
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
