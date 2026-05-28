@@ -24,7 +24,7 @@ function defaultRow(): Row {
 
 export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAddToCatalog, hasTodayItems, presetDate, scheduledDates }: Props) {
   const [rows, setRows] = useState<Row[]>([defaultRow()]);
-  const [selectedRoles, setSelectedRoles] = useState<Set<"baker" | "deco">>(new Set(["baker"]));
+  const [selectedRoles, setSelectedRoles] = useState<Set<"baker" | "deco">>(new Set(["baker", "deco"]));
   const [priority, setPriority] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
   const [newProductName, setNewProductName] = useState("");
   const [addingNew, setAddingNew] = useState(false);

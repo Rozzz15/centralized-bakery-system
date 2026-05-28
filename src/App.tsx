@@ -44,12 +44,14 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "requests", label: "Requests", icon: "⬢" },
   ],
   deco: [
-    { id: "dashboard", label: "Batch Work", icon: "" },
-    { id: "free-mix", label: "Free Mix", icon: "" },
+    { id: "dashboard", label: "Dashboard", icon: "" },
+    { id: "recipes", label: "Recipe Formulas", icon: "" },
+    { id: "free-mix", label: "Production Prep", icon: "" },
+    { id: "deco-queue", label: "Decoration Queue", icon: "" },
+    { id: "custom-orders", label: "Custom Orders", icon: "" },
+    { id: "decoration-supplies", label: "Decoration Materials", icon: "" },
     { id: "ingredients", label: "Ingredients", icon: "" },
-    { id: "decoration-supplies", label: "Decoration", icon: "" },
-    { id: "recipes", label: "Recipes", icon: "" },
-    { id: "materials", label: "Materials", icon: "" },
+    { id: "materials", label: "Materials Request", icon: "" },
   ],
   kitchen: [
     { id: "dashboard", label: "Dispatch", icon: "◼" },
@@ -678,8 +680,8 @@ export default function App() {
             {role === "baker" && ["dashboard", "recipes", "requests"].includes(activeTab) && (
               <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} />
             )}
-            {role === "deco" && ["dashboard", "recipes", "materials", "free-mix", "ingredients", "decoration-supplies"].includes(activeTab) && (
-              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} />
+            {role === "deco" && ["dashboard", "recipes", "free-mix", "deco-queue", "custom-orders", "decoration-supplies", "ingredients", "materials"].includes(activeTab) && (
+              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (
               <KitchenDashboard production={production} deliveries={deliveries} dosItems={dosItems} onUpdateDeliveries={setDeliveries} activeTab={activeTab} />
