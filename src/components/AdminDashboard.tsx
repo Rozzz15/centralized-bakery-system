@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest } from "../types";
+import { createPortal } from "react-dom";
+import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, Role, FreezerItem, FreezerHistory } from "../types";
 import * as db from "../lib/db";
 import DOSBuilderModal from "./DOSBuilderModal";
 
@@ -24,6 +25,11 @@ type Props = {
   recipes: ProductRecipe[];
   onUpdateRecipes: (cb: ProductRecipe[] | ((prev: ProductRecipe[]) => ProductRecipe[])) => void;
   onAddAuditLog?: (action: string, details: string) => void;
+  onUpdateDeliveries?: (deliveries: Delivery[] | ((prev: Delivery[]) => Delivery[])) => void;
+  productPricing: ProductPricing[];
+  onUpdateProductPricing: (cb: ProductPricing[] | ((prev: ProductPricing[]) => ProductPricing[])) => void;
+  freezerItems?: FreezerItem[];
+  onUpdateFreezer?: (cb: FreezerItem[] | ((prev: FreezerItem[]) => FreezerItem[])) => void;
 };
 
 export default function AdminDashboard({
@@ -47,6 +53,11 @@ export default function AdminDashboard({
   onAddAuditLog,
   recipes,
   onUpdateRecipes,
+  onUpdateDeliveries,
+  productPricing,
+  onUpdateProductPricing,
+  freezerItems = [],
+  onUpdateFreezer,
 }: Props) {
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -66,8 +77,6 @@ export default function AdminDashboard({
   const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "history">("ingredients");
   const [transactions, setTransactions] = useState<StockTransaction[]>([]);
   const [showReceive, setShowReceive] = useState(false);
-  const [showRelease, setShowRelease] = useState(false);
-  const [releaseTarget, setReleaseTarget] = useState<"baker" | "deco">("baker");
 
   // Delivery validation
   const [validations, setValidations] = useState<DeliveryValidation[]>([]);
@@ -76,16 +85,55 @@ export default function AdminDashboard({
   const [bakerReqs, setBakerReqs] = useState<BakerIngredientRequest[]>([]);
   const [decoReqs, setDecoReqs] = useState<MaterialRequest[]>([]);
 
+  // Add Delivery modal
+  const [showAddDelivery, setShowAddDelivery] = useState(false);
+  const [newDeliveryBranch, setNewDeliveryBranch] = useState("Cakes N Styles Gensan");
+  const [newDeliveryCustom, setNewDeliveryCustom] = useState("");
+  const [newDeliveryItems, setNewDeliveryItems] = useState<{ product: string; qty: number }[]>([{ product: "", qty: 1 }]);
+  const [newDeliveryEta, setNewDeliveryEta] = useState("");
+  const [expandedProducers, setExpandedProducers] = useState<Set<string>>(new Set());
+  const [deliverySearch, setDeliverySearch] = useState<Record<string, string>>({});
+  const [newDeliveryAddress, setNewDeliveryAddress] = useState("");
+  const [newDeliveryContact, setNewDeliveryContact] = useState("");
+  const [newDeliveryRider, setNewDeliveryRider] = useState("");
+  const [newDeliveryPayment, setNewDeliveryPayment] = useState<"unpaid" | "paid" | "cod">("unpaid");
+  const [newDeliveryNotes, setNewDeliveryNotes] = useState("");
+
+  // Helper: filter DOS items created today (by timestamp in ID)
+  const getTodayDOS = () => {
+    const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    return dosItems.filter(i => {
+      if (i.status === "scheduled") return false;
+      const ts = i.id.match(/DOS-(\d+)/)?.[1];
+      if (!ts) return true;
+      const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+      return itemDate === todayStr;
+    });
+  };
+  const todayDOS = getTodayDOS();
+
+  // Pricing
+  const [pricingSearch, setPricingSearch] = useState("");
+  const [pricingFilter, setPricingFilter] = useState<"all" | "active" | "draft" | "archived">("all");
+  const [editingPricing, setEditingPricing] = useState<ProductPricing | null>(null);
+  const [showPricingModal, setShowPricingModal] = useState(false);
+
   // Toasts
   type ToastItem = { name: string; detail: string };
   type Toast = { id: string; sections: { type: "low-stock" | "no-stock" | "expired" | "expiring"; items: ToastItem[] }[] };
   const [toast, setToast] = useState<Toast | null>(null);
+  const dismissedAlerts = useRef(new Set<string>());
   const showToast = (sections: Omit<Toast, "id">["sections"]) => {
+    const filtered = sections.map(s => ({ ...s, items: s.items.filter(i => !dismissedAlerts.current.has(i.name)) })).filter(s => s.items.length > 0);
+    if (filtered.length === 0) return;
     const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
-    setToast({ id, sections });
+    setToast({ id, sections: filtered });
     setTimeout(() => setToast(null), 6000);
   };
-  const dismissToast = () => setToast(null);
+  const dismissToast = () => {
+    if (toast) toast.sections.forEach(s => s.items.forEach(i => dismissedAlerts.current.add(i.name)));
+    setToast(null);
+  };
 
   const [statModal, setStatModal] = useState<"low-stock" | "no-stock" | "expired" | "expiring" | null>(null);
 
@@ -107,7 +155,7 @@ export default function AdminDashboard({
     const lowStock = inventory.filter(i => i.onHand > 0 && i.onHand < i.threshold);
     const noStock = inventory.filter(i => i.onHand === 0);
     const expired = inventory.filter(i => i.expiryDate && i.expiryDate < todayStr);
-    const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000);
+    const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000);
     const sections: Toast["sections"] = [];
     if (noStock.length > 0) sections.push({ type: "no-stock", items: noStock.map(i => ({ name: i.name, detail: `${i.unit}` })) });
     if (lowStock.length > 0) sections.push({ type: "low-stock", items: lowStock.map(i => ({ name: i.name, detail: `${i.onHand}/${i.threshold} ${i.unit}` })) });
@@ -195,7 +243,7 @@ export default function AdminDashboard({
     const lowStock = inventory.filter(i => i.onHand > 0 && i.onHand < i.threshold);
     const noStock = inventory.filter(i => i.onHand === 0);
     const expired = inventory.filter(i => i.expiryDate && i.expiryDate < todayStr);
-    const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000);
+    const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000);
 
     const groupItems = (g: typeof warehouseSection) => inventory.filter(i => g === "history" ? false : i.group === g);
 
@@ -234,10 +282,12 @@ export default function AdminDashboard({
               <p className="mt-1 text-[13px] text-zinc-600">Manage all material IN and OUT movements.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button onClick={() => { setReleaseTarget("baker"); setShowRelease(true); }} className="rounded-xl bg-stone-600 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-stone-700">Release to Baker</button>
-              <button onClick={() => { setReleaseTarget("deco"); setShowRelease(true); }} className="rounded-xl bg-rose-600 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-rose-700">Release to Deco</button>
-              <button onClick={() => setShowReceive(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Receive from Supplier</button>
-              <button onClick={() => setEditingInvItem({ id: `INV-${Date.now()}`, name: "", sku: "", unit: "", onHand: 0, threshold: 10, cost: 0, supplier: "", lastIn: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0], category: warehouseSection === "packaging-materials" ? "packaging" : "dry", group: warehouseSection === "history" ? "ingredients" : warehouseSection })} className="rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ New Item</button>
+              {warehouseSection !== "history" && (
+                <>
+                  <button onClick={() => setShowReceive(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Receive from Supplier</button>
+                  <button onClick={() => setEditingInvItem({ id: `INV-${Date.now()}`, name: "", sku: "", unit: "", onHand: 0, threshold: 10, cost: 0, supplier: "", lastIn: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0], category: warehouseSection === "packaging-materials" ? "packaging" : "dry", group: warehouseSection, accessRoles: [] })} className="rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ New Item</button>
+                </>
+              )}
             </div>
           </div>
 
@@ -248,7 +298,7 @@ export default function AdminDashboard({
               <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Low Stock</div><div className="text-[24px] font-semibold mt-1 text-red-600">{lowStock.filter(i => i.group === warehouseSection).length}</div></button>
               <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">No Stock</div><div className="text-[24px] font-semibold mt-1 text-zinc-800">{noStock.filter(i => i.group === warehouseSection).length}</div></button>
               <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-purple-300 hover:bg-purple-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expired</div><div className="text-[24px] font-semibold mt-1 text-purple-600">{expired.filter(i => i.group === warehouseSection).length}</div></button>
-              <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expiring ≤3 Days</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{expiring.filter(i => i.group === warehouseSection).length}</div></button>
+              <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expiring ≤30 Days</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{expiring.filter(i => i.group === warehouseSection).length}</div></button>
             </div>
           )}
 
@@ -266,6 +316,7 @@ export default function AdminDashboard({
                       <div key={tx.id} className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px]">
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${tx.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{tx.type}</span>
                         <span className="font-medium text-zinc-900 min-w-[100px]">{tx.itemName}</span>
+                        {tx.group && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 capitalize">{tx.group.replace(/-/g, " ")}</span>}
                         <span className="text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{tx.type === "in" ? "+" : "-"}{tx.qty} {tx.unit}</span>
                         <span className="text-zinc-500">{tx.reference}</span>
                         {tx.target && <span className="text-zinc-500 capitalize">→ {tx.target}</span>}
@@ -297,7 +348,7 @@ export default function AdminDashboard({
                     const pct = Math.min(100, (item.onHand / item.threshold) * 100);
                     const isCritical = item.onHand < item.threshold;
                     const isExpired = item.expiryDate && item.expiryDate < todayStr;
-                    const isExpiring = item.expiryDate && item.expiryDate >= todayStr && new Date(item.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000;
+                    const isExpiring = item.expiryDate && item.expiryDate >= todayStr && new Date(item.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000;
                     return (
                       <div key={item.id} className="flex items-center gap-4 rounded-xl border border-zinc-100 px-4 py-3 hover:bg-zinc-50/60">
                         <div className="min-w-[160px]">
@@ -364,7 +415,7 @@ export default function AdminDashboard({
                           });
                           onUpdateInventory(newInv);
                           await db.upsertInventory(newInv).catch(console.error);
-                          const tx: StockTransaction = { id: `TX-${Date.now()}`, type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: `Released to Baker`, timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "baker" };
+                          const tx: StockTransaction = { id: `TX-${Date.now()}`, type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: `Released to Baker`, timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "baker", group: "ingredients" };
                           setTransactions(prev => [...prev, tx]);
                           await db.insertStockTransaction(tx).catch(console.error);
                         }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700">Release</button>
@@ -409,7 +460,7 @@ export default function AdminDashboard({
                           });
                           onUpdateInventory(newInv);
                           await db.upsertInventory(newInv).catch(console.error);
-                          const tx: StockTransaction = { id: `TX-${Date.now()}`, type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: `Released to Deco`, timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco" };
+                          const tx: StockTransaction = { id: `TX-${Date.now()}`, type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: `Released to Deco`, timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: "decoration-supplies" };
                           setTransactions(prev => [...prev, tx]);
                           await db.insertStockTransaction(tx).catch(console.error);
                         }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700">Release</button>
@@ -426,8 +477,7 @@ export default function AdminDashboard({
 
         {/* Receive Modal */}
         {showReceive && <ReceiveModal inventory={inventory} onUpdateInventory={onUpdateInventory} onTransaction={async (tx) => { setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); onAddAuditLog?.("STOCK_RECEIVED", `${tx.itemName} x${tx.qty} ${tx.unit} — ${tx.reference}`); }} onClose={() => setShowReceive(false)} />}
-        {showRelease && <ReleaseModal inventory={inventory} target={releaseTarget} onUpdateInventory={onUpdateInventory} onTransaction={async (tx) => { setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); onAddAuditLog?.("STOCK_RELEASED", `${tx.itemName} x${tx.qty} ${tx.unit} — ${tx.reference}`); }} onClose={() => setShowRelease(false)} />}
-        {editingInvItem && <EditInventoryModal item={editingInvItem} onSave={async (updated) => { try { const exists = inventory.some(i => i.id === updated.id); if (exists) { onUpdateInventory(inventory.map(i => i.id === updated.id ? updated : i)); onAddAuditLog?.("INVENTORY_EDITED", `${updated.name} (${updated.sku}) updated`); } else { onUpdateInventory([...inventory, updated]); onAddAuditLog?.("INVENTORY_ADDED", `${updated.name} (${updated.sku}) added to ${updated.group}`); } } catch (err) { console.error("Save inventory failed:", err); alert("Failed to save item"); } setEditingInvItem(null); }} onClose={() => setEditingInvItem(null)} />}
+        {editingInvItem && <EditInventoryModal item={editingInvItem} onSave={async (updated) => { try { const exists = inventory.some(i => i.id === updated.id); if (exists) { const old = inventory.find(i => i.id === updated.id); onUpdateInventory(inventory.map(i => i.id === updated.id ? updated : i)); onAddAuditLog?.("INVENTORY_EDITED", `${updated.name} (${updated.sku}) updated`); if (old && old.onHand !== updated.onHand) { const diff = updated.onHand - old.onHand; const tx: StockTransaction = { id: `STX-${Date.now()}`, type: diff > 0 ? "in" : "out", itemName: updated.name, itemId: updated.id, qty: Math.abs(diff), unit: updated.unit, reference: "Manual adjustment", timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), group: updated.group }; setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); } } else { onUpdateInventory([...inventory, updated]); onAddAuditLog?.("INVENTORY_ADDED", `${updated.name} (${updated.sku}) added to ${updated.group}`); } } catch (err) { console.error("Save inventory failed:", err); alert("Failed to save item"); } setEditingInvItem(null); }} onClose={() => setEditingInvItem(null)} />}
 
         {/* Toast Container */}
         {toast && (
@@ -437,13 +487,12 @@ export default function AdminDashboard({
                 <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-zinc-800 text-white text-[14px] font-bold">!</div>
                 <div className="flex-1 min-w-0 space-y-2">
                       {toast.sections.map((s, si) => {
-                    const tagClass = s.type === "no-stock" ? "bg-zinc-100 text-zinc-700 border-zinc-200" : s.type === "low-stock" ? "bg-red-50 text-red-700 border-red-200" : s.type === "expired" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-amber-50 text-amber-700 border-amber-200";
                     const labelClass = s.type === "no-stock" ? "text-zinc-700" : s.type === "low-stock" ? "text-red-700" : s.type === "expired" ? "text-purple-700" : "text-amber-700";
                     return (
                       <div key={si}>
-                        <div className={`text-[13px] font-semibold ${labelClass}`}>{s.items.length} {s.type === "no-stock" ? "out of stock" : s.type === "low-stock" ? "below threshold" : s.type === "expired" ? "expired" : "expiring within 3 days"}</div>
-                        <div className="mt-1 flex flex-wrap gap-1.5">{s.items.slice(0, 5).map((it, i) => (<span key={i} className={`rounded-full px-2.5 py-1 text-[12px] font-medium border ${tagClass}`}>{it.name}: {it.detail}</span>))}</div>
-                        {s.items.length > 5 && <div className="mt-0.5 text-[11px] text-zinc-400 font-medium">+{s.items.length - 5} more</div>}
+                        <div className={`text-[13px] font-semibold ${labelClass}`}>{s.items.length} {s.type === "no-stock" ? "out of stock" : s.type === "low-stock" ? "below threshold" : s.type === "expired" ? "expired" : "expiring within 30 days"}</div>
+                        <div className="mt-1.5 space-y-1">{s.items.slice(0, 5).map((it, i) => (<div key={i} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2"><span className="text-[12px] font-medium text-zinc-800 truncate">{it.name}</span><span className="text-[11px] text-zinc-500 shrink-0 ml-2">{it.detail}</span></div>))}</div>
+                        {s.items.length > 5 && <div className="mt-1 text-[11px] text-zinc-400 font-medium">+{s.items.length - 5} more</div>}
                       </div>
                     );
                   })}
@@ -533,11 +582,10 @@ export default function AdminDashboard({
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3 text-right">Branch 1</th><th className="px-4 py-3 text-right">Branch 2</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Assigned To</th><th className="px-4 py-3 text-right">Status</th><th className="px-4 py-3 w-10" /></tr></thead>
+              <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3 text-right">Cakes N Styles Gensan</th><th className="px-4 py-3 text-right">Shadrach's Bake & Brew</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Assigned To</th><th className="px-4 py-3 text-right">Status</th><th className="px-4 py-3 w-10" /></tr></thead>
               <tbody className="divide-y divide-zinc-100 text-[13px]">
                 {(() => {
-                  const todayItems = dosItems.filter(i => i.status !== "scheduled");
-                  const filtered = dosRoleFilter === "all" ? todayItems : todayItems.filter(item => {
+                  const filtered = dosRoleFilter === "all" ? todayDOS : todayDOS.filter(item => {
                     const itemKey = item.id.replace("DOS-", "");
                     return production.some(t => t.id.includes(itemKey) && t.assignedTo === dosRoleFilter);
                   });
@@ -652,7 +700,7 @@ export default function AdminDashboard({
                         <div className="overflow-x-auto">
                           <table className="w-full text-[13px]">
                             <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                              <tr><th className="px-4 py-2.5">Product</th><th className="px-4 py-2.5 text-right">Qty</th><th className="px-4 py-2.5 text-right">Branch 1</th><th className="px-4 py-2.5 text-right">Branch 2</th><th className="px-4 py-2.5">Priority</th><th className="px-4 py-2.5 text-right">Status</th></tr>
+                              <tr><th className="px-4 py-2.5">Product</th><th className="px-4 py-2.5 text-right">Qty</th><th className="px-4 py-2.5 text-right">Cakes N Styles Gensan</th><th className="px-4 py-2.5 text-right">Shadrach's Bake & Brew</th><th className="px-4 py-2.5">Priority</th><th className="px-4 py-2.5 text-right">Status</th></tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-100">
                               {group.items.map(item => (
@@ -693,18 +741,18 @@ export default function AdminDashboard({
             onSave={(items, tasks) => { onCreateDOS(items, tasks); setScheduledAddDate(null); }}
             productCatalog={productCatalog}
             onAddToCatalog={(name) => { onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]); db.addToCatalog(name).catch(console.error); }}
-            hasTodayItems={dosItems.some(i => i.status !== "scheduled")}
+            hasTodayItems={todayDOS.length > 0}
             presetDate={scheduledAddDate}
             scheduledDates={new Set(dosItems.filter(i => i.status === "scheduled" && i.scheduledDate).map(i => i.scheduledDate!))}
           />
-        )}
-        {todayAddOpen && (
-          <DOSBuilderModal
-            onClose={() => setTodayAddOpen(false)}
-            onSave={(items, tasks) => { onCreateDOS(items, tasks); setTodayAddOpen(false); }}
-            productCatalog={productCatalog}
-            onAddToCatalog={(name) => { onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]); db.addToCatalog(name).catch(console.error); }}
-            hasTodayItems={dosItems.some(i => i.status !== "scheduled")}
+)}
+{todayAddOpen && (
+  <DOSBuilderModal
+    onClose={() => setTodayAddOpen(false)}
+    onSave={(items, tasks) => { onCreateDOS(items, tasks); setTodayAddOpen(false); }}
+    productCatalog={productCatalog}
+    onAddToCatalog={(name) => { onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]); db.addToCatalog(name).catch(console.error); }}
+    hasTodayItems={todayDOS.length > 0}
             presetDate={new Date().toISOString().split("T")[0]}
             scheduledDates={new Set(dosItems.filter(i => i.status === "scheduled" && i.scheduledDate).map(i => i.scheduledDate!))}
           />
@@ -715,7 +763,7 @@ export default function AdminDashboard({
 
   /* ── Production Tab (Enhanced) ── */
   if (activeTab === "production") {
-    const todayProducts = new Set(dosItems.filter(d => d.status !== "scheduled").map(d => d.product));
+    const todayProducts = new Set(todayDOS.map(d => d.product));
     const todayTasks = production.filter(t => todayProducts.has(t.product));
     const bakerTasks = todayTasks.filter(t => t.assignedTo === "baker");
     const decoTasks = todayTasks.filter(t => t.assignedTo === "deco");
@@ -728,11 +776,10 @@ export default function AdminDashboard({
         <div className="flex items-center gap-3"><div><h1 className="text-[24px] font-semibold">Production Control</h1><p className="mt-1 text-[13px] text-zinc-600">Track all tasks across Baker, Deco, and Kitchen.</p></div><div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /><span className="text-[11px] font-medium text-emerald-700">Live</span></div></div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Total Tasks</div><div className="text-[20px] font-semibold mt-0.5">{todayTasks.length}</div></div>
           <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">In Progress</div><div className="text-[20px] font-semibold mt-0.5 text-amber-600">{todayTasks.filter(t => t.status === "in-progress").length}</div></div>
           <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Completed</div><div className="text-[20px] font-semibold mt-0.5 text-emerald-600">{todayTasks.filter(t => t.status === "completed").length}</div></div>
-          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Pending Start</div><div className="text-[20px] font-semibold mt-0.5 text-zinc-600">{todayTasks.filter(t => t.status === "pending").length}</div></div>
         </div>
 
         {/* Department Lanes */}
@@ -806,7 +853,10 @@ export default function AdminDashboard({
 
     return (
       <div className="space-y-5">
-        <div><h1 className="text-[24px] font-semibold">Delivery Control</h1><p className="mt-1 text-[13px] text-zinc-600">Validate Kitchen reports and post inventory to branches.</p></div>
+        <div className="flex items-center justify-between">
+          <div><h1 className="text-[24px] font-semibold">Delivery Control</h1><p className="mt-1 text-[13px] text-zinc-600">Validate Kitchen reports and post inventory to branches.</p></div>
+          <button onClick={() => { setNewDeliveryBranch("Cakes N Styles Gensan"); setNewDeliveryCustom(""); setNewDeliveryItems([{ product: "", qty: 1 }]); setNewDeliveryEta(""); setNewDeliveryAddress(""); setNewDeliveryContact(""); setNewDeliveryRider(""); setNewDeliveryPayment("unpaid"); setNewDeliveryNotes(""); setShowAddDelivery(true); db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Delivery</button>
+        </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -887,6 +937,370 @@ export default function AdminDashboard({
             </div>
           </div>
         )}
+
+        {/* Add Delivery Modal */}
+        {showAddDelivery && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddDelivery(false)}>
+            <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <h2 className="text-[18px] font-semibold mb-1">Add New Delivery</h2>
+              <p className="text-[13px] text-zinc-500 mb-5">Create a delivery to any destination.</p>
+
+              {/* 1. Destination */}
+              <div className="mb-4">
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Destination</label>
+                <select value={newDeliveryBranch} onChange={e => setNewDeliveryBranch(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+                  <option value="Cakes N Styles Gensan">Cakes N Styles Gensan</option>
+                  <option value="Shadrach's Bake & Brew">Shadrach's Bake & Brew</option>
+                  <option value="__custom__">Custom...</option>
+                </select>
+                {newDeliveryBranch === "__custom__" && (
+                  <input autoFocus value={newDeliveryCustom} onChange={e => setNewDeliveryCustom(e.target.value)} placeholder="Enter destination name" className="mt-2 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+                )}
+              </div>
+
+              {/* 2. Delivery Time */}
+              <div className="mb-4">
+                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Delivery Time</label>
+                <div className="flex gap-2">
+                  <input type="time" value={newDeliveryEta} onChange={e => setNewDeliveryEta(e.target.value)} className="flex-1 rounded-xl border border-zinc-200 px-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+                  <div className="flex gap-1.5">
+                    {(["+30m", "+1h", "+2h", "+3h"] as const).map(preset => {
+                      const mins = preset === "+30m" ? 30 : parseInt(preset.replace("+", "").replace("h", "")) * 60;
+                      const d = new Date(Date.now() + mins * 60 * 1000);
+                      const hh = String(d.getHours()).padStart(2, "0");
+                      const mm = String(d.getMinutes()).padStart(2, "0");
+                      return (
+                        <button key={preset} type="button" onClick={() => setNewDeliveryEta(`${hh}:${mm}`)} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300 transition-all">{preset}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Delivery Details */}
+              <div className="mb-4 rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
+                <div className="text-[12px] font-semibold text-zinc-700 mb-3">Delivery Details</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-medium text-zinc-500 mb-1 block">Delivery Address</label>
+                    <input value={newDeliveryAddress} onChange={e => setNewDeliveryAddress(e.target.value)} placeholder="Full address" className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-zinc-500 mb-1 block">Contact Number</label>
+                    <input value={newDeliveryContact} onChange={e => setNewDeliveryContact(e.target.value)} placeholder="09XXXXXXXXX" className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-zinc-500 mb-1 block">Assigned Rider</label>
+                    <input value={newDeliveryRider} onChange={e => setNewDeliveryRider(e.target.value)} placeholder="Rider name" className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-zinc-500 mb-1 block">Payment Status</label>
+                    <select value={newDeliveryPayment} onChange={e => setNewDeliveryPayment(e.target.value as typeof newDeliveryPayment)} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400">
+                      <option value="unpaid">Unpaid</option>
+                      <option value="paid">Paid</option>
+                      <option value="cod">Cash on Delivery</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="text-[11px] font-medium text-zinc-500 mb-1 block">Notes / Instructions</label>
+                  <textarea value={newDeliveryNotes} onChange={e => setNewDeliveryNotes(e.target.value)} placeholder="Special instructions for this delivery..." rows={2} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400 resize-none" />
+                </div>
+              </div>
+
+              {/* Selected Items - Above Role Cards */}
+              {newDeliveryItems.filter(i => i.product.trim()).length > 0 && (
+                <div className="mb-4">
+                  <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5">Selected Items ({newDeliveryItems.filter(i => i.product.trim()).length})</div>
+                  <div className="space-y-1.5 max-h-[120px] overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50/50 p-2">
+                    {newDeliveryItems.filter(i => i.product.trim()).map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2 rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                        <span className="text-[13px] font-medium text-zinc-900 flex-1">{item.product}</span>
+                        <input type="number" min={1} value={item.qty} onChange={e => { const updated = [...newDeliveryItems]; const ri = updated.findIndex(i => i.product === item.product); if (ri >= 0) updated[ri] = { ...updated[ri], qty: parseInt(e.target.value) || 1 }; setNewDeliveryItems(updated); }} className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-[12px] text-center focus:outline-none focus:border-zinc-400 bg-white" />
+                        <button onClick={() => setNewDeliveryItems(prev => prev.filter(i => i.product !== item.product))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Products by Role - Card Selector */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[12px] font-medium text-zinc-700">Select Role to View Freezer</label>
+                  <button onClick={() => db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error)} className="text-[11px] text-blue-600 hover:text-blue-800 font-medium">↻ Refresh</button>
+                </div>
+
+                {/* Role Cards - Single Select */}
+                <div className="flex items-center justify-center gap-3 mb-3">
+                  {(["baker", "deco", "pastry"] as const).map(producer => {
+                    const producerItems = freezerItems.filter(i => i.status === "stored" && i.producedBy === producer);
+                    const producerLabel = producer === "baker" ? "Baker" : producer === "deco" ? "Deco" : "Pastry";
+                    const producerIcon = producer === "baker" ? "◆" : producer === "deco" ? "◆" : "◆";
+                    const isActive = expandedProducers.has(producer);
+                    const selectedCount = newDeliveryItems.filter(i => producerItems.some(p => p.productName === i.product)).length;
+                    return (
+                      <button key={producer} onClick={() => setExpandedProducers(prev => { const n = new Set<string>(); if (!prev.has(producer)) n.add(producer); return n; })} className={`flex flex-col items-center gap-1.5 rounded-2xl px-5 py-3 text-[13px] font-medium border-2 transition-all ${isActive ? "bg-zinc-900 border-zinc-900 text-white shadow-md scale-105" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400 hover:shadow-sm"}`}>
+                        <span className={`text-[18px] ${isActive ? "text-white" : "text-zinc-400"}`}>{producerIcon}</span>
+                        <span>{producerLabel}</span>
+                        <span className={`text-[10px] ${isActive ? "text-zinc-300" : "text-zinc-400"}`}>{producerItems.length} items</span>
+                        {selectedCount > 0 && <span className="rounded-full bg-emerald-500 text-white px-1.5 py-0.5 text-[9px] font-bold">{selectedCount}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Show selected role's products with search */}
+                {(["baker", "deco", "pastry"] as const).map(producer => {
+                  if (!expandedProducers.has(producer)) return null;
+                  const searchKey = `search_${producer}`;
+                  const searchVal = deliverySearch[searchKey] || "";
+                  const producerItems = freezerItems.filter(i => i.status === "stored" && i.producedBy === producer && (!searchVal || i.productName.toLowerCase().includes(searchVal.toLowerCase())));
+                  const producerLabel = producer === "baker" ? "Baker" : producer === "deco" ? "Deco / Free-Mix" : "Pastry";
+                  return (
+                    <div key={producer} className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-3 mb-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[12px] font-semibold text-zinc-700">{producerLabel} Freezer</div>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-zinc-400 text-[11px]">⌕</span>
+                          <input value={searchVal} onChange={e => setDeliverySearch(prev => ({ ...prev, [searchKey]: e.target.value }))} placeholder={`Search ${producerLabel.toLowerCase()}...`} className="w-[180px] rounded-lg border border-zinc-200 bg-white pl-7 pr-2 py-1.5 text-[11px] focus:outline-none focus:border-zinc-400" />
+                        </div>
+                      </div>
+                      {producerItems.length === 0 ? (
+                        <p className="text-[12px] text-zinc-400 py-2 text-center">No products found.</p>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {producerItems.map(item => {
+                            const isSelected = newDeliveryItems.some(i => i.product === item.productName);
+                            return (
+                              <div key={item.id} className={`flex items-center justify-between rounded-lg border px-3 py-2 transition-all cursor-pointer ${isSelected ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 bg-white hover:border-zinc-400"}`} onClick={() => {
+                                if (isSelected) {
+                                  setNewDeliveryItems(prev => prev.filter(i => i.product !== item.productName));
+                                } else {
+                                  setNewDeliveryItems(prev => [...prev.filter(i => i.product.trim()), { product: item.productName, qty: Math.min(item.qty, 10) }]);
+                                }
+                              }}>
+                                <span className={`text-[12px] font-medium ${isSelected ? "text-white" : "text-zinc-900"}`}>{item.productName}</span>
+                                <span className={`text-[10px] ${isSelected ? "text-zinc-300" : "text-zinc-500"}`}>{item.qty} {item.unit}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100">
+                <button onClick={() => setShowAddDelivery(false)} className="rounded-xl border border-zinc-200 px-4 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                <button onClick={() => {
+                  const validItems = newDeliveryItems.filter(i => i.product.trim());
+                  if (validItems.length === 0) return;
+                  const destination = newDeliveryBranch === "__custom__" ? newDeliveryCustom.trim() : newDeliveryBranch;
+                  if (!destination) return;
+                  const newDelivery: Delivery = {
+                    id: `DLV-${Date.now()}`,
+                    branch: destination,
+                    address: newDeliveryAddress.trim(),
+                    contactNumber: newDeliveryContact.trim(),
+                    assignedRider: newDeliveryRider.trim(),
+                    items: validItems.map(i => {
+                      const freezer = freezerItems.find(f => f.productName === i.product);
+                      return { product: i.product, qty: i.qty, source: freezer?.producedBy || "" };
+                    }),
+                    status: "preparing",
+                    eta: newDeliveryEta || new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true }),
+                    paymentStatus: newDeliveryPayment,
+                    notes: newDeliveryNotes.trim(),
+                  };
+                  const updated = [...deliveries, newDelivery];
+                  onUpdateDeliveries?.(updated);
+                  db.upsertDeliveries(updated).catch(console.error);
+                  // Deduct from freezer, log history, remove at 0
+                  const updatedFreezer = [...freezerItems];
+                  const historyEntries: FreezerHistory[] = [];
+                  validItems.forEach(item => {
+                    const idx = updatedFreezer.findIndex(f => f.productName === item.product && f.status === "stored");
+                    if (idx >= 0) {
+                      const remaining = updatedFreezer[idx].qty - item.qty;
+                      historyEntries.push({
+                        id: `FRZH-${Date.now()}-${idx}`,
+                        productName: item.product,
+                        producedBy: updatedFreezer[idx].producedBy,
+                        qtyChanged: -item.qty,
+                        action: remaining <= 0 ? "dispatched (removed)" : "dispatched",
+                        reference: newDelivery.id,
+                        timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+                      });
+                      if (remaining <= 0) {
+                        updatedFreezer.splice(idx, 1);
+                      } else {
+                        updatedFreezer[idx] = { ...updatedFreezer[idx], qty: remaining };
+                      }
+                    }
+                  });
+                  onUpdateFreezer?.(updatedFreezer);
+                  db.upsertFreezerItems(updatedFreezer).catch(console.error);
+                  historyEntries.forEach(h => db.insertFreezerHistory(h).catch(console.error));
+                  onAddAuditLog?.("DELIVERY_ADDED", `${newDelivery.id} — ${destination} (${validItems.length} items)`);
+                  setShowAddDelivery(false);
+                }} className="rounded-xl bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">Create Delivery</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ── Pricing Tab ── */
+  if (activeTab === "pricing") {
+    const calcEstimatedCost = (productName: string) => {
+      const recipe = recipes.find(r => r.productName === productName);
+      if (!recipe) return 0;
+      const allItems = [...recipe.ingredients, ...recipe.packagingMaterials, ...recipe.decorationSupplies];
+      return allItems.reduce((sum, ing) => {
+        const inv = inventory.find(i => i.id === ing.inventoryId);
+        return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+      }, 0);
+    };
+
+    const catalogWithRecipes = productCatalog.map(name => {
+      const existing = productPricing.find(p => p.productName === name);
+      const cost = calcEstimatedCost(name);
+      if (existing) return { ...existing, estimatedCost: cost };
+      return {
+        id: `PRC-${name.replace(/\s+/g, "-").toLowerCase()}`,
+        productName: name,
+        category: recipes.find(r => r.productName === name) ? "Bakery" : "",
+        estimatedCost: cost,
+        sellingPrice: 0,
+        wholesalePrice: 0,
+        profitMargin: 0,
+        status: "draft" as const,
+        variants: [],
+      };
+    });
+
+    const allPricing = catalogWithRecipes;
+    const filtered = allPricing.filter(p => {
+      if (pricingFilter !== "all" && p.status !== pricingFilter) return false;
+      if (pricingSearch && !p.productName.toLowerCase().includes(pricingSearch.toLowerCase())) return false;
+      return true;
+    });
+
+    const totalProducts = allPricing.length;
+    const activeProducts = allPricing.filter(p => p.status === "active").length;
+    const avgMargin = allPricing.filter(p => p.sellingPrice > 0).reduce((s, p) => s + p.profitMargin, 0) / (allPricing.filter(p => p.sellingPrice > 0).length || 1);
+
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div><h1 className="text-[24px] font-semibold">Product Pricing</h1><p className="mt-1 text-[13px] text-zinc-600">Set selling prices, wholesale rates, and manage product variants.</p></div>
+          <button onClick={() => { setEditingPricing({ id: `PRC-${Date.now()}`, productName: "", category: "", estimatedCost: 0, sellingPrice: 0, wholesalePrice: 0, profitMargin: 0, status: "draft", variants: [] }); setShowPricingModal(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Product</button>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Products</div><div className="text-[24px] font-semibold mt-1">{totalProducts}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Active</div><div className="text-[24px] font-semibold mt-1 text-emerald-600">{activeProducts}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Drafts</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{allPricing.filter(p => p.status === "draft").length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Avg Margin</div><div className="text-[24px] font-semibold mt-1 text-blue-600">{avgMargin.toFixed(1)}%</div></div>
+        </div>
+
+        {/* Search & Filter */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
+            <input value={pricingSearch} onChange={e => setPricingSearch(e.target.value)} placeholder="Search products..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+          </div>
+          <div className="flex gap-1.5">
+            {(["all", "active", "draft", "archived"] as const).map(f => (
+              <button key={f} onClick={() => setPricingFilter(f)} className={`rounded-lg px-3 py-2 text-[12px] font-medium transition-all ${pricingFilter === f ? "bg-zinc-900 text-white" : "border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"}`}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Pricing Table */}
+        <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-zinc-50 border-b border-zinc-100">
+                <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                  <th className="px-5 py-3">Product</th>
+                  <th className="px-5 py-3">Category</th>
+                  <th className="px-5 py-3 text-right">Est. Cost</th>
+                  <th className="px-5 py-3 text-right">Selling Price</th>
+                  <th className="px-5 py-3 text-right">Wholesale</th>
+                  <th className="px-5 py-3 text-right">Margin</th>
+                  <th className="px-5 py-3 text-center">Status</th>
+                  <th className="px-5 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-50">
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-[13px] text-zinc-400">No products found.</td></tr>
+                ) : filtered.map(p => {
+                  const margin = p.sellingPrice > 0 ? ((p.sellingPrice - p.estimatedCost) / p.sellingPrice * 100) : 0;
+                  return (
+                    <tr key={p.id} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <div className="text-[13px] font-medium text-zinc-900">{p.productName}</div>
+                        {p.variants.length > 0 && <div className="text-[11px] text-zinc-400 mt-0.5">{p.variants.length} variant{p.variants.length > 1 ? "s" : ""}</div>}
+                      </td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-600">{p.category || "—"}</td>
+                      <td className="px-5 py-3.5 text-[13px] text-zinc-700 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{p.estimatedCost.toFixed(2)}</td>
+                      <td className="px-5 py-3.5 text-[13px] font-medium text-zinc-900 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{p.sellingPrice > 0 ? `₱${p.sellingPrice.toFixed(2)}` : "—"}</td>
+                      <td className="px-5 py-3.5 text-[13px] text-zinc-700 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{p.wholesalePrice > 0 ? `₱${p.wholesalePrice.toFixed(2)}` : "—"}</td>
+                      <td className="px-5 py-3.5 text-right">
+                        {p.sellingPrice > 0 ? (
+                          <span className={`text-[12px] font-medium ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`}>{margin.toFixed(1)}%</span>
+                        ) : <span className="text-[12px] text-zinc-400">—</span>}
+                      </td>
+                      <td className="px-5 py-3.5 text-center">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-medium uppercase border ${p.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : p.status === "draft" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-zinc-100 text-zinc-500 border-zinc-200"}`}>{p.status}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <button onClick={() => { setEditingPricing(p); setShowPricingModal(true); }} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50 transition-all">Edit</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Pricing Modal */}
+        {showPricingModal && editingPricing && (
+          <PricingModal
+            item={editingPricing}
+            recipes={recipes}
+            inventory={inventory}
+            productCatalog={productCatalog}
+            onSave={(updated) => {
+              const exists = productPricing.find(p => p.id === updated.id);
+              const next = exists ? productPricing.map(p => p.id === updated.id ? updated : p) : [...productPricing, updated];
+              onUpdateProductPricing(next);
+              db.upsertProductPricing(next).catch(console.error);
+              if (!exists && updated.productName && !productCatalog.includes(updated.productName)) {
+                onUpdateProductCatalog(prev => [...prev, updated.productName]);
+                db.addToCatalog(updated.productName).catch(console.error);
+              }
+              onAddAuditLog?.("PRICING_UPDATED", `${updated.productName} — ₱${updated.sellingPrice.toFixed(2)} selling, ₱${updated.wholesalePrice.toFixed(2)} wholesale`);
+              setShowPricingModal(false);
+            }}
+            onDelete={(id) => {
+              const next = productPricing.filter(p => p.id !== id);
+              onUpdateProductPricing(next);
+              db.deleteProductPricing(id).catch(console.error);
+              setShowPricingModal(false);
+            }}
+            onClose={() => setShowPricingModal(false)}
+          />
+        )}
       </div>
     );
   }
@@ -906,7 +1320,7 @@ export default function AdminDashboard({
     rows.push([]);
 
     rows.push(["=== DOS ITEMS ===", "", "", ""]);
-    rows.push(["ID", "Product", "Qty", "Branch 1", "Branch 2", "Priority", "Status"]);
+    rows.push(["ID", "Product", "Qty", "Cakes N Styles Gensan", "Shadrach's Bake & Brew", "Priority", "Status"]);
     dosItems.forEach(d => rows.push([d.id, d.product, String(d.qty), String(d.branch1), String(d.branch2), d.priority, d.status]));
     rows.push([]);
 
@@ -975,17 +1389,17 @@ export default function AdminDashboard({
             <div><h2 className="text-[16px] font-semibold text-zinc-900" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • May 25</h2><p className="text-[12px] text-zinc-500">Daily Order Sales — auto-generates production tasks</p></div>
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 border border-amber-200">LOCKED</span>
-              <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white">{dosItems.filter(i => i.status !== "scheduled").length} items</span>
+              <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white">{todayDOS.length} items</span>
             </div>
           </div>
           <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-200">
             <div className="overflow-x-auto">
               <div className="min-w-[500px]">
                 <div className="grid grid-cols-12 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                  <div className="col-span-3">Product</div><div className="col-span-1 text-right">Qty</div><div className="col-span-2 text-right">Branch 1</div><div className="col-span-2 text-right">Branch 2</div><div className="col-span-2 text-center">Assigned</div><div className="col-span-1 text-right">Pri</div><div className="col-span-1 text-right">Status</div>
+                  <div className="col-span-3">Product</div><div className="col-span-1 text-right">Qty</div><div className="col-span-2 text-right">Cakes N Styles Gensan</div><div className="col-span-2 text-right">Shadrach's Bake & Brew</div><div className="col-span-2 text-center">Assigned</div><div className="col-span-1 text-right">Pri</div><div className="col-span-1 text-right">Status</div>
                 </div>
                 <div className="divide-y divide-zinc-100">
-                  {dosItems.filter(i => i.status !== "scheduled").map(item => {
+                  {todayDOS.map(item => {
                     const tasks = production.filter(t => t.product === item.product);
                     const roles = [...new Set(tasks.map(t => t.assignedTo))];
                     return (
@@ -1026,7 +1440,7 @@ export default function AdminDashboard({
           </div>
           <div className="mt-4 pt-3 border-t border-[#E8E0D5]">
             <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2">Task Distribution</div>
-            {(() => { const todayProds = new Set(dosItems.filter(d => d.status !== "scheduled").map(d => d.product)); const totalTasks = production.filter(t => todayProds.has(t.product)).length; return <div className="space-y-1.5">
+            {(() => { const todayProds = new Set(todayDOS.map(d => d.product)); const totalTasks = production.filter(t => todayProds.has(t.product)).length; return <div className="space-y-1.5">
               {[
                 { label: "Baker", count: production.filter(t => t.assignedTo === "baker" && todayProds.has(t.product)).length, color: "bg-stone-500" },
                 { label: "Deco / Free-Mix", count: production.filter(t => t.assignedTo === "deco" && todayProds.has(t.product)).length, color: "bg-rose-500" },
@@ -1062,7 +1476,7 @@ export default function AdminDashboard({
             const noStock = inventory.filter(i => i.onHand === 0);
             const lowStock = inventory.filter(i => i.onHand > 0 && i.onHand < i.threshold);
             const expired = inventory.filter(i => i.expiryDate && i.expiryDate < todayStr);
-            const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000);
+            const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000);
             const sections: { type: string; label: string; items: typeof inventory; icon: string; color: string; border: string; bg: string; iconBg: string }[] = [];
             if (noStock.length) sections.push({ type: "out", label: "Out of Stock", items: noStock, icon: "0", color: "text-zinc-700", border: "border-zinc-200", bg: "bg-zinc-50/80", iconBg: "bg-zinc-500" });
             if (lowStock.length) sections.push({ type: "low", label: "Low Stock", items: lowStock, icon: "!", color: "text-red-700", border: "border-red-200", bg: "bg-red-50/80", iconBg: "bg-red-600" });
@@ -1081,7 +1495,7 @@ export default function AdminDashboard({
                     {s.type === "out" ? "0 on hand — reorder needed"
                     : s.type === "low" ? `${item.onHand} / ${item.threshold} ${item.unit} — below threshold`
                     : s.type === "exp" ? `Expired ${item.expiryDate} — dispose or mark as waste`
-                    : `Expires ${item.expiryDate} — use within 3 days`}
+                    : `Expires ${item.expiryDate} — use within 30 days`}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
@@ -1273,8 +1687,8 @@ function EditDOSModal({ item, onClose, onSave }: { item: DOSItem; onClose: () =>
           <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Product Name</label><input required value={product} onChange={e => setProduct(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" /></div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Total</label><input readOnly value={qty} className="mt-1 w-full rounded-xl border border-zinc-100 bg-zinc-50 px-3.5 py-2.5 text-[13px] text-zinc-500 outline-none" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Branch 1</label><input required type="number" min="0" value={branch1} onChange={e => { const b1 = Number(e.target.value); setBranch1(b1); setQty(b1 + branch2); }} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Branch 2</label><input required type="number" min="0" value={branch2} onChange={e => { const b2 = Number(e.target.value); setBranch2(b2); setQty(branch1 + b2); }} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cakes N Styles Gensan</label><input required type="number" min="0" value={branch1} onChange={e => { const b1 = Number(e.target.value); setBranch1(b1); setQty(b1 + branch2); }} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Shadrach's Bake & Brew</label><input required type="number" min="0" value={branch2} onChange={e => { const b2 = Number(e.target.value); setBranch2(b2); setQty(branch1 + b2); }} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
           </div>
           <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Priority</label><select value={priority} onChange={e => setPriority(e.target.value as typeof priority)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400"><option value="HIGH">HIGH</option><option value="MEDIUM">MEDIUM</option><option value="LOW">LOW</option></select></div>
           {isScheduled && (
@@ -1282,6 +1696,170 @@ function EditDOSModal({ item, onClose, onSave }: { item: DOSItem; onClose: () =>
           )}
           <div className="flex gap-2 pt-1"><button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button><button type="submit" className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">Save Changes</button></div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function PricingModal({ item, recipes, inventory, productCatalog, onSave, onDelete, onClose }: {
+  item: ProductPricing;
+  recipes: ProductRecipe[];
+  inventory: InventoryItem[];
+  productCatalog: string[];
+  onSave: (item: ProductPricing) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+}) {
+  const isNew = !item.sellingPrice && !item.wholesalePrice && !item.category && !item.variants.length;
+  const [productName, setProductName] = useState(item.productName);
+  const [sellingPrice, setSellingPrice] = useState(String(item.sellingPrice || ""));
+  const [wholesalePrice, setWholesalePrice] = useState(String(item.wholesalePrice || ""));
+  const [status, setStatus] = useState<"active" | "draft" | "archived">(item.status);
+  const [category, setCategory] = useState(item.category);
+  const [variants, setVariants] = useState(item.variants || []);
+
+  const recipe = recipes.find(r => r.productName === productName);
+  const allIngredients = recipe ? [...recipe.ingredients, ...recipe.packagingMaterials, ...recipe.decorationSupplies] : [];
+  const estCost = allIngredients.reduce((sum, ing) => {
+    const inv = inventory.find(i => i.id === ing.inventoryId);
+    return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+  }, 0);
+  const sp = Number(sellingPrice) || 0;
+  const margin = sp > 0 ? ((sp - estCost) / sp * 100) : 0;
+
+  const handleSave = () => {
+    if (!productName.trim()) return;
+    onSave({
+      ...item,
+      productName: productName.trim(),
+      category,
+      estimatedCost: estCost,
+      sellingPrice: sp,
+      wholesalePrice: Number(wholesalePrice) || 0,
+      profitMargin: margin,
+      status,
+      variants,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <div><h2 className="text-[18px] font-semibold">{isNew ? "Add Product" : "Edit Pricing"}</h2><p className="text-[13px] text-zinc-500">{isNew ? "Set pricing for a new product" : item.productName}</p></div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600">✕</button>
+        </div>
+
+        {/* Product Name */}
+        {isNew && (
+          <div className="mb-5">
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Select Product</label>
+            <select value={productName} onChange={e => setProductName(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+              <option value="">Choose a product...</option>
+              {productCatalog.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Cost Breakdown */}
+        <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4 mb-5">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-3">Estimated Production Cost</div>
+          {allIngredients.length === 0 ? (
+            <p className="text-[12px] text-zinc-400">No recipe found for this product. Add a recipe to auto-calculate cost.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {allIngredients.map((ing, i) => {
+                const inv = inventory.find(iv => iv.id === ing.inventoryId);
+                const lineCost = inv ? inv.cost * ing.qtyPerBatch : 0;
+                return (
+                  <div key={i} className="flex items-center justify-between text-[12px]">
+                    <span className="text-zinc-600">{ing.name} <span className="text-zinc-400">({ing.qtyPerBatch} {ing.unit})</span></span>
+                    <span className="text-zinc-700" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{lineCost.toFixed(2)}</span>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between text-[13px] font-semibold border-t border-zinc-200 pt-2 mt-2">
+                <span className="text-zinc-800">Total Est. Cost</span>
+                <span className="text-zinc-900" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{estCost.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Fields */}
+        <div className="grid grid-cols-2 gap-4 mb-5">
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Category</label>
+            <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Bakery" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value as typeof status)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+              <option value="active">Active</option>
+              <option value="draft">Draft</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Selling Price (₱)</label>
+            <input type="number" min="0" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Wholesale Price (₱)</label>
+            <input type="number" min="0" step="0.01" value={wholesalePrice} onChange={e => setWholesalePrice(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
+          </div>
+        </div>
+
+        {/* Profit Summary */}
+        <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4 mb-5">
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500">Est. Cost</div>
+              <div className="text-[16px] font-semibold text-zinc-700 mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{estCost.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500">Profit</div>
+              <div className={`text-[16px] font-semibold mt-0.5 ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{sp > 0 ? `₱${(sp - estCost).toFixed(2)}` : "—"}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500">Margin</div>
+              <div className={`text-[16px] font-semibold mt-0.5 ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{sp > 0 ? `${margin.toFixed(1)}%` : "—"}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Variants */}
+        <div className="mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Size Variants</label>
+            <button onClick={() => setVariants(prev => [...prev, { id: `VAR-${Date.now()}`, size: "", sellingPrice: 0, wholesalePrice: 0 }])} className="text-[12px] text-zinc-500 hover:text-zinc-800 font-medium">+ Add Variant</button>
+          </div>
+          {variants.length === 0 ? (
+            <p className="text-[12px] text-zinc-400">No variants. Click "+ Add Variant" for size-based pricing.</p>
+          ) : (
+            <div className="space-y-2">
+              {variants.map((v, i) => (
+                <div key={v.id} className="flex items-center gap-2">
+                  <input value={v.size} onChange={e => { const u = [...variants]; u[i] = { ...u[i], size: e.target.value }; setVariants(u); }} placeholder="Size (e.g. Small, Regular)" className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] outline-none focus:border-zinc-400" />
+                  <input type="number" min="0" step="0.01" value={v.sellingPrice || ""} onChange={e => { const u = [...variants]; u[i] = { ...u[i], sellingPrice: Number(e.target.value) || 0 }; setVariants(u); }} placeholder="Selling" className="w-24 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] text-center outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
+                  <input type="number" min="0" step="0.01" value={v.wholesalePrice || ""} onChange={e => { const u = [...variants]; u[i] = { ...u[i], wholesalePrice: Number(e.target.value) || 0 }; setVariants(u); }} placeholder="Wholesale" className="w-24 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] text-center outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
+                  <button onClick={() => setVariants(prev => prev.filter((_, idx) => idx !== i))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between pt-2">
+          <button onClick={() => onDelete(item.id)} className="rounded-xl border border-red-200 px-4 py-2 text-[13px] font-medium text-red-600 hover:bg-red-50 transition-all">Delete</button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="rounded-xl border border-zinc-200 px-4 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Cancel</button>
+            <button onClick={handleSave} className="rounded-xl bg-zinc-900 px-5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">Save Pricing</button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1310,6 +1888,7 @@ function ReceiveModal({ inventory, onUpdateInventory, onTransaction, onClose }: 
       unit: item.unit,
       reference: `Supplier ${reference}`,
       timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+      group: item.group,
     });
     onClose();
   };
@@ -1342,58 +1921,6 @@ function ReceiveModal({ inventory, onUpdateInventory, onTransaction, onClose }: 
   );
 }
 
-function ReleaseModal({ inventory, target, onUpdateInventory, onTransaction, onClose }: {
-  inventory: InventoryItem[]; target: "baker" | "deco"; onUpdateInventory: (cb: InventoryItem[] | ((prev: InventoryItem[]) => InventoryItem[])) => void;
-  onTransaction: (tx: StockTransaction) => void; onClose: () => void;
-}) {
-  const [selectedItem, setSelectedItem] = useState(inventory[0]?.id || "");
-  const [qty, setQty] = useState("");
-  const selected = inventory.find(i => i.id === selectedItem);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const item = inventory.find(i => i.id === selectedItem);
-    if (!item || !qty || Number(qty) > item.onHand) return;
-    const updated = inventory.map(i => i.id === selectedItem ? { ...i, onHand: i.onHand - Number(qty) } : i);
-    onUpdateInventory(updated);
-    await db.upsertInventory(updated).catch(console.error);
-    onTransaction({
-      id: `STX-${Date.now()}`,
-      type: "out",
-      itemName: item.name,
-      itemId: item.id,
-      qty: Number(qty),
-      unit: item.unit,
-      reference: `Release to ${target}`,
-      timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
-      target,
-    });
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-[480px] rounded-[28px] border border-[#E8E0D5] bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
-          <div><h3 className="text-[16px] font-semibold text-zinc-900">Release to {target === "baker" ? "Baker" : "Deco"}</h3><p className="mt-0.5 text-[12px] text-zinc-500">Release stock to {target === "baker" ? "bakery" : "decorating"} department</p></div>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-all">✕</button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4 px-6 pb-5 pt-4">
-          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Item</label><select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">{inventory.map(i => (<option key={i.id} value={i.id}>{i.name} ({i.sku}) — {i.onHand} {i.unit}</option>))}</select></div>
-          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Quantity</label><input required type="number" min="1" max={selected?.onHand || 0} value={qty} onChange={e => setQty(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
-          <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Available Stock</span>
-              <div className="flex items-baseline gap-1.5"><span className="text-[18px] font-semibold text-zinc-800">{selected?.onHand || 0}</span><span className="text-[12px] text-zinc-400">{selected?.unit || "units"}</span></div>
-            </div>
-            {selected && Number(qty) > selected.onHand && <p className="mt-1 text-[11px] text-red-500">Not enough stock available</p>}
-          </div>
-          <div className="flex gap-2 pt-1"><button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Cancel</button><button type="submit" className={`flex-1 rounded-xl py-2.5 text-[13px] font-medium text-white shadow-sm transition-all ${target === "baker" ? "bg-stone-600 hover:bg-stone-700" : "bg-rose-600 hover:bg-rose-700"}`}>Release to {target === "baker" ? "Baker" : "Deco"}</button></div>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; onSave: (item: InventoryItem) => void; onClose: () => void }) {
   const [name, setName] = useState(item.name);
@@ -1407,13 +1934,82 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
   const [group, setGroup] = useState(item.group);
   const [expiryDate, setExpiryDate] = useState(item.expiryDate || "");
   const [customCat, setCustomCat] = useState(false);
+  const [accessRoles, setAccessRoles] = useState<Role[]>(item.accessRoles || []);
+  const [showScanner, setShowScanner] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  const startScanner = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      streamRef.current = stream;
+      setShowScanner(true);
+      setTimeout(async () => {
+        if (!videoRef.current) return;
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        if ("BarcodeDetector" in window) {
+          const detector = new (window as any).BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "qr_code"] });
+          const scan = async () => {
+            if (!videoRef.current) return;
+            try {
+              const barcodes = await detector.detect(videoRef.current);
+              if (barcodes.length > 0) {
+                setSku(barcodes[0].rawValue);
+                stopScanner();
+                return;
+              }
+            } catch {}
+            requestAnimationFrame(scan);
+          };
+          scan();
+        } else {
+          alert("BarcodeDetector is not supported in this browser. Try Chrome or Edge.");
+          stopScanner();
+        }
+      }, 100);
+    } catch (err) {
+      alert("Camera access denied. Please allow camera access and try again.");
+    }
+  };
+
+  const stopScanner = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    setShowScanner(false);
+  };
 
   const isNew = !item.sku;
+  const allRoles: { id: Role; label: string; icon: string }[] = [
+    { id: "baker", label: "Baker", icon: "◆" },
+    { id: "deco", label: "Deco", icon: "◆" },
+    { id: "pastry", label: "Pastry", icon: "◆" },
+  ];
+  const toggleRole = (role: Role) => setAccessRoles(prev => prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]);
+
+  const categoriesByGroup: Record<string, string[]> = {
+    "ingredients": ["Dry", "Dairy", "Produce", "Frozen", "Spices"],
+    "packaging-materials": ["Boxes", "Bags", "Wraps", "Labels", "Containers"],
+    "decoration-supplies": ["Colors", "Toppings", "Glitters", "Fondant", "Sprinkles"],
+    "operational-supplies": ["Cleaning", "Office", "Maintenance", "Safety"],
+  };
+  const currentCategories = categoriesByGroup[group] || ["General"];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave({ ...item, name: name.trim(), sku: sku.trim(), unit: unit.trim(), onHand: Number(onHand), threshold: Number(threshold), cost: Number(cost), supplier: supplier.trim(), category, group, expiryDate: expiryDate || undefined });
+    onSave({ ...item, name: name.trim(), sku: sku.trim(), unit: unit.trim(), onHand: Number(onHand), threshold: Number(threshold), cost: Number(cost), supplier: supplier.trim(), category, group, expiryDate: expiryDate || undefined, accessRoles });
   };
 
   return (
@@ -1429,7 +2025,12 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
         <form onSubmit={handleSubmit} className="space-y-4 px-6 pb-5 pt-4">
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2"><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Name</label><input required value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">SKU</label><input value={sku} onChange={e => setSku(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+            <div className="min-w-0"><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">SKU</label>
+              <div className="flex items-center gap-1 mt-1">
+                <input value={sku} onChange={e => setSku(e.target.value)} className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" />
+                <button type="button" onClick={startScanner} className="shrink-0 h-[42px] w-[42px] grid place-items-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100 hover:border-zinc-300 transition-all text-[15px]" title="Scan barcode">📷</button>
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Unit</label>
@@ -1461,7 +2062,7 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
               ) : (
                 <div className="flex gap-1.5">
                   <select value={category} onChange={e => { const v = e.target.value; if (v === "__new__") { setCustomCat(true); setCategory(""); } else { setCategory(v); } }} className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">
-                    <option value="dry">Dry</option><option value="dairy">Dairy</option><option value="produce">Produce</option><option value="packaging">Packaging</option>
+                    {currentCategories.map(c => <option key={c} value={c.toLowerCase()}>{c}</option>)}
                     <option value="__new__">+ New...</option>
                   </select>
                   <button type="button" onClick={() => { setCustomCat(true); setCategory(""); }} className="rounded-xl border border-dashed border-zinc-300 px-3 py-2.5 text-[12px] font-medium text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-all">+</button>
@@ -1471,15 +2072,44 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
             <div>{group === "ingredients" || group === "decoration-supplies" ? <><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Expiry Date</label><input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></> : <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">&nbsp;</label><div className="mt-1 flex h-[42px] items-center rounded-xl border border-dashed border-zinc-200 px-3.5 text-[12px] text-zinc-400">No expiry</div></div>}</div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Group</label>
-              <select value={group} onChange={e => setGroup(e.target.value as InventoryItem["group"])} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">
-                <option value="ingredients">Ingredients</option>
-                <option value="packaging-materials">Packaging Materials</option>
-                <option value="decoration-supplies">Decoration Supplies</option>
-                <option value="operational-supplies">Operational Supplies</option>
-              </select>
+            {isNew ? (
+              <>
+                <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Group</label>
+                  <div className="mt-1 flex h-[42px] items-center rounded-xl border border-zinc-200 bg-zinc-100 px-3.5 text-[13px] font-medium text-zinc-700 capitalize">{group.replace(/-/g, " ")}</div>
+                </div>
+                <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">On Hand</label><input required type="number" min="0" value={onHand} onChange={e => setOnHand(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+              </>
+            ) : (
+              <>
+                <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Group</label>
+                  <select value={group} onChange={e => setGroup(e.target.value as InventoryItem["group"])} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">
+                    <option value="ingredients">Ingredients</option>
+                    <option value="packaging-materials">Packaging Materials</option>
+                    <option value="decoration-supplies">Decoration Supplies</option>
+                    <option value="operational-supplies">Operational Supplies</option>
+                  </select>
+                </div>
+                <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">On Hand</label><input required type="number" min="0" value={onHand} onChange={e => setOnHand(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+              </>
+            )}
+          </div>
+          <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4">
+            <div className="text-center mb-3">
+              <label className="text-[12px] font-semibold uppercase tracking-wider text-zinc-700 block">Access Roles</label>
+              <p className="text-[11px] text-zinc-400 mt-0.5">Leave empty = all roles can access</p>
             </div>
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">On Hand</label><input required type="number" min="0" value={onHand} onChange={e => setOnHand(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+            <div className="flex items-center justify-center gap-3">
+              {allRoles.map(r => {
+                const active = accessRoles.includes(r.id);
+                return (
+                  <button key={r.id} type="button" onClick={() => toggleRole(r.id)} className={`flex flex-col items-center gap-1.5 rounded-2xl px-5 py-3 text-[13px] font-medium border-2 transition-all ${active ? "bg-zinc-900 border-zinc-900 text-white shadow-md scale-105" : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400 hover:shadow-sm"}`}>
+                    <span className={`text-[18px] ${active ? "text-white" : "text-zinc-400"}`}>{r.icon}</span>
+                    <span>{r.label}</span>
+                    {active && <span className="text-[10px] text-zinc-300">✓ Access</span>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Cancel</button>
@@ -1487,6 +2117,26 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
           </div>
         </form>
       </div>
+
+      {/* Barcode Scanner Modal */}
+      {showScanner && createPortal(
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60" onClick={stopScanner}>
+          <div className="w-full max-w-sm rounded-3xl bg-white p-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[15px] font-semibold">Scan Barcode</h3>
+              <button onClick={stopScanner} className="grid h-7 w-7 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100">✕</button>
+            </div>
+            <div className="relative rounded-2xl overflow-hidden bg-black aspect-[4/3]">
+              <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-[70%] h-0.5 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
+              </div>
+            </div>
+            <p className="text-[12px] text-zinc-500 text-center mt-3">Point your camera at a barcode. The SKU will be filled automatically.</p>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

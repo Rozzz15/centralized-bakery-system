@@ -180,8 +180,8 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                 <div className="grid grid-cols-12 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
               <div className="col-span-4">Product</div>
               <div className="col-span-2 text-right">Total Qty</div>
-              <div className="col-span-2 text-right">Branch 1</div>
-              <div className="col-span-2 text-right">Branch 2</div>
+              <div className="col-span-2 text-right">Cakes N Styles Gensan</div>
+              <div className="col-span-2 text-right">Shadrach's Bake & Brew</div>
               <div className="col-span-1" />
               <div className="col-span-1" />
             </div>

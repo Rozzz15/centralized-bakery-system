@@ -76,8 +76,8 @@ export default function KitchenDashboard({ production, deliveries, dosItems, onU
       if (b2 > 0) itemsB2.push({ product: v.product, qty: b2, source: v.source });
     });
     const newBatches: BranchBatch[] = [];
-    if (itemsB1.length > 0) newBatches.push({ id: `BATCH-${ts}-1`, branch: "Makati", items: itemsB1, status: "consolidating" });
-    if (itemsB2.length > 0) newBatches.push({ id: `BATCH-${ts}-2`, branch: "BGC", items: itemsB2, status: "consolidating" });
+    if (itemsB1.length > 0) newBatches.push({ id: `BATCH-${ts}-1`, branch: "Cakes N Styles Gensan", items: itemsB1, status: "consolidating" });
+    if (itemsB2.length > 0) newBatches.push({ id: `BATCH-${ts}-2`, branch: "Shadrach's Bake & Brew", items: itemsB2, status: "consolidating" });
     setBatches(prev => {
       const updated = [...prev, ...newBatches];
       db.replaceBranchBatches(updated).catch(console.error);
@@ -106,7 +106,7 @@ export default function KitchenDashboard({ production, deliveries, dosItems, onU
   const handleSubmitReport = (report: DeliveryReport) => {
     setReports(prev => prev.map(r => r.id === report.id ? { ...r, status: "submitted" as const } : r));
     setBatches(prev => prev.map(b => b.id === report.batchId ? { ...b, status: "dispatched" as const } : b));
-    const newDelivery: Delivery = { id: `DLV-${Date.now()}`, branch: report.branch, items: report.items, status: "preparing", eta: new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }) };
+    const newDelivery: Delivery = { id: `DLV-${Date.now()}`, branch: report.branch, address: "", contactNumber: "", assignedRider: "", items: report.items, status: "preparing", eta: new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }), paymentStatus: "unpaid", notes: "" };
     const updatedDeliveries = [...deliveries, newDelivery];
     onUpdateDeliveries(updatedDeliveries);
     db.upsertDeliveries(updatedDeliveries).catch(console.error);

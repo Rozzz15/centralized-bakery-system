@@ -22,6 +22,7 @@ const roleAccounts: RoleInfo[] = [
   { id: "baker", label: "Baker", title: "Head Baker", color: "from-stone-600 to-neutral-700", email: "baker@bakeflow.com", password: "Baker@123", displayName: "Baker" },
   { id: "deco", label: "Deco", title: "Deco Lead", color: "from-rose-600 to-pink-600", email: "deco@bakeflow.com", password: "Deco@123", displayName: "Deco" },
   { id: "kitchen", label: "Kitchen", title: "Kitchen Supervisor", color: "from-emerald-600 to-teal-600", email: "kitchen@bakeflow.com", password: "Kitchen@123", displayName: "Kitchen" },
+  { id: "pastry", label: "Pastry", title: "Pastry Chef", color: "from-amber-600 to-yellow-600", email: "pastry@bakeflow.com", password: "Pastry@123", displayName: "Pastry" },
   { id: "branch", label: "Branch", title: "Branch Manager", color: "from-blue-600 to-indigo-600", email: "branch@bakeflow.com", password: "Branch@123", displayName: "Branch" },
 ];
 

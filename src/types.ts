@@ -1,4 +1,4 @@
-export type Role = "admin" | "baker" | "deco" | "kitchen" | "branch";
+export type Role = "admin" | "baker" | "deco" | "kitchen" | "branch" | "pastry";
 
 export type InventoryItem = {
   id: string;
@@ -13,6 +13,7 @@ export type InventoryItem = {
   category: "dry" | "dairy" | "produce" | "packaging";
   group: "ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies";
   expiryDate?: string;
+  accessRoles?: Role[];
 };
 
 export type DOSItem = {
@@ -31,16 +32,21 @@ export type ProductionTask = {
   product: string;
   target: number;
   completed: number;
-  assignedTo: "baker" | "deco" | "kitchen";
+  assignedTo: "baker" | "deco" | "kitchen" | "pastry";
   status: "pending" | "in-progress" | "completed";
 };
 
 export type Delivery = {
   id: string;
   branch: string;
+  address: string;
+  contactNumber: string;
+  assignedRider: string;
   items: { product: string; qty: number; source?: string }[];
   status: "preparing" | "in-transit" | "delivered";
   eta: string;
+  paymentStatus: "unpaid" | "paid" | "cod";
+  notes: string;
 };
 
 export type AuditLog = {
@@ -77,7 +83,7 @@ export type VerificationResult = {
 
 export type BranchBatch = {
   id: string;
-  branch: "Branch 1 - Makati" | "Branch 2 - BGC";
+  branch: "Cakes N Styles Gensan" | "Shadrach's Bake & Brew";
   items: { product: string; qty: number; source?: string }[];
   status: "consolidating" | "packaged" | "dispatched";
 };
@@ -145,6 +151,7 @@ export type StockTransaction = {
   reference: string;
   timestamp: string;
   target?: "baker" | "deco";
+  group?: string;
 };
 
 export type DeliveryValidation = {
@@ -169,4 +176,45 @@ export type ProductRecipe = {
   ingredients: RecipeIngredient[];
   packagingMaterials: RecipeIngredient[];
   decorationSupplies: RecipeIngredient[];
+};
+
+export type ProductPricingVariant = {
+  id: string;
+  size: string;
+  sellingPrice: number;
+  wholesalePrice: number;
+};
+
+export type ProductPricing = {
+  id: string;
+  productName: string;
+  category: string;
+  estimatedCost: number;
+  sellingPrice: number;
+  wholesalePrice: number;
+  profitMargin: number;
+  status: "active" | "draft" | "archived";
+  variants: ProductPricingVariant[];
+};
+
+export type FreezerItem = {
+  id: string;
+  productName: string;
+  qty: number;
+  unit: string;
+  batchRef: string;
+  producedBy: string;
+  dateProduced: string;
+  status: "stored" | "dispatched" | "expired";
+  notes?: string;
+};
+
+export type FreezerHistory = {
+  id: string;
+  productName: string;
+  producedBy: string;
+  qtyChanged: number;
+  action: string;
+  reference: string;
+  timestamp: string;
 };

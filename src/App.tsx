@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Role, InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, ProductRecipe } from "./types";
+import type { Role, InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, ProductRecipe, ProductPricing, FreezerItem, FreezerHistory } from "./types";
 import AdminDashboard from "./components/AdminDashboard";
 import BakerDashboard from "./components/BakerDashboard";
 import DecoDashboard from "./components/DecoDashboard";
 import KitchenDashboard from "./components/KitchenDashboard";
 import BranchDashboard from "./components/BranchDashboard";
+import PastryDashboard from "./components/PastryDashboard";
 import DOSBuilderModal from "./components/DOSBuilderModal";
 import LoginPage from "./components/LoginPage";
 import { getCurrentUser, getProfile, signOut as authSignOut, updateProfile, updatePassword } from "./lib/auth";
@@ -25,6 +26,7 @@ const roleConfig: Record<Role, { name: string; title: string; color: string }> =
   deco: { name: "Deco", title: "Deco Lead", color: "from-rose-600 to-pink-600" },
   kitchen: { name: "Kitchen", title: "Kitchen Supervisor", color: "from-emerald-600 to-teal-600" },
   branch: { name: "Branch", title: "Branch Manager", color: "from-blue-600 to-indigo-600" },
+  pastry: { name: "Pastry", title: "Pastry Chef", color: "from-amber-600 to-yellow-600" },
 };
 
 const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> = {
@@ -32,6 +34,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "dashboard", label: "Admin Dashboard", icon: "◼" },
     { id: "dos", label: "DOS Builder", icon: "◈" },
     { id: "products", label: "Products", icon: "⬢" },
+    { id: "pricing", label: "Pricing", icon: "◇" },
     { id: "warehouse", label: "Warehouse", icon: "⬡" },
     { id: "production", label: "Production", icon: "⬣" },
     { id: "deliveries", label: "Deliveries", icon: "⬙" },
@@ -42,6 +45,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "dashboard", label: "My Tasks", icon: "◼" },
     { id: "recipes", label: "Recipes", icon: "◈" },
     { id: "requests", label: "Requests", icon: "⬢" },
+    { id: "freezer", label: "Freezer", icon: "◇" },
   ],
   deco: [
     { id: "dashboard", label: "Dashboard", icon: "" },
@@ -52,6 +56,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "decoration-supplies", label: "Decoration Materials", icon: "" },
     { id: "ingredients", label: "Ingredients", icon: "" },
     { id: "materials", label: "Materials Request", icon: "" },
+    { id: "freezer", label: "Freezer", icon: "" },
   ],
   kitchen: [
     { id: "dashboard", label: "Dispatch", icon: "◼" },
@@ -62,6 +67,12 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "dashboard", label: "Sales", icon: "◼" },
     { id: "deliveries", label: "Deliveries", icon: "◈" },
     { id: "inventory", label: "Stock", icon: "⬢" },
+  ],
+  pastry: [
+    { id: "dashboard", label: "My Tasks", icon: "◼" },
+    { id: "recipes", label: "Recipes", icon: "◈" },
+    { id: "queue", label: "Production Queue", icon: "⬢" },
+    { id: "freezer", label: "Freezer", icon: "◇" },
   ],
 };
 
@@ -99,8 +110,8 @@ async function seedIfEmpty() {
   ];
 
   const demoDeliveries: Delivery[] = [
-    { id: "DLV-101", branch: "Makati", items: [{ product: "Pandesal", qty: 300 }, { product: "Loaf Bread", qty: 120 }], status: "in-transit", eta: "08:30 AM" },
-    { id: "DLV-102", branch: "BGC", items: [{ product: "Pandesal", qty: 200 }, { product: "Loaf Bread", qty: 80 }], status: "preparing", eta: "09:15 AM" },
+    { id: "DLV-101", branch: "Cakes N Styles Gensan", address: "123 GenSan St", contactNumber: "09171234567", assignedRider: "Juan", items: [{ product: "Pandesal", qty: 300 }, { product: "Loaf Bread", qty: 120 }], status: "in-transit", eta: "08:30", paymentStatus: "paid", notes: "" },
+    { id: "DLV-102", branch: "Shadrach's Bake & Brew", address: "456 BGC Ave", contactNumber: "09181234567", assignedRider: "Pedro", items: [{ product: "Pandesal", qty: 200 }, { product: "Loaf Bread", qty: 80 }], status: "preparing", eta: "09:15", paymentStatus: "cod", notes: "Fragile items" },
   ];
 
   await Promise.all([
@@ -140,6 +151,9 @@ export default function App() {
   const [userEmail, setUserEmail] = useState("");
   const [productCatalog, setProductCatalog] = useState<string[]>(["Pandesal", "Loaf Bread", "Choco Moist Cake", "Sponge Fudge", "Ensaymada"]);
   const [recipes, setRecipes] = useState<ProductRecipe[]>([]);
+  const [productPricing, setProductPricing] = useState<ProductPricing[]>([]);
+  const [freezerItems, setFreezerItems] = useState<FreezerItem[]>([]);
+  const [freezerHistory, setFreezerHistory] = useState<FreezerHistory[]>([]);
   const [now, setNow] = useState(new Date());
   const prevDayRef = useRef(getPHToday());
   const [dosNotifs, setDosNotifs] = useState<{ id: string; message: string }[]>([]);
@@ -155,7 +169,7 @@ export default function App() {
     setDataLoading(true);
     try {
       if (!auditCleaned.current) { auditCleaned.current = true; await db.clearAuditLogs().catch(() => {}); }
-      const [inv, dos, prod, del, audit, catalog, rec] = await Promise.all([
+      const [inv, dos, prod, del, audit, catalog, rec, pricing, freezer, fHistory] = await Promise.all([
         db.fetchAllInventory(),
         db.fetchDOS(),
         db.fetchProduction(),
@@ -163,6 +177,9 @@ export default function App() {
         db.fetchAuditLogs(),
         db.fetchProductCatalog(),
         db.fetchRecipes(),
+        db.fetchProductPricing(),
+        db.fetchFreezerItems(),
+        db.fetchFreezerHistory(),
       ]);
       if (inv.length > 0) setInventory(inv);
       if (dos.length > 0) setDosItems(dos);
@@ -171,6 +188,10 @@ export default function App() {
       if (audit.length > 0) setAuditLogs(audit);
       if (catalog.length > 0) setProductCatalog(catalog);
       if (rec.length > 0) setRecipes(rec);
+      if (pricing.length > 0) setProductPricing(pricing);
+      if (freezer.length > 0) setFreezerItems(freezer);
+      else setFreezerItems(freezer);
+      if (fHistory.length > 0) setFreezerHistory(fHistory);
       return dos;
     } catch (err) {
       console.error("Failed to load data:", err);
@@ -192,6 +213,7 @@ export default function App() {
           setDisplayName(profile.displayName);
           roleConfig[profile.role].name = profile.displayName;
           await seedIfEmpty();
+          await db.migrateBranchNames();
           const loadedDOS = await loadAllData();
           // Activate any scheduled DOS for today (Philippines time)
           const today = getPHToday();
@@ -216,6 +238,22 @@ export default function App() {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Real-time deliveries from Supabase
+  useEffect(() => {
+    if (!loggedIn) return;
+    return db.subscribeDeliveries(() => {
+      db.fetchDeliveries().then(setDeliveries).catch(console.error);
+    });
+  }, [loggedIn]);
+
+  // Real-time freezer items from Supabase
+  useEffect(() => {
+    if (!loggedIn) return;
+    return db.subscribeFreezer(() => {
+      db.fetchFreezerItems().then(setFreezerItems).catch(console.error);
+    });
+  }, [loggedIn]);
 
   // Real-time production simulation
   useEffect(() => {
@@ -331,7 +369,7 @@ export default function App() {
     const now = new Date();
     const todayStr = getPHToday();
     const expiredCount = inventory.filter(i => i.expiryDate && i.expiryDate < todayStr).length;
-    const expiringCount = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000).length;
+    const expiringCount = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000).length;
     return {
       productionRate: totalProduction > 0 ? Math.round((completedProduction / totalProduction) * 100) : 0,
       inventoryValue,
@@ -459,7 +497,7 @@ export default function App() {
 
   const handleSalesSubmit = () => {
     if (!salesAmount) return;
-    alert(`Sales report submitted for ${selectedBranch === "branch1" ? "Makati" : "BGC"}: ₱${salesAmount}`);
+    alert(`Sales report submitted for ${selectedBranch === "branch1" ? "Cakes N Styles Gensan" : "Shadrach's Bake & Brew"}: ₱${salesAmount}`);
     setSalesAmount("");
   };
 
@@ -527,8 +565,8 @@ export default function App() {
             <div className="relative">
               <button onClick={() => setShowNotifications(v => !v)} className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#E8E0D5] bg-white text-zinc-400 hover:text-zinc-700 hover:border-zinc-300 transition-all" title="Notifications">
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                {(() => { const unreadDOS = dosNotifs.filter(n => !readNotifs.has(n.id)).length; const activeAlerts = kpis.lowStockCount + kpis.noStockCount + kpis.expiredCount + kpis.expiringCount - dismissedAlerts.size; return (activeAlerts + unreadDOS) > 0; })() && (
-                  <span className="absolute -right-1 -top-1 grid min-w-[18px] place-items-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{kpis.lowStockCount + kpis.noStockCount + kpis.expiredCount + kpis.expiringCount - dismissedAlerts.size + dosNotifs.filter(n => !readNotifs.has(n.id)).length}</span>
+                {(() => { const unreadDOS = dosNotifs.filter(n => !readNotifs.has(n.id)).length; const activeAlerts = role === "admin" ? kpis.lowStockCount + kpis.noStockCount + kpis.expiredCount + kpis.expiringCount - dismissedAlerts.size : 0; return (activeAlerts + unreadDOS) > 0; })() && (
+                  <span className="absolute -right-1 -top-1 grid min-w-[18px] place-items-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">{(role === "admin" ? kpis.lowStockCount + kpis.noStockCount + kpis.expiredCount + kpis.expiringCount - dismissedAlerts.size : 0) + dosNotifs.filter(n => !readNotifs.has(n.id)).length}</span>
                 )}
               </button>
               {showNotifications && (
@@ -542,12 +580,13 @@ export default function App() {
                       {(() => {
                         const now = new Date();
                         const todayStr = now.toISOString().split("T")[0];
-                        const alerts: { key: string; name: string; desc: string; icon: string; iconBg: string; iconColor: string }[] = [
+                        const isAdmin = role === "admin";
+                        const alerts: { key: string; name: string; desc: string; icon: string; iconBg: string; iconColor: string }[] = isAdmin ? [
                           ...inventory.filter(i => i.onHand === 0).map(i => ({ key: "out-"+i.id, name: i.name, desc: "Out of stock — reorder needed", icon: "0", iconBg: "bg-zinc-100", iconColor: "text-zinc-500" })),
                           ...inventory.filter(i => i.onHand > 0 && i.onHand < i.threshold).map(i => ({ key: "low-"+i.id, name: i.name, desc: `${i.onHand}/${i.threshold} ${i.unit} — below threshold`, icon: "!", iconBg: "bg-red-100", iconColor: "text-red-600" })),
                           ...inventory.filter(i => i.expiryDate && i.expiryDate < todayStr).map(i => ({ key: "exp-"+i.id, name: i.name, desc: `Expired ${i.expiryDate} — dispose`, icon: "✕", iconBg: "bg-purple-100", iconColor: "text-purple-600" })),
-                          ...inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 3 * 24 * 60 * 60 * 1000).map(i => ({ key: "expg-"+i.id, name: i.name, desc: `Expires ${i.expiryDate} — use within 3 days`, icon: "~", iconBg: "bg-amber-100", iconColor: "text-amber-600" })),
-                        ];
+                          ...inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000).map(i => ({ key: "expg-"+i.id, name: i.name, desc: `Expires ${i.expiryDate} — use within 30 days`, icon: "~", iconBg: "bg-amber-100", iconColor: "text-amber-600" })),
+                        ] : [];
                         const total = alerts.length + dosNotifs.length;
                         if (total === 0) return <div className="px-4 py-6 text-center text-[13px] text-zinc-400">No notifications</div>;
                         return <>
@@ -579,7 +618,7 @@ export default function App() {
                       })()}
                     </div>
                     <div className="border-t border-[#E8E0D5] px-4 py-2.5 text-center">
-                      <span className="text-[11px] text-zinc-400">{dosNotifs.length + kpis.lowStockCount + kpis.noStockCount + kpis.expiredCount + kpis.expiringCount} notification{(dosNotifs.length + kpis.lowStockCount + kpis.noStockCount + kpis.expiredCount + kpis.expiringCount) !== 1 ? "s" : ""}</span>
+                      <span className="text-[11px] text-zinc-400">{dosNotifs.length + (role === "admin" ? kpis.lowStockCount + kpis.noStockCount + kpis.expiredCount + kpis.expiringCount : 0)} notification{(dosNotifs.length + (role === "admin" ? kpis.lowStockCount + kpis.noStockCount + kpis.expiredCount + kpis.expiringCount : 0)) !== 1 ? "s" : ""}</span>
                     </div>
                   </div>
                 </>
@@ -653,7 +692,7 @@ export default function App() {
 
         <main className="min-w-0 flex-1">
           <div className="p-4 sm:p-6 lg:p-8">
-            {role === "admin" && ["dashboard", "dos", "products", "warehouse", "production", "deliveries", "audit"].includes(activeTab) && (
+            {role === "admin" && ["dashboard", "dos", "products", "pricing", "warehouse", "production", "deliveries", "audit"].includes(activeTab) && (
               <AdminDashboard
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
@@ -675,13 +714,18 @@ export default function App() {
                 recipes={recipes}
                 onUpdateRecipes={setRecipes}
                 onAddAuditLog={logAudit}
+                onUpdateDeliveries={setDeliveries}
+                productPricing={productPricing}
+                onUpdateProductPricing={setProductPricing}
+                freezerItems={freezerItems}
+                onUpdateFreezer={setFreezerItems}
               />
             )}
-            {role === "baker" && ["dashboard", "recipes", "requests"].includes(activeTab) && (
-              <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} />
+            {role === "baker" && ["dashboard", "recipes", "requests", "freezer"].includes(activeTab) && (
+              <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
             )}
-            {role === "deco" && ["dashboard", "recipes", "free-mix", "deco-queue", "custom-orders", "decoration-supplies", "ingredients", "materials"].includes(activeTab) && (
-              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} />
+            {role === "deco" && ["dashboard", "recipes", "free-mix", "deco-queue", "custom-orders", "decoration-supplies", "ingredients", "materials", "freezer"].includes(activeTab) && (
+              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (
               <KitchenDashboard production={production} deliveries={deliveries} dosItems={dosItems} onUpdateDeliveries={setDeliveries} activeTab={activeTab} />
@@ -694,6 +738,9 @@ export default function App() {
                 onSalesAmountChange={setSalesAmount}
                 onSubmitSales={handleSalesSubmit}
               />
+            )}
+            {role === "pastry" && ["dashboard", "recipes", "queue", "freezer"].includes(activeTab) && (
+              <PastryDashboard production={production} dosItems={dosItems} activeTab={activeTab} recipes={recipes} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
             )}
           </div>
         </main>

@@ -4,6 +4,7 @@ import type {
   ProductRecipe, BakerIngredientRequest, MaterialRequest,
   StockTransaction, DeliveryValidation, VerificationResult,
   BranchBatch, DeliveryReport, KitchenFeedback, DecoSubTask, DecoQCResult,
+  ProductPricing, FreezerItem, FreezerHistory,
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
@@ -21,10 +22,10 @@ function toProductionRow(p: ProductionTask) {
 }
 
 function parseDelivery(d: any): Delivery {
-  return { id: d.id, branch: d.branch, items: d.items ?? [], status: d.status, eta: d.eta };
+  return { id: d.id, branch: d.branch, address: d.address ?? "", contactNumber: d.contact_number ?? "", assignedRider: d.assigned_rider ?? "", items: d.items ?? [], status: d.status, eta: d.eta, paymentStatus: d.payment_status ?? "unpaid", notes: d.notes ?? "" };
 }
 function toDeliveryRow(d: Delivery) {
-  return { id: d.id, branch: d.branch, items: d.items, status: d.status, eta: d.eta };
+  return { id: d.id, branch: d.branch, address: d.address ?? "", contact_number: d.contactNumber ?? "", assigned_rider: d.assignedRider ?? "", items: d.items, status: d.status, eta: d.eta, payment_status: d.paymentStatus ?? "unpaid", notes: d.notes ?? "" };
 }
 
 // ─── Inventory ───
@@ -37,10 +38,10 @@ const INVENTORY_TABLES: Record<string, string> = {
 };
 
 function parseInventoryItem(d: any, group: string): InventoryItem {
-  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: group as InventoryItem["group"], expiryDate: d.expiry_date || undefined };
+  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: group as InventoryItem["group"], expiryDate: d.expiry_date || undefined, accessRoles: d.access_roles || [] };
 }
 function toInventoryRow(i: InventoryItem) {
-  return { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: i.onHand, threshold: i.threshold, cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category, expiry_date: i.expiryDate || null };
+  return { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: i.onHand, threshold: i.threshold, cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category, expiry_date: i.expiryDate || null, access_roles: i.accessRoles ?? [] };
 }
 
 export async function fetchInventoryByGroup(group: string): Promise<InventoryItem[]> {
@@ -93,6 +94,7 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
   if ("supplier" in updates) row.supplier = updates.supplier;
   if ("lastIn" in updates) row.last_in = updates.lastIn;
   if ("category" in updates) row.category = updates.category;
+  if ("accessRoles" in updates) row.access_roles = updates.accessRoles ?? [];
   const { error } = await supabase.from(table).update(row).eq("id", id);
   if (error) throw error;
 }
@@ -171,6 +173,21 @@ export async function upsertDeliveries(items: Delivery[]) {
   const { error } = await supabase.from("deliveries").upsert(items.map(toDeliveryRow), { onConflict: "id" });
   if (error) throw error;
 }
+export async function migrateBranchNames() {
+  await supabase.from("deliveries").update({ branch: "Cakes N Styles Gensan" }).eq("branch", "Makati");
+  await supabase.from("deliveries").update({ branch: "Cakes N Styles Gensan" }).eq("branch", "Branch 1 - Makati");
+  await supabase.from("deliveries").update({ branch: "Shadrach's Bake & Brew" }).eq("branch", "BGC");
+  await supabase.from("deliveries").update({ branch: "Shadrach's Bake & Brew" }).eq("branch", "Branch 2 - BGC");
+}
+export function subscribeDeliveries(onChange: () => void) {
+  const channel = supabase.channel("deliveries-realtime").on("postgres_changes", { event: "*", schema: "public", table: "deliveries" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
+
+export function subscribeFreezer(onChange: () => void) {
+  const channel = supabase.channel("freezer-realtime").on("postgres_changes", { event: "*", schema: "public", table: "freezer_items" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
 
 // ─── Audit Logs ───
 export async function fetchAuditLogs(): Promise<AuditLog[]> {
@@ -242,13 +259,13 @@ export async function fetchStockTransactions(): Promise<StockTransaction[]> {
   if (error) throw error;
   return (data ?? []).map((d: any) => ({
     id: d.id, type: d.type, itemName: d.item_name, itemId: d.item_id,
-    qty: d.qty, unit: d.unit, reference: d.reference, timestamp: d.timestamp, target: d.target,
+    qty: d.qty, unit: d.unit, reference: d.reference, timestamp: d.timestamp, target: d.target, group: d.group_name || "",
   }));
 }
 export async function insertStockTransaction(tx: StockTransaction) {
   const { error } = await supabase.from("stock_transactions").insert({
     id: tx.id, type: tx.type, item_name: tx.itemName, item_id: tx.itemId,
-    qty: tx.qty, unit: tx.unit, reference: tx.reference, timestamp: tx.timestamp, target: tx.target,
+    qty: tx.qty, unit: tx.unit, reference: tx.reference, timestamp: tx.timestamp, target: tx.target, group_name: tx.group || "",
   });
   if (error) throw error;
 }
@@ -505,4 +522,156 @@ export async function getAllProfiles(): Promise<{ id: string; email: string; dis
     return [];
   }
   return data || [];
+}
+
+// ─── Product Pricing ───
+function parsePricing(d: any): ProductPricing {
+  return {
+    id: d.id,
+    productName: d.product_name,
+    category: d.category ?? "",
+    estimatedCost: d.estimated_cost ?? 0,
+    sellingPrice: d.selling_price ?? 0,
+    wholesalePrice: d.wholesale_price ?? 0,
+    profitMargin: d.profit_margin ?? 0,
+    status: d.status ?? "draft",
+    variants: d.variants ?? [],
+  };
+}
+function toPricingRow(p: ProductPricing) {
+  return {
+    id: p.id,
+    product_name: p.productName,
+    category: p.category,
+    estimated_cost: p.estimatedCost,
+    selling_price: p.sellingPrice,
+    wholesale_price: p.wholesalePrice,
+    profit_margin: p.profitMargin,
+    status: p.status,
+    variants: p.variants,
+  };
+}
+export async function fetchProductPricing(): Promise<ProductPricing[]> {
+  try {
+    const { data, error } = await supabase.from("product_pricing").select("*").order("product_name");
+    if (error) throw error;
+    return (data ?? []).map(parsePricing);
+  } catch {
+    return [];
+  }
+}
+export async function upsertProductPricing(items: ProductPricing[]) {
+  try {
+    const { error } = await supabase.from("product_pricing").upsert(items.map(toPricingRow), { onConflict: "id" });
+    if (error) throw error;
+  } catch (e) {
+    console.error("product_pricing upsert failed (table may not exist):", e);
+  }
+}
+export async function upsertSingleProductPricing(item: ProductPricing) {
+  try {
+    const { error } = await supabase.from("product_pricing").upsert(toPricingRow(item), { onConflict: "id" });
+    if (error) throw error;
+  } catch (e) {
+    console.error("product_pricing upsert failed:", e);
+  }
+}
+export async function deleteProductPricing(id: string) {
+  try {
+    const { error } = await supabase.from("product_pricing").delete().eq("id", id);
+    if (error) throw error;
+  } catch (e) {
+    console.error("product_pricing delete failed:", e);
+  }
+}
+
+// ─── Freezer / Finished Products ───
+function parseFreezerItem(d: any): FreezerItem {
+  return {
+    id: d.id,
+    productName: d.product_name,
+    qty: d.qty ?? 0,
+    unit: d.unit ?? "pcs",
+    batchRef: d.batch_ref ?? "",
+    producedBy: d.produced_by ?? "",
+    dateProduced: d.date_produced ?? "",
+    status: d.status ?? "stored",
+    notes: d.notes ?? "",
+  };
+}
+function toFreezerRow(i: FreezerItem) {
+  return {
+    id: i.id,
+    product_name: i.productName,
+    qty: i.qty,
+    unit: i.unit,
+    batch_ref: i.batchRef,
+    produced_by: i.producedBy,
+    date_produced: i.dateProduced,
+    status: i.status,
+    notes: i.notes ?? "",
+  };
+}
+export async function fetchFreezerItems(): Promise<FreezerItem[]> {
+  try {
+    const { data, error } = await supabase.from("freezer_items").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(parseFreezerItem);
+  } catch {
+    return [];
+  }
+}
+export async function upsertFreezerItems(items: FreezerItem[]) {
+  try {
+    const { error } = await supabase.from("freezer_items").upsert(items.map(toFreezerRow), { onConflict: "id" });
+    if (error) throw error;
+  } catch (e) {
+    console.error("freezer_items upsert failed:", e);
+  }
+}
+export async function deleteFreezerItem(id: string) {
+  try {
+    const { error } = await supabase.from("freezer_items").delete().eq("id", id);
+    if (error) throw error;
+  } catch (e) {
+    console.error("freezer_items delete failed:", e);
+  }
+}
+
+// ─── Freezer History ───
+function parseFreezerHistory(d: any): FreezerHistory {
+  return {
+    id: d.id,
+    productName: d.product_name,
+    producedBy: d.produced_by ?? "",
+    qtyChanged: d.qty_changed ?? 0,
+    action: d.action ?? "",
+    reference: d.reference ?? "",
+    timestamp: d.timestamp ?? "",
+  };
+}
+export async function fetchFreezerHistory(): Promise<FreezerHistory[]> {
+  try {
+    const { data, error } = await supabase.from("freezer_history").select("*").order("timestamp", { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(parseFreezerHistory);
+  } catch {
+    return [];
+  }
+}
+export async function insertFreezerHistory(entry: FreezerHistory) {
+  try {
+    const { error } = await supabase.from("freezer_history").insert({
+      id: entry.id,
+      product_name: entry.productName,
+      produced_by: entry.producedBy,
+      qty_changed: entry.qtyChanged,
+      action: entry.action,
+      reference: entry.reference,
+      timestamp: entry.timestamp,
+    });
+    if (error) throw error;
+  } catch (e) {
+    console.error("freezer_history insert failed:", e);
+  }
 }

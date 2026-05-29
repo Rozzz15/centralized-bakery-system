@@ -50,8 +50,8 @@ export default function BranchDashboard({
             <div>
               <label className="text-[12px] font-medium text-zinc-700">Branch</label>
               <select value={selectedBranch} onChange={e => onBranchChange(e.target.value as any)} className="mt-1 w-full rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-900 focus:ring-4 focus:ring-zinc-900/5">
-                <option value="branch1">Makati</option>
-                <option value="branch2">BGC</option>
+                <option value="branch1">Cakes N Styles Gensan</option>
+                <option value="branch2">Shadrach's Bake & Brew</option>
               </select>
             </div>
             <div>
