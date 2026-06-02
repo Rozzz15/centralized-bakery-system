@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Role, InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, ProductRecipe, ProductPricing, FreezerItem, FreezerHistory } from "./types";
+import type { Role, InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, ProductRecipe, ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog } from "./types";
 import AdminDashboard from "./components/AdminDashboard";
 import BakerDashboard from "./components/BakerDashboard";
 import DecoDashboard from "./components/DecoDashboard";
@@ -38,7 +38,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "warehouse", label: "Warehouse", icon: "⬡" },
     { id: "production", label: "Production", icon: "⬣" },
     { id: "deliveries", label: "Deliveries", icon: "⬙" },
-
+    { id: "finance", label: "Finance", icon: "◆" },
     { id: "audit", label: "Audit Logs", icon: "⬖" },
   ],
   baker: [
@@ -78,6 +78,133 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
 
 // Seed demo data if the database is empty
 async function seedIfEmpty() {
+  // Seed recipes independently (even if inventory already exists)
+  const existingRecipes = await db.fetchRecipes();
+  if (existingRecipes.length === 0) {
+    const demoRecipes: ProductRecipe[] = [
+      {
+        productId: "Pandesal",
+        productName: "Pandesal",
+        ingredients: [
+          { inventoryId: "dummy-bf-1", name: "Bread Flour", qtyPerBatch: 10, unit: "kg" },
+          { inventoryId: "dummy-gs-1", name: "Granulated Sugar", qtyPerBatch: 1.5, unit: "kg" },
+          { inventoryId: "dummy-eg-1", name: "Eggs (Grade A)", qtyPerBatch: 2, unit: "trays" },
+          { inventoryId: "dummy-ub-1", name: "Unsalted Butter", qtyPerBatch: 1, unit: "kg" },
+          { inventoryId: "dummy-fm-1", name: "Fresh Milk", qtyPerBatch: 3, unit: "L" },
+          { inventoryId: "dummy-ve-1", name: "Vanilla Extract", qtyPerBatch: 100, unit: "ml" },
+        ],
+        packagingMaterials: [{ inventoryId: "dummy-bbs-1", name: "Bread Bags (Small)", qtyPerBatch: 500, unit: "pcs" }],
+        decorationSupplies: [],
+        linkedProduct: [],
+        notes: "Standard pandesal recipe - yields ~500 pcs per batch",
+      },
+      {
+        productId: "Loaf Bread",
+        productName: "Loaf Bread",
+        ingredients: [
+          { inventoryId: "dummy-bf-2", name: "Bread Flour", qtyPerBatch: 15, unit: "kg" },
+          { inventoryId: "dummy-gs-2", name: "Granulated Sugar", qtyPerBatch: 2, unit: "kg" },
+          { inventoryId: "dummy-ub-2", name: "Unsalted Butter", qtyPerBatch: 1.5, unit: "kg" },
+          { inventoryId: "dummy-eg-2", name: "Eggs (Grade A)", qtyPerBatch: 3, unit: "trays" },
+          { inventoryId: "dummy-fm-2", name: "Fresh Milk", qtyPerBatch: 5, unit: "L" },
+        ],
+        packagingMaterials: [{ inventoryId: "dummy-bbl-1", name: "Bread Bags (Large)", qtyPerBatch: 200, unit: "pcs" }],
+        decorationSupplies: [],
+        linkedProduct: [],
+        notes: "Classic loaf bread - yields ~200 loaves per batch",
+      },
+      {
+        productId: "Choco Moist Cake",
+        productName: "Choco Moist Cake",
+        ingredients: [
+          { inventoryId: "dummy-bf-3", name: "Bread Flour", qtyPerBatch: 5, unit: "kg" },
+          { inventoryId: "dummy-cp-1", name: "Cocoa Powder", qtyPerBatch: 1.5, unit: "kg" },
+          { inventoryId: "dummy-gs-3", name: "Granulated Sugar", qtyPerBatch: 4, unit: "kg" },
+          { inventoryId: "dummy-ub-3", name: "Unsalted Butter", qtyPerBatch: 2, unit: "kg" },
+          { inventoryId: "dummy-eg-3", name: "Eggs (Grade A)", qtyPerBatch: 4, unit: "trays" },
+          { inventoryId: "dummy-fm-3", name: "Fresh Milk", qtyPerBatch: 3, unit: "L" },
+          { inventoryId: "dummy-ve-2", name: "Vanilla Extract", qtyPerBatch: 50, unit: "ml" },
+        ],
+        packagingMaterials: [{ inventoryId: "dummy-cb-1", name: "Cake Boxes (8 in)", qtyPerBatch: 50, unit: "pcs" }],
+        decorationSupplies: [{ inventoryId: "dummy-wc-1", name: "Whipping Cream", qtyPerBatch: 2, unit: "L" }],
+        linkedProduct: [],
+        notes: "Rich chocolate cake - yields ~50 cakes per batch",
+      },
+      {
+        productId: "Sponge Fudge",
+        productName: "Sponge Fudge",
+        ingredients: [
+          { inventoryId: "dummy-bf-4", name: "Bread Flour", qtyPerBatch: 4, unit: "kg" },
+          { inventoryId: "dummy-cp-2", name: "Cocoa Powder", qtyPerBatch: 2, unit: "kg" },
+          { inventoryId: "dummy-gs-4", name: "Granulated Sugar", qtyPerBatch: 5, unit: "kg" },
+          { inventoryId: "dummy-ub-4", name: "Unsalted Butter", qtyPerBatch: 3, unit: "kg" },
+          { inventoryId: "dummy-eg-4", name: "Eggs (Grade A)", qtyPerBatch: 5, unit: "trays" },
+          { inventoryId: "dummy-fm-4", name: "Fresh Milk", qtyPerBatch: 2, unit: "L" },
+        ],
+        packagingMaterials: [{ inventoryId: "dummy-cb-2", name: "Cake Boxes (8 in)", qtyPerBatch: 40, unit: "pcs" }],
+        decorationSupplies: [{ inventoryId: "dummy-wc-2", name: "Whipping Cream", qtyPerBatch: 3, unit: "L" }],
+        linkedProduct: [],
+        notes: "Dense fudge sponge - yields ~40 cakes per batch",
+      },
+      {
+        productId: "Ensaymada",
+        productName: "Ensaymada",
+        ingredients: [
+          { inventoryId: "dummy-bf-5", name: "Bread Flour", qtyPerBatch: 8, unit: "kg" },
+          { inventoryId: "dummy-gs-5", name: "Granulated Sugar", qtyPerBatch: 2.5, unit: "kg" },
+          { inventoryId: "dummy-ub-5", name: "Unsalted Butter", qtyPerBatch: 3, unit: "kg" },
+          { inventoryId: "dummy-eg-5", name: "Eggs (Grade A)", qtyPerBatch: 6, unit: "trays" },
+          { inventoryId: "dummy-fm-5", name: "Fresh Milk", qtyPerBatch: 2, unit: "L" },
+        ],
+        packagingMaterials: [{ inventoryId: "dummy-pb-1", name: "Pastry Boxes", qtyPerBatch: 120, unit: "pcs" }],
+        decorationSupplies: [{ inventoryId: "dummy-wc-3", name: "Whipping Cream", qtyPerBatch: 1, unit: "L" }],
+        linkedProduct: [],
+        notes: "Classic ensaymada - yields ~120 pcs per batch",
+      },
+    ];
+    await Promise.all(demoRecipes.map(r => db.upsertRecipe(r)));
+  }
+
+
+  // Finance seed data
+  const existingPurchases = await db.fetchPurchases();
+  if (existingPurchases.length === 0) {
+    //     const now = new Date().toISOString();
+    const demoPurchases = [
+      { id: `FIN-P-${Date.now()}-1`, supplierName: "Golden Mill", modeOfPayment: "check" as const, dateDelivered: "2026-05-25", particular: "Bread Flour 500kg", amount: 24000, dueDate: "2026-06-25", releasedDate: "2026-05-25", paymentStatus: "paid" as const, remarks: "Regular flour order" },
+      { id: `FIN-P-${Date.now()}-2`, supplierName: "DairyCo", modeOfPayment: "cash" as const, dateDelivered: "2026-05-26", particular: "Fresh Milk 200L + Butter 50kg", amount: 38000, dueDate: "2026-06-10", releasedDate: "", paymentStatus: "unpaid" as const, remarks: "Weekly dairy supply" },
+      { id: `FIN-P-${Date.now()}-3`, supplierName: "SweetSource", modeOfPayment: "online" as const, dateDelivered: "2026-05-24", particular: "Granulated Sugar 300kg", amount: 18600, dueDate: "2026-06-24", releasedDate: "2026-05-24", paymentStatus: "paid" as const, remarks: "" },
+      { id: `FIN-P-${Date.now()}-4`, supplierName: "PackPro", modeOfPayment: "cash" as const, dateDelivered: "2026-05-27", particular: "Cake Boxes (8 inch) 1000pcs + Bread Bags 500pcs", amount: 12500, dueDate: "2026-06-11", releasedDate: "", paymentStatus: "unpaid" as const, remarks: "Packaging materials for June" },
+      { id: `FIN-P-${Date.now()}-5`, supplierName: "Cacao Prime", modeOfPayment: "online" as const, dateDelivered: "2026-05-22", particular: "Cocoa Powder 50kg", amount: 19000, dueDate: "2026-06-22", releasedDate: "2026-05-22", paymentStatus: "paid" as const, remarks: "Premium cocoa for cakes" },
+    ];
+    const demoBills = [
+      { id: `FIN-B-${Date.now()}-1`, dueDate: "2026-06-07", particular: "MERALCO - Electricity Bill (May)", amount: 45230, modeOfPayment: "online" as const, remarks: "Bakery + Office", status: "pending" as const, category: "utilities" as const, branch: "Cakes N Styles Gensan" },
+      { id: `FIN-B-${Date.now()}-2`, dueDate: "2026-06-01", particular: "Shop Space Rent - June", amount: 80000, modeOfPayment: "check" as const, remarks: "Monthly rent for main bakery", status: "pending" as const, category: "rent" as const, branch: "Cakes N Styles Gensan" },
+      { id: `FIN-B-${Date.now()}-3`, dueDate: "2026-06-15", particular: "PLDT Internet (May bill)", amount: 2500, modeOfPayment: "online" as const, remarks: "Fiber plan for office", status: "paid" as const, category: "internet" as const, branch: "Cakes N Styles Gensan" },
+      { id: `FIN-B-${Date.now()}-4`, dueDate: "2026-06-05", particular: "Staff Payroll - Last Week May", amount: 120000, modeOfPayment: "cash" as const, remarks: "5 bakers + 3 deco + 2 kitchen + 2 branch staff", status: "pending" as const, category: "payroll" as const, branch: "Cakes N Styles Gensan" },
+      { id: `FIN-B-${Date.now()}-5`, dueDate: "2026-06-10", particular: "Maynilad Water Bill", amount: 3450, modeOfPayment: "online" as const, remarks: "", status: "pending" as const, category: "utilities" as const, branch: "Shadrach's Bake & Brew" },
+      { id: `FIN-B-${Date.now()}-6`, dueDate: "2026-06-20", particular: "Equipment Maintenance - Ovens", amount: 15000, modeOfPayment: "cash" as const, remarks: "Scheduled maintenance for 3 ovens", status: "pending" as const, category: "maintenance" as const, branch: "Cakes N Styles Gensan" },
+    ];
+    const demoRevenue = [
+      { id: `FIN-R-${Date.now()}-1`, source: "branch_sales" as const, particular: "Daily Sales - May 30", branch: "Cakes N Styles Gensan", amount: 152500, date: "2026-05-30", modeOfPayment: "cash" as const, referenceId: "BR1-0530", remarks: "Saturday sales" },
+      { id: `FIN-R-${Date.now()}-2`, source: "branch_sales" as const, particular: "Daily Sales - May 30", branch: "Shadrach's Bake & Brew", amount: 98750, date: "2026-05-30", modeOfPayment: "online" as const, referenceId: "BR2-0530", remarks: "" },
+      { id: `FIN-R-${Date.now()}-3`, source: "delivery" as const, particular: "Bulk Order - City Cafe", branch: "Cakes N Styles Gensan", amount: 25000, date: "2026-05-29", modeOfPayment: "check" as const, referenceId: "DLV-BULK-001", remarks: "200 pcs Pandesal daily for 1 week" },
+      { id: `FIN-R-${Date.now()}-4`, source: "branch_sales" as const, particular: "Daily Sales - May 29", branch: "Cakes N Styles Gensan", amount: 138200, date: "2026-05-29", modeOfPayment: "cash" as const, referenceId: "BR1-0529", remarks: "" },
+      { id: `FIN-R-${Date.now()}-5`, source: "manual" as const, particular: "Custom Wedding Cake Order", branch: "Shadrach's Bake & Brew", amount: 45000, date: "2026-05-28", modeOfPayment: "online" as const, referenceId: "CUST-WED-001", remarks: "3-tier custom wedding cake" },
+    ];
+    const demoWaste = [
+      { id: `FIN-W-${Date.now()}-1`, product: "Pandesal", qtyRejected: 15, unitCost: 48, totalCost: 720, reason: "Over-baked / burned bottom", source: "kitchen_qc", referenceId: "QC-0529-01", date: "2026-05-29" },
+      { id: `FIN-W-${Date.now()}-2`, product: "Choco Moist Cake", qtyRejected: 2, unitCost: 600, totalCost: 1200, reason: "Cracked surface / uneven baking", source: "kitchen_qc", referenceId: "QC-0529-02", date: "2026-05-29" },
+      { id: `FIN-W-${Date.now()}-3`, product: "Loaf Bread", qtyRejected: 5, unitCost: 48, totalCost: 240, reason: "Stale / not sold within 24hrs", source: "branch_return", referenceId: "BR1-RET-0530", date: "2026-05-30" },
+      { id: `FIN-W-${Date.now()}-4`, product: "Ensaymada", qtyRejected: 8, unitCost: 35, totalCost: 280, reason: "Decoration fell off during transport", source: "kitchen_qc", referenceId: "QC-0530-01", date: "2026-05-30" },
+    ];
+    await Promise.all([
+      db.upsertPurchases(demoPurchases),
+      db.upsertBillsAndDues(demoBills),
+      db.upsertRevenue(demoRevenue),
+      db.upsertWasteLog(demoWaste),
+    ]);
+  }
   const existing = await db.fetchAllInventory();
   if (existing.length > 0) return;
 
@@ -105,7 +232,7 @@ async function seedIfEmpty() {
     { id: "PRD-1", product: "Pandesal", target: 500, completed: 380, assignedTo: "baker", status: "in-progress" },
     { id: "PRD-2", product: "Loaf Bread", target: 200, completed: 200, assignedTo: "baker", status: "completed" },
     { id: "PRD-3", product: "Choco Moist Cake", target: 50, completed: 15, assignedTo: "deco", status: "in-progress" },
-    { id: "PRD-4", product: "Sponge Fudge", target: 40, completed: 0, assignedTo: "deco", status: "pending" },
+    { id: "PRD-4", product: "Sponge Fudge", target: 40, completed: 0, assignedTo: "deco", status: "in-progress" },
     { id: "PRD-5", product: "Ensaymada", target: 120, completed: 90, assignedTo: "baker", status: "in-progress" },
   ];
 
@@ -125,6 +252,9 @@ async function seedIfEmpty() {
   const products = ["Pandesal", "Loaf Bread", "Choco Moist Cake", "Sponge Fudge", "Ensaymada"];
   const { error: catErr } = await supabase.from("product_catalog").insert(products.map(n => ({ name: n })));
   if (catErr && !catErr.message.includes("duplicate")) console.error("seed catalog error:", catErr);
+
+
+
 }
 
 export default function App() {
@@ -154,6 +284,10 @@ export default function App() {
   const [productPricing, setProductPricing] = useState<ProductPricing[]>([]);
   const [freezerItems, setFreezerItems] = useState<FreezerItem[]>([]);
   const [freezerHistory, setFreezerHistory] = useState<FreezerHistory[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [billsAndDues, setBillsAndDues] = useState<BillDue[]>([]);
+  const [revenue, setRevenue] = useState<Revenue[]>([]);
+  const [wasteLog, setWasteLog] = useState<WasteLog[]>([]);
   const [now, setNow] = useState(new Date());
   const prevDayRef = useRef(getPHToday());
   const [dosNotifs, setDosNotifs] = useState<{ id: string; message: string }[]>([]);
@@ -169,7 +303,7 @@ export default function App() {
     setDataLoading(true);
     try {
       if (!auditCleaned.current) { auditCleaned.current = true; await db.clearAuditLogs().catch(() => {}); }
-      const [inv, dos, prod, del, audit, catalog, rec, pricing, freezer, fHistory] = await Promise.all([
+      const [inv, dos, prod, del, audit, catalog, rec, pricing, freezer, fHistory, purch, bills, rev, waste] = await Promise.all([
         db.fetchAllInventory(),
         db.fetchDOS(),
         db.fetchProduction(),
@@ -180,6 +314,10 @@ export default function App() {
         db.fetchProductPricing(),
         db.fetchFreezerItems(),
         db.fetchFreezerHistory(),
+        db.fetchPurchases(),
+        db.fetchBillsAndDues(),
+        db.fetchRevenue(),
+        db.fetchWasteLog(),
       ]);
       if (inv.length > 0) setInventory(inv);
       if (dos.length > 0) setDosItems(dos);
@@ -192,6 +330,10 @@ export default function App() {
       if (freezer.length > 0) setFreezerItems(freezer);
       else setFreezerItems(freezer);
       if (fHistory.length > 0) setFreezerHistory(fHistory);
+      if (purch.length > 0) setPurchases(purch);
+      if (bills.length > 0) setBillsAndDues(bills);
+      if (rev.length > 0) setRevenue(rev);
+      if (waste.length > 0) setWasteLog(waste);
       return dos;
     } catch (err) {
       console.error("Failed to load data:", err);
@@ -220,7 +362,7 @@ export default function App() {
           const scheduled = loadedDOS.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
           if (scheduled.length > 0) {
             const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
-            const tasks: ProductionTask[] = updated.map((item, idx) => ({ id: `PRD-${Date.now()}-${idx}`, product: item.product, target: item.qty, completed: 0, assignedTo: "baker" as const, status: "pending" as const }));
+            const tasks: ProductionTask[] = updated.map((item, idx) => ({ id: `PRD-${Date.now()}-${idx}`, product: item.product, target: item.qty, completed: 0, assignedTo: "baker" as const, status: "in-progress" as const }));
             await db.upsertDOS(updated);
             await db.upsertProduction(tasks);
             setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending", scheduledDate: undefined } : i));
@@ -408,7 +550,7 @@ export default function App() {
     const scheduled = loadedDOS.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
     if (scheduled.length > 0) {
       const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
-      const tasks: ProductionTask[] = updated.map((item, idx) => ({ id: `PRD-${Date.now()}-${idx}`, product: item.product, target: item.qty, completed: 0, assignedTo: "baker" as const, status: "pending" as const }));
+      const tasks: ProductionTask[] = updated.map((item, idx) => ({ id: `PRD-${Date.now()}-${idx}`, product: item.product, target: item.qty, completed: 0, assignedTo: "baker" as const, status: "in-progress" as const }));
       await db.upsertDOS(updated);
       await db.upsertProduction(tasks);
       setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending", scheduledDate: undefined } : i));
@@ -692,7 +834,7 @@ export default function App() {
 
         <main className="min-w-0 flex-1">
           <div className="p-4 sm:p-6 lg:p-8">
-            {role === "admin" && ["dashboard", "dos", "products", "pricing", "warehouse", "production", "deliveries", "audit"].includes(activeTab) && (
+            {role === "admin" && ["dashboard", "dos", "products", "pricing", "warehouse", "production", "deliveries", "audit", "finance"].includes(activeTab) && (
               <AdminDashboard
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
@@ -719,12 +861,20 @@ export default function App() {
                 onUpdateProductPricing={setProductPricing}
                 freezerItems={freezerItems}
                 onUpdateFreezer={setFreezerItems}
+                purchases={purchases}
+                onUpdatePurchases={setPurchases}
+                billsAndDues={billsAndDues}
+                onUpdateBillsAndDues={setBillsAndDues}
+                revenue={revenue}
+                onUpdateRevenue={setRevenue}
+                wasteLog={wasteLog}
+                onUpdateWasteLog={setWasteLog}
               />
             )}
             {role === "baker" && ["dashboard", "recipes", "requests", "freezer"].includes(activeTab) && (
               <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
             )}
-            {role === "deco" && ["dashboard", "recipes", "free-mix", "deco-queue", "custom-orders", "decoration-supplies", "ingredients", "materials", "freezer"].includes(activeTab) && (
+            {role === "deco" && ["dashboard", "recipes", "free-mix", "deco-queue", "decoration-supplies", "ingredients", "materials", "freezer"].includes(activeTab) && (
               <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (

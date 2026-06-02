@@ -4,7 +4,7 @@ import type {
   ProductRecipe, BakerIngredientRequest, MaterialRequest,
   StockTransaction, DeliveryValidation, VerificationResult,
   BranchBatch, DeliveryReport, KitchenFeedback, DecoSubTask, DecoQCResult,
-  ProductPricing, FreezerItem, FreezerHistory,
+  ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog,
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
@@ -222,34 +222,54 @@ export async function addToCatalog(name: string) {
   const { error } = await supabase.from("product_catalog").insert({ name }).maybeSingle();
   if (error && !error.message.includes("duplicate")) throw error;
 }
+export async function removeFromCatalog(name: string) {
+  const { error } = await supabase.from("product_catalog").delete().eq("name", name);
+  if (error) throw error;
+}
+export async function deleteRecipe(productName: string) {
+  const { error } = await supabase.from("recipes").delete().eq("name", productName);
+  if (error) throw error;
+}
 
 // ─── Recipes ───
 export async function fetchRecipes(): Promise<ProductRecipe[]> {
-  const { data, error } = await supabase.from("product_recipes").select("*");
+  // Fetch from new recipes table with linked products
+  const { data, error } = await supabase.from("recipes").select("*");
   if (error) throw error;
+  const { data: links } = await supabase.from("product_recipe_links").select("*");
   return (data ?? []).map((r: any) => ({
-    productId: r.product_id,
-    productName: r.product_name,
+    id: r.id,
+    productId: r.id,
+    productName: r.name,
     ingredients: r.ingredients ?? [],
     packagingMaterials: r.packaging_materials ?? [],
     decorationSupplies: r.decoration_supplies ?? [],
+    notes: r.notes ?? "",
+    linkedProduct: (links ?? []).filter((l: any) => l.recipe_id === r.id).map((l: any) => l.product_name),
   }));
 }
 export async function upsertRecipe(recipe: ProductRecipe) {
-  const { error } = await supabase.from("product_recipes").upsert({
-    product_id: recipe.productId,
-    product_name: recipe.productName,
+  const { error } = await supabase.from("recipes").upsert({
+    id: recipe.id,
+    name: recipe.productName,
     ingredients: recipe.ingredients,
     packaging_materials: recipe.packagingMaterials ?? [],
     decoration_supplies: recipe.decorationSupplies ?? [],
-  }, { onConflict: "product_id" });
+    notes: recipe.notes ?? "",
+  }, { onConflict: "id" });
   if (error) {
-    const fallback = await supabase.from("product_recipes").upsert({
-      product_id: recipe.productId,
-      product_name: recipe.productName,
-      ingredients: recipe.ingredients,
-    }, { onConflict: "product_id" });
-    if (fallback.error) console.error("recipe upsert failed:", fallback.error);
+    console.error("recipe upsert failed:", error);
+    return;
+  }
+  // Update product_recipe_links
+  if (recipe.productName) {
+    const { data: inserted } = await supabase.from("recipes").select("id").eq("name", recipe.productName).maybeSingle();
+    if (inserted) {
+      await supabase.from("product_recipe_links").upsert({
+        product_name: recipe.productName,
+        recipe_id: inserted.id,
+      }, { onConflict: "product_name, recipe_id" });
+    }
   }
 }
 
@@ -674,4 +694,90 @@ export async function insertFreezerHistory(entry: FreezerHistory) {
   } catch (e) {
     console.error("freezer_history insert failed:", e);
   }
+}
+
+// ─── Purchases ───
+export async function fetchPurchases(): Promise<Purchase[]> {
+  const { data, error } = await supabase.from("purchases").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((d: any) => ({
+    id: d.id, supplierName: d.supplier_name, modeOfPayment: d.mode_of_payment,
+    dateDelivered: d.date_delivered, particular: d.particular, amount: d.amount,
+    dueDate: d.due_date, releasedDate: d.released_date, paymentStatus: d.payment_status,
+    remarks: d.remarks, createdAt: d.created_at,
+  }));
+}
+export async function upsertPurchases(items: Purchase[]) {
+  const { error } = await supabase.from("purchases").upsert(items.map(p => ({
+    id: p.id, supplier_name: p.supplierName, mode_of_payment: p.modeOfPayment,
+    date_delivered: p.dateDelivered, particular: p.particular, amount: p.amount,
+    due_date: p.dueDate, released_date: p.releasedDate, payment_status: p.paymentStatus,
+    remarks: p.remarks,
+  })), { onConflict: "id" });
+  if (error) throw error;
+}
+export async function deletePurchase(id: string) {
+  const { error } = await supabase.from("purchases").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ─── Bills & Dues ───
+export async function fetchBillsAndDues(): Promise<BillDue[]> {
+  const { data, error } = await supabase.from("bills_and_dues").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((d: any) => ({
+    id: d.id, dueDate: d.due_date, particular: d.particular, amount: d.amount,
+    modeOfPayment: d.mode_of_payment, remarks: d.remarks, status: d.status,
+    category: d.category, branch: d.branch, createdAt: d.created_at,
+  }));
+}
+export async function upsertBillsAndDues(items: BillDue[]) {
+  const { error } = await supabase.from("bills_and_dues").upsert(items.map(b => ({
+    id: b.id, due_date: b.dueDate, particular: b.particular, amount: b.amount,
+    mode_of_payment: b.modeOfPayment, remarks: b.remarks, status: b.status,
+    category: b.category, branch: b.branch,
+  })), { onConflict: "id" });
+  if (error) throw error;
+}
+export async function deleteBillDue(id: string) {
+  const { error } = await supabase.from("bills_and_dues").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ─── Revenue ───
+export async function fetchRevenue(): Promise<Revenue[]> {
+  const { data, error } = await supabase.from("revenue").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((d: any) => ({
+    id: d.id, source: d.source, particular: d.particular, branch: d.branch,
+    amount: d.amount, date: d.date, modeOfPayment: d.mode_of_payment,
+    referenceId: d.reference_id, remarks: d.remarks, createdAt: d.created_at,
+  }));
+}
+export async function upsertRevenue(items: Revenue[]) {
+  const { error } = await supabase.from("revenue").upsert(items.map(r => ({
+    id: r.id, source: r.source, particular: r.particular, branch: r.branch,
+    amount: r.amount, date: r.date, mode_of_payment: r.modeOfPayment,
+    reference_id: r.referenceId, remarks: r.remarks,
+  })), { onConflict: "id" });
+  if (error) throw error;
+}
+
+// ─── Waste Log ───
+export async function fetchWasteLog(): Promise<WasteLog[]> {
+  const { data, error } = await supabase.from("waste_log").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((d: any) => ({
+    id: d.id, product: d.product, qtyRejected: d.qty_rejected, unitCost: d.unit_cost,
+    totalCost: d.total_cost, reason: d.reason, source: d.source,
+    referenceId: d.reference_id, date: d.date, createdAt: d.created_at,
+  }));
+}
+export async function upsertWasteLog(items: WasteLog[]) {
+  const { error } = await supabase.from("waste_log").upsert(items.map(w => ({
+    id: w.id, product: w.product, qty_rejected: w.qtyRejected, unit_cost: w.unitCost,
+    total_cost: w.totalCost, reason: w.reason, source: w.source,
+    reference_id: w.referenceId, date: w.date,
+  })), { onConflict: "id" });
+  if (error) throw error;
 }

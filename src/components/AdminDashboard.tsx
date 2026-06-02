@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, Role, FreezerItem, FreezerHistory } from "../types";
+import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog } from "../types";
 import * as db from "../lib/db";
 import DOSBuilderModal from "./DOSBuilderModal";
 
@@ -30,6 +30,14 @@ type Props = {
   onUpdateProductPricing: (cb: ProductPricing[] | ((prev: ProductPricing[]) => ProductPricing[])) => void;
   freezerItems?: FreezerItem[];
   onUpdateFreezer?: (cb: FreezerItem[] | ((prev: FreezerItem[]) => FreezerItem[])) => void;
+  purchases: Purchase[];
+  onUpdatePurchases: (cb: Purchase[] | ((prev: Purchase[]) => Purchase[])) => void;
+  billsAndDues: BillDue[];
+  onUpdateBillsAndDues: (cb: BillDue[] | ((prev: BillDue[]) => BillDue[])) => void;
+  revenue: Revenue[];
+  onUpdateRevenue: (cb: Revenue[] | ((prev: Revenue[]) => Revenue[])) => void;
+  wasteLog: WasteLog[];
+  onUpdateWasteLog: (cb: WasteLog[] | ((prev: WasteLog[]) => WasteLog[])) => void;
 };
 
 export default function AdminDashboard({
@@ -58,6 +66,14 @@ export default function AdminDashboard({
   onUpdateProductPricing,
   freezerItems = [],
   onUpdateFreezer,
+  purchases,
+  onUpdatePurchases,
+  billsAndDues,
+  onUpdateBillsAndDues,
+  revenue,
+  onUpdateRevenue,
+  wasteLog,
+  onUpdateWasteLog,
 }: Props) {
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -70,8 +86,25 @@ export default function AdminDashboard({
   const [editingDOS, setEditingDOS] = useState<DOSItem | null>(null);
   const [scheduledAddDate, setScheduledAddDate] = useState<string | null>(null);
   const [todayAddOpen, setTodayAddOpen] = useState(false);
-  const [dosRoleFilter, setDosRoleFilter] = useState<"all" | "baker" | "deco">("all");
+  const [dosRoleFilter, setDosRoleFilter] = useState<"all" | "baker" | "deco" | "pastry">("all");
   const [editingInvItem, setEditingInvItem] = useState<InventoryItem | null>(null);
+
+  // Finance
+  const [showAddPurchase, setShowAddPurchase] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
+  const [showAddBill, setShowAddBill] = useState(false);
+  const [editingBill, setEditingBill] = useState<BillDue | null>(null);
+  const [showAddRevenue, setShowAddRevenue] = useState(false);
+  const [editingRevenue, setEditingRevenue] = useState<Revenue | null>(null);
+  const [showAddWaste, setShowAddWaste] = useState(false);
+  const [editingWaste, setEditingWaste] = useState<WasteLog | null>(null);
+  const [financeSearch, setFinanceSearch] = useState("");
+  const [financeTab, setFinanceTab] = useState<"purchases" | "bills" | "revenue" | "waste">("purchases");
+  const [financePeriod, setFinancePeriod] = useState<"today" | "week" | "month" | "year" | "custom">("month");
+  const [financeCustomMonth, setFinanceCustomMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   // Stockroom
   const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "history">("ingredients");
@@ -117,6 +150,16 @@ export default function AdminDashboard({
   const [pricingFilter, setPricingFilter] = useState<"all" | "active" | "draft" | "archived">("all");
   const [editingPricing, setEditingPricing] = useState<ProductPricing | null>(null);
   const [showPricingModal, setShowPricingModal] = useState(false);
+
+  // Products
+  const [showRecipe, setShowRecipe] = useState(false);
+  const [recipeProduct, setRecipeProduct] = useState<string | null>(null);
+  const [editingProduct, setEditingProduct] = useState<string | null>(null);
+  const [renamingProduct, setRenamingProduct] = useState("");
+
+  const [showAllProdHistory, setShowAllProdHistory] = useState(false);
+  const [expandedProdGroups, setExpandedProdGroups] = useState<Set<string>>(new Set());
+  const toggleProdGroup = (date: string) => setExpandedProdGroups(prev => { const n = new Set(prev); if (n.has(date)) n.delete(date); else n.add(date); return n; });
 
   // Toasts
   type ToastItem = { name: string; detail: string };
@@ -166,72 +209,194 @@ export default function AdminDashboard({
 
   /* ── Products Tab ── */
   if (activeTab === "products") {
+    const searchTerm = invSearch.toLowerCase();
     const filteredProducts = productCatalog.filter(p => {
       if (!invSearch) return true;
-      const q = invSearch.toLowerCase();
-      if (p.toLowerCase().includes(q)) return true;
+      if (p.toLowerCase().includes(searchTerm)) return true;
       const recipe = recipes.find(r => r.productName === p);
       if (!recipe) return false;
       return (
-        recipe.ingredients.some(i => i.name.toLowerCase().includes(q)) ||
-        (recipe.packagingMaterials ?? []).some(i => i.name.toLowerCase().includes(q)) ||
-        (recipe.decorationSupplies ?? []).some(i => i.name.toLowerCase().includes(q))
+        recipe.ingredients.some(i => i.name.toLowerCase().includes(searchTerm)) ||
+        (recipe.packagingMaterials ?? []).some(i => i.name.toLowerCase().includes(searchTerm)) ||
+        (recipe.decorationSupplies ?? []).some(i => i.name.toLowerCase().includes(searchTerm))
       );
     });
+
+    const computeRecipeCost = (recipe: ProductRecipe) => {
+      return recipe.ingredients.reduce((sum, ing) => {
+        const inv = inventory.find(i => i.id === ing.inventoryId);
+        return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+      }, 0);
+    };
+
     return (
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-[24px] font-semibold">Products</h1>
           <button onClick={() => setShowAddProduct(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Product</button>
         </div>
+
         <div className="relative max-w-xs">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
-          <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search products..." className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
+          <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search products & recipes..." className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
         </div>
+
+        {/* Products Table */}
         <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Ingredients</th><th className="px-4 py-3">Packaging Materials</th><th className="px-4 py-3">Deco Supplies</th><th className="px-4 py-3 text-right">DOS Count</th></tr>
+                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Recipe</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-32" /></tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 text-[13px]">
                 {filteredProducts.map(product => {
                   const recipe = recipes.find(r => r.productName === product);
-                  const dosCount = dosItems.filter(d => d.product === product).length;
                   return (
-                    <tr key={product} className="hover:bg-amber-50/40">
-                      <td className="px-4 py-3"><div className="font-medium text-zinc-900">{product}</div></td>
+                    <tr key={product} className="hover:bg-zinc-50/60">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-zinc-900">{product}</div>
+                      </td>
                       <td className="px-4 py-3">
                         {recipe && recipe.ingredients.length > 0 ? (
-                          <span className="text-[12px] text-zinc-500">{recipe.ingredients.map(i => i.name).join(", ")}</span>
+                          <button
+                            onClick={() => { setRecipeProduct(product); setShowRecipe(true); }}
+                            className="rounded-lg bg-zinc-100 px-2.5 py-1 text-[12px] font-medium text-zinc-700 hover:bg-zinc-200 transition-all text-left"
+                          >
+                            {recipe.ingredients.map(i => i.name).join(", ")}
+                          </button>
                         ) : (
                           <span className="text-[12px] text-zinc-400 italic">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {(recipe?.packagingMaterials ?? []).length > 0 ? (
-                          <span className="text-[12px] text-zinc-500">{(recipe?.packagingMaterials ?? []).map(i => i.name).join(", ")}</span>
+                        {recipe?.packagingMaterials && recipe.packagingMaterials.length > 0 ? (
+                          <span className="text-[12px] text-zinc-600">{recipe.packagingMaterials.length} pack.</span>
                         ) : (
                           <span className="text-[12px] text-zinc-400 italic">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {(recipe?.decorationSupplies ?? []).length > 0 ? (
-                          <span className="text-[12px] text-zinc-500">{(recipe?.decorationSupplies ?? []).map(i => i.name).join(", ")}</span>
+                        {recipe?.decorationSupplies && recipe.decorationSupplies.length > 0 ? (
+                          <span className="text-[12px] text-zinc-600">{recipe.decorationSupplies.length} deco.</span>
                         ) : (
                           <span className="text-[12px] text-zinc-400 italic">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right font-medium text-zinc-700" style={{ fontFamily: "Fragment Mono, monospace" }}>{dosCount}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center gap-1 justify-end">
+                          <button onClick={() => { setEditingProduct(product); setRenamingProduct(product); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
+                          <button onClick={() => { if (confirm(`Delete "${product}"?`)) { onUpdateProductCatalog(prev => prev.filter(p => p !== product)); db.removeFromCatalog(product).catch(console.error); const existingRecipe = recipes.find(r => r.productName === product); if (existingRecipe) { onUpdateRecipes(prev => prev.filter(r => r.productName !== product)); db.deleteRecipe(product).catch(console.error); } } }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          {filteredProducts.length === 0 && <div className="text-center py-12"><p className="text-[14px] text-zinc-500">{productCatalog.length === 0 ? "No products yet. Add one above." : "No products match your search."}</p></div>}
+          {filteredProducts.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-[14px] text-zinc-500">{productCatalog.length === 0 ? "No products yet. Add one above." : "No products match your search."}</p>
+            </div>
+          )}
         </div>
-        {showAddProduct && <AddProductModal onSave={(name) => { onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]); db.addToCatalog(name).catch(console.error); setShowAddProduct(false); }} onClose={() => setShowAddProduct(false)} />}
+
+        {/* Recipes Section */}
+        <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
+          <div className="flex items-center justify-between px-5 pt-5 pb-3">
+            <h2 className="text-[16px] font-semibold">Recipes <span className="text-[13px] font-normal text-zinc-400">({recipes.length})</span></h2>
+            <button onClick={() => { setRecipeProduct(""); setShowRecipe(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Recipe</button>
+          </div>
+          {recipes.length === 0 ? (
+            <div className="px-5 pb-5">
+              <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center">
+                <p className="text-[13px] text-zinc-500">No recipes yet. Select a product above to add ingredients.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                  <tr><th className="px-4 py-3">Recipe Name</th><th className="px-4 py-3">Items</th><th className="px-4 py-3">Linked Product</th><th className="px-4 py-3">Notes</th><th className="px-4 py-3 text-right">Cost</th><th className="px-4 py-3 w-32" /></tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 text-[13px]">
+                  {recipes.map(recipe => {
+                    const cost = computeRecipeCost(recipe);
+                    return (
+                      <tr key={recipe.productName} className="hover:bg-zinc-50/60">
+                        <td className="px-4 py-3"><div className="font-medium text-zinc-900">{recipe.productName}</div></td>
+                        <td className="px-4 py-3 text-[12px] text-zinc-600">{recipe.ingredients.length} ingredient{recipe.ingredients.length !== 1 ? "s" : ""}</td>
+                        <td className="px-4 py-3">
+                          {(recipe.linkedProduct?.length ?? 0) > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {(recipe.linkedProduct ?? []).map(lp => (
+                                <span key={lp} className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700">{lp}</span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">{recipe.productName}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-[12px] text-zinc-500">{recipe.notes || "—"}</td>
+                        <td className="px-4 py-3 text-right text-[12px] font-medium text-zinc-700" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                          ₱{cost.toFixed(2)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center gap-1 justify-end">
+                            <button onClick={() => { setRecipeProduct(recipe.productName); setShowRecipe(true); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
+                            <button onClick={() => { if (confirm(`Delete recipe "${recipe.productName}"?`)) { onUpdateRecipes(prev => prev.filter(r => r.productName !== recipe.productName)); db.deleteRecipe(recipe.productName).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Add Product Modal */}
+        {showAddProduct && (
+          <AddProductWithRecipeModal
+            inventory={inventory}
+            recipes={recipes}
+            onSave={(name, packagingMaterials, decorationSupplies, linkedProduct) => {
+              onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]);
+              db.addToCatalog(name).catch(console.error);
+              const recipe: ProductRecipe = { productId: name, productName: name, ingredients: [], packagingMaterials, decorationSupplies, notes: "", linkedProduct };
+              onUpdateRecipes(prev => {
+                const idx = prev.findIndex(p => p.productId === recipe.productId);
+                if (idx >= 0) { const next = [...prev]; next[idx] = recipe; return next; }
+                return [...prev, recipe];
+              });
+              db.upsertRecipe(recipe).catch(console.error);
+              setShowAddProduct(false);
+            }}
+            onClose={() => setShowAddProduct(false)}
+          />
+        )}
+
+        {/* Recipe Modal */}
+        {showRecipe && recipeProduct !== null && (
+          <RecipeModal
+            product={recipeProduct}
+            recipes={recipes}
+            inventory={inventory}
+            onSave={(r) => {
+              const originalKey = recipeProduct || r.productName;
+              onUpdateRecipes(prev => {
+                const idx = prev.findIndex(p => p.productName === originalKey);
+                if (idx >= 0) { const next = [...prev]; next[idx] = r; return next; }
+                return [...prev, r];
+              });
+              db.upsertRecipe(r).catch(console.error);
+              setShowRecipe(false);
+              setRecipeProduct(null);
+            }}
+            onClose={() => { setShowRecipe(false); setRecipeProduct(null); }}
+          />
+        )}
       </div>
     );
   }
@@ -567,44 +732,44 @@ export default function AdminDashboard({
         </div>
 
         {/* Today's DOS */}
-        <div className="rounded-[24px] border border-amber-200 bg-amber-50/30 p-5 shadow-sm">
+        <div className="rounded-[24px] border border-zinc-700 bg-zinc-900 p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <span className="text-[16px] font-semibold text-amber-900">Today's DOS</span>
-              <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-[11px] font-medium text-amber-800 font-mono">{new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</span>
+              <span className="text-[16px] font-semibold text-white">Today's DOS</span>
+              <span className="rounded-full bg-zinc-700 px-2.5 py-0.5 text-[11px] font-medium text-zinc-300 font-mono">{new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</span>
             </div>
             <div className="flex items-center gap-2">
-              {(["all", "baker", "deco"] as const).map(role => (
-                <button key={role} onClick={() => setDosRoleFilter(role)} className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all ${dosRoleFilter === role ? "bg-zinc-900 text-white shadow-sm" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}>{role === "all" ? "All" : role === "baker" ? "Baker" : "Deco"}</button>
+              {(["all", "baker", "deco", "pastry"] as const).map(role => (
+                <button key={role} onClick={() => setDosRoleFilter(role)} className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all ${dosRoleFilter === role ? "bg-white text-zinc-900 shadow-sm" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}>{role === "all" ? "All" : role === "baker" ? "Baker" : "Deco"}</button>
               ))}
-              <button onClick={() => setTodayAddOpen(true)} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-white shadow-sm hover:bg-zinc-800 transition-all">+ Add</button>
+              <button onClick={() => setTodayAddOpen(true)} className="rounded-lg bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-900 shadow-sm hover:bg-zinc-100 transition-all">+ Add</button>
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3 text-right">Cakes N Styles Gensan</th><th className="px-4 py-3 text-right">Shadrach's Bake & Brew</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Assigned To</th><th className="px-4 py-3 text-right">Status</th><th className="px-4 py-3 w-10" /></tr></thead>
-              <tbody className="divide-y divide-zinc-100 text-[13px]">
+              <thead className="bg-zinc-800 text-left text-[11px] uppercase tracking-wider text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3 text-right">Cakes N Styles Gensan</th><th className="px-4 py-3 text-right">Shadrach's Bake & Brew</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Assigned To</th><th className="px-4 py-3 text-right">Status</th><th className="px-4 py-3 w-10" /></tr></thead>
+              <tbody className="divide-y divide-zinc-700 text-[13px]">
                 {(() => {
                   const filtered = dosRoleFilter === "all" ? todayDOS : todayDOS.filter(item => {
                     const itemKey = item.id.replace("DOS-", "");
                     return production.some(t => t.id.includes(itemKey) && t.assignedTo === dosRoleFilter);
                   });
-                  if (filtered.length === 0) return <tr><td colSpan={8} className="text-center py-10 text-[13px] text-zinc-400">{dosRoleFilter === "all" ? "No DOS for today yet. Click \"+ New DOS\" to create one." : `No items assigned to ${dosRoleFilter} today.`}</td></tr>;
+                  if (filtered.length === 0) return <tr><td colSpan={8} className="text-center py-10 text-[13px] text-zinc-500">{dosRoleFilter === "all" ? "No DOS for today yet. Click \"+ New DOS\" to create one." : `No items assigned to ${dosRoleFilter} today.`}</td></tr>;
                   return filtered.map(item => {
                     const itemKey = item.id.replace("DOS-", "");
                     const relatedTasks = production.filter(t => t.id.includes(itemKey));
                     return (
-                      <tr key={item.id} className="hover:bg-amber-50/40">
-                        <td className="px-4 py-3"><div className="font-medium text-zinc-900">{item.product}</div><div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></td>
-                        <td className="px-4 py-3 text-right font-medium" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty}</td>
+                      <tr key={item.id} className="hover:bg-zinc-800/60">
+                        <td className="px-4 py-3"><div className="font-medium text-white">{item.product}</div><div className="text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></td>
+                        <td className="px-4 py-3 text-right font-medium text-white" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty}</td>
                         <td className="px-4 py-3 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.branch1}</td>
                         <td className="px-4 py-3 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.branch2}</td>
                         <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-700"}`}>{item.priority}</span></td>
                         <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{relatedTasks.length > 0 ? [...new Set(relatedTasks.map(t => t.assignedTo))].map(role => (<span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium text-white ${roleColors[role] || "bg-zinc-500"}`}>{role}</span>)) : <span className="text-zinc-400 text-[11px]">—</span>}</div></td>
-                        <td className="px-4 py-3 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${item.status === "completed" ? "text-emerald-700" : item.status === "in-progress" ? "text-amber-700" : "text-zinc-500"}`}><span className={`h-1.5 w-1.5 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} />{item.status === "in-progress" ? "In Progress" : item.status === "completed" ? "Completed" : "Pending"}</span></td>
+                        <td className="px-4 py-3 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${item.status === "completed" ? "text-emerald-400" : item.status === "in-progress" ? "text-amber-400" : "text-zinc-400"}`}><span className={`h-1.5 w-1.5 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} />{item.status === "in-progress" ? "In Progress" : item.status === "completed" ? "Completed" : "Pending"}</span></td>
                         <td className="px-4 py-3 text-right"><div className="flex items-center gap-1 justify-end">
-                          <button onClick={() => setEditingDOS(item)} className="rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 transition-all">Edit</button>
-                          <button onClick={async () => { if (confirm(`Delete "${item.product}" from today's DOS?`)) { onDeleteDOS(item.id); } }} className="rounded-lg border border-red-200 px-2 py-1 text-[11px] text-red-500 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
+                          <button onClick={() => setEditingDOS(item)} className="rounded-lg border border-zinc-600 px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all">Edit</button>
+                          <button onClick={async () => { if (confirm(`Delete "${item.product}" from today's DOS?`)) { onDeleteDOS(item.id); } }} className="rounded-lg border border-red-700 px-2 py-1 text-[11px] text-red-400 hover:bg-red-900/30 hover:border-red-500 transition-all">Del</button>
                         </div></td>
                       </tr>
                     );
@@ -704,7 +869,7 @@ export default function AdminDashboard({
                             </thead>
                             <tbody className="divide-y divide-zinc-100">
                               {group.items.map(item => (
-                                <tr key={item.id} className="hover:bg-amber-50/40">
+                                <tr key={item.id} className="hover:bg-zinc-800/60">
                                   <td className="px-4 py-2 font-medium text-zinc-900">{item.product}</td>
                                   <td className="px-4 py-2 text-right font-mono text-zinc-600">{item.qty}</td>
                                   <td className="px-4 py-2 text-right font-mono text-zinc-600">{item.branch1}</td>
@@ -768,8 +933,8 @@ export default function AdminDashboard({
     const bakerTasks = todayTasks.filter(t => t.assignedTo === "baker");
     const decoTasks = todayTasks.filter(t => t.assignedTo === "deco");
     const kitchenTasks = todayTasks.filter(t => t.assignedTo === "kitchen");
-    const pendingBaker = bakerTasks.filter(t => t.status === "pending");
-    const pendingDeco = decoTasks.filter(t => t.status === "pending");
+    const pendingBaker = todayTasks.filter(t => t.assignedTo === "baker" && t.status === "pending");
+    const pendingDeco = todayTasks.filter(t => t.assignedTo === "deco" && t.status === "pending");
 
     return (
       <div className="space-y-5">
@@ -843,6 +1008,85 @@ export default function AdminDashboard({
             </div>
           </div>
         )}
+        {/* Production History */}
+        {(() => {
+          const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+          const prodGroups = (() => {
+            const groups = new Map<string, ProductionTask[]>();
+            production.forEach(task => {
+              const ts = task.id.match(/PRD-(\d+)/)?.[1];
+              if (!ts) return;
+              const dateKey = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+              if (dateKey === todayStr) return;
+              if (!groups.has(dateKey)) groups.set(dateKey, []);
+              groups.get(dateKey)!.push(task);
+            });
+            return Array.from(groups.entries())
+              .map(([date, items]) => ({ date, items, total: items.reduce((s, i) => s + i.target, 0), done: items.filter(i => i.status === "completed").length }))
+              .sort((a, b) => b.date.localeCompare(a.date));
+          })();
+
+          if (prodGroups.length === 0) return null;
+
+          const displayed = showAllProdHistory ? prodGroups : prodGroups.slice(0, 3);
+
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-[18px] font-semibold">Production History</h2>
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 font-mono">{prodGroups.length} day{prodGroups.length > 1 ? "s" : ""}</span>
+              </div>
+              <div className="space-y-2">
+                {displayed.map(group => {
+                  const isOpen = expandedProdGroups.has(group.date);
+                  return (
+                  <div key={group.date} className="rounded-2xl border border-zinc-200 overflow-hidden bg-white">
+                    <button onClick={() => toggleProdGroup(group.date)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-50 transition-colors text-left cursor-pointer">
+                      <div className="flex items-center gap-3">
+                        <span className="text-[14px] font-medium text-zinc-900">
+                          {new Date(group.date + "T00:00:00").toLocaleDateString("en-PH", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                        </span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 font-mono">{group.items.length} task{group.items.length > 1 ? "s" : ""} • {group.total} pcs</span>
+                        <span className="text-[11px] text-zinc-500">{group.done}/{group.items.length} done</span>
+                      </div>
+                      <span className="text-zinc-400 text-[13px]">{isOpen ? "▾" : "›"}</span>
+                    </button>
+                    {isOpen && <div className="border-t border-zinc-100">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[13px]">
+                          <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                            <tr><th className="px-4 py-2.5">Product</th><th className="px-4 py-2.5 text-right">Target</th><th className="px-4 py-2.5 text-right">Completed</th><th className="px-4 py-2.5">Assigned To</th><th className="px-4 py-2.5 text-right">Status</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {group.items.map(task => (
+                              <tr key={task.id} className="hover:bg-zinc-50">
+                                <td className="px-4 py-2 font-medium text-zinc-900">{task.product}</td>
+                                <td className="px-4 py-2 text-right font-mono text-zinc-600">{task.target}</td>
+                                <td className="px-4 py-2 text-right font-mono text-zinc-600">{task.completed}</td>
+                                <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium text-white ${task.assignedTo === "baker" ? "bg-stone-500" : task.assignedTo === "deco" ? "bg-rose-500" : task.assignedTo === "kitchen" ? "bg-emerald-500" : "bg-zinc-400"}`}>{task.assignedTo || "—"}</span></td>
+                                <td className="px-4 py-2 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${task.status === "completed" ? "text-emerald-700" : task.status === "in-progress" ? "text-amber-700" : "text-zinc-500"}`}><span className={`h-1.5 w-1.5 rounded-full ${task.status === "completed" ? "bg-emerald-500" : task.status === "in-progress" ? "bg-amber-500" : "bg-zinc-300"}`} />{task.status === "in-progress" ? "In Progress" : task.status === "completed" ? "Completed" : "Pending"}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>}
+                  </div>
+                );})}
+                {!showAllProdHistory && prodGroups.length > 3 && (
+                  <button onClick={() => setShowAllProdHistory(true)} className="w-full rounded-xl border border-dashed border-zinc-200 py-2.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition-all">
+                    See all ({prodGroups.length} day{prodGroups.length > 1 ? "s" : ""})
+                  </button>
+                )}
+                {showAllProdHistory && prodGroups.length > 3 && (
+                  <button onClick={() => setShowAllProdHistory(false)} className="w-full rounded-xl border border-dashed border-zinc-200 py-2.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition-all">
+                    Show less
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -892,7 +1136,7 @@ export default function AdminDashboard({
                     ))}
                   </div>
                   <div className="mt-3 flex items-center justify-between">
-                    <span className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>ETA: {d.eta}</span>
+                    <span className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{(() => { const ts = d.id.match(/DLV-(\d+)/)?.[1]; return ts ? `Date: ${new Date(Number(ts)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}  •  ` : ""; })()}ETA: {d.eta}</span>
                     {!val && d.status === "preparing" && (
                       <button onClick={async () => {
                         const id = `VAL-${Date.now()}`;
@@ -931,6 +1175,7 @@ export default function AdminDashboard({
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${v.status === "posted" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>{v.status}</span>
                   <span className="font-medium text-zinc-900">{v.branch}</span>
                   <span className="text-zinc-500">{v.items.length} item{v.items.length > 1 ? "s" : ""}</span>
+                  <span className="text-[11px] text-zinc-400 font-mono">{v.reportId}</span>
                   <span className="ml-auto text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{v.timestamp}</span>
                 </div>
               ))}
@@ -1305,6 +1550,404 @@ export default function AdminDashboard({
     );
   }
 
+  if (activeTab === "finance") {
+    const inPeriod = (dateStr: string) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr + (dateStr.length === 10 ? "T00:00:00" : ""));
+      const now = new Date();
+      const pht = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
+      const startOfWeek = new Date(pht); startOfWeek.setDate(pht.getDate() - pht.getDay());
+      const endOfWeek = new Date(startOfWeek); endOfWeek.setDate(startOfWeek.getDate() + 6);
+      switch (financePeriod) {
+        case "today": return d.toDateString() === pht.toDateString();
+        case "week": return d >= startOfWeek && d <= endOfWeek;
+        case "month": return d.getMonth() === pht.getMonth() && d.getFullYear() === pht.getFullYear();
+        case "year": return d.getFullYear() === pht.getFullYear();
+        case "custom": {
+          const [y, m] = financeCustomMonth.split("-").map(Number);
+          return d.getFullYear() === y && d.getMonth() === m - 1;
+        }
+        default: return true;
+      }
+    };
+    const periodLabel = ({ today: "Today", week: "This Week", month: "This Month", year: "This Year", custom: financeCustomMonth } as const)[financePeriod];
+
+    const periodPurchases = purchases.filter(p => inPeriod(p.dateDelivered));
+    const periodBills = billsAndDues.filter(b => inPeriod(b.dueDate));
+    const periodRevenue = revenue.filter(r => inPeriod(r.date));
+    const periodWaste = wasteLog.filter(w => inPeriod(w.date));
+    const totalPurchases = periodPurchases.reduce((s, p) => s + p.amount, 0);
+    const unpaidPurchases = periodPurchases.filter(p => p.paymentStatus === "unpaid" || p.paymentStatus === "overdue");
+    const totalBills = periodBills.reduce((s, b) => s + b.amount, 0);
+    const pendingBills = periodBills.filter(b => b.status === "pending" || b.status === "overdue");
+    const totalRevenue = periodRevenue.reduce((s, r) => s + r.amount, 0);
+    const totalWaste = periodWaste.reduce((s, w) => s + w.totalCost, 0);
+
+    const filteredPurchases = purchases.filter(p => inPeriod(p.dateDelivered) && (p.particular.toLowerCase().includes(financeSearch.toLowerCase()) || p.supplierName.toLowerCase().includes(financeSearch.toLowerCase())));
+    const filteredBills = billsAndDues.filter(b => inPeriod(b.dueDate) && b.particular.toLowerCase().includes(financeSearch.toLowerCase()));
+    const filteredRevenue = revenue.filter(r => inPeriod(r.date) && r.particular.toLowerCase().includes(financeSearch.toLowerCase()));
+    const filteredWaste = wasteLog.filter(w => inPeriod(w.date) && (w.product.toLowerCase().includes(financeSearch.toLowerCase()) || w.reason.toLowerCase().includes(financeSearch.toLowerCase())));
+
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div><h1 className="text-[24px] font-semibold">Finance</h1><p className="mt-1 text-[13px] text-zinc-600">Track purchases, bills, revenue, and waste across all operations.</p></div>
+          <div className="relative">
+            <input type="text" placeholder="Search..." value={financeSearch} onChange={e => setFinanceSearch(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2 pl-9 text-[13px] outline-none focus:border-zinc-400 w-64" />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </div>
+        </div>
+
+        {/* Period Filter */}
+        <div className="flex flex-wrap items-center gap-2">
+          {(["today", "week", "month", "year", "custom"] as const).map(p => (
+            <button key={p} onClick={() => setFinancePeriod(p)} className={`rounded-xl px-3.5 py-2 text-[12px] font-medium transition-all ${financePeriod === p ? "bg-zinc-900 text-white shadow-sm" : "border border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+              {p === "today" ? "Today" : p === "week" ? "This Week" : p === "month" ? "This Month" : p === "year" ? "This Year" : "Custom"}
+            </button>
+          ))}
+          {financePeriod === "custom" && (
+            <input type="month" value={financeCustomMonth} onChange={e => setFinanceCustomMonth(e.target.value)} className="rounded-xl border border-zinc-200 px-3 py-2 text-[12px] outline-none focus:border-zinc-400" />
+          )}
+          <span className="text-[11px] text-zinc-400 ml-1 font-mono">{periodLabel}</span>
+        </div>
+
+        {/* Key Metrics */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Purchases</div>
+            <div className="text-[24px] font-semibold mt-1">₱{totalPurchases.toLocaleString()}</div>
+            <div className="text-[11px] text-zinc-400 mt-1">{unpaidPurchases.length} unpaid/overdue</div>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Bills &amp; Dues</div>
+            <div className="text-[24px] font-semibold mt-1">₱{totalBills.toLocaleString()}</div>
+            <div className="text-[11px] text-zinc-400 mt-1">{pendingBills.length} pending/overdue</div>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Revenue</div>
+            <div className="text-[24px] font-semibold mt-1 text-emerald-600">₱{totalRevenue.toLocaleString()}</div>
+            <div className="text-[11px] text-zinc-400 mt-1">{periodRevenue.length} entries</div>
+          </div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Waste Cost</div>
+            <div className="text-[24px] font-semibold mt-1 text-red-600">₱{totalWaste.toLocaleString()}</div>
+            <div className="text-[11px] text-zinc-400 mt-1">{periodWaste.length} entries</div>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex gap-1 border-b border-zinc-200">
+          {([
+            { id: "purchases", label: "Purchases", count: purchases.length },
+            { id: "bills", label: "Bills &amp; Dues", count: billsAndDues.length },
+            { id: "revenue", label: "Revenue", count: revenue.length },
+            { id: "waste", label: "Waste Log", count: wasteLog.length },
+          ] as const).map(tab => (
+            <button key={tab.id} onClick={() => { setFinanceTab(tab.id); setFinanceSearch(""); }} className={
+              "px-4 py-2.5 text-[13px] font-medium border-b-2 transition-all " +
+              (financeTab === tab.id ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-500 hover:text-zinc-700")
+            }>{tab.label} <span className="text-[11px] text-zinc-400">({tab.count})</span></button>
+          ))}
+        </div>
+
+        {/* Purchases Tab */}
+        {financeTab === "purchases" && (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <button onClick={() => { setEditingPurchase({ id: "PUR-" + Date.now(), supplierName: "", modeOfPayment: "cash", dateDelivered: new Date().toISOString().slice(0,10), particular: "", amount: 0, dueDate: "", releasedDate: "", paymentStatus: "unpaid", remarks: "" }); setShowAddPurchase(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Purchase</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                  <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Supplier</th><th className="px-4 py-3">Particular</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Due</th><th className="px-4 py-3 text-right">Actions</th></tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-700 text-[13px]">
+                  {filteredPurchases.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-12 text-center text-[13px] text-zinc-400">No purchases found.</td></tr>
+                  ) : filteredPurchases.map(item => (
+                    <tr key={item.id} className="hover:bg-zinc-800/60">
+                      <td className="px-4 py-3 text-zinc-600 text-[12px]">{item.dateDelivered}</td>
+                      <td className="px-4 py-3"><div className="font-medium">{item.supplierName}</div></td>
+                      <td className="px-4 py-3 text-zinc-600">{item.particular}</td>
+                      <td className="px-4 py-3 text-right font-medium" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{item.amount.toLocaleString()}</td>
+                      <td className="px-4 py-3">
+                        <span className={"inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium " + (item.paymentStatus === "paid" ? "bg-emerald-100 text-emerald-700" : item.paymentStatus === "overdue" ? "bg-red-100 text-red-700" : item.paymentStatus === "partial" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600")}>{item.paymentStatus}</span>
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-zinc-500">{item.dueDate || "—"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => { setEditingPurchase(item); setShowAddPurchase(true); }} className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all mr-1">Edit</button>
+                        <button onClick={() => { if (confirm("Delete this purchase?")) { onUpdatePurchases(prev => prev.filter(p => p.id !== item.id)); db.deletePurchase(item.id).catch(console.error); } }} className="rounded-lg border border-red-200 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-zinc-300 bg-zinc-50">
+                      <td colSpan={3} className="px-4 py-3 text-[12px] font-semibold text-zinc-700 uppercase tracking-wider">Total</td>
+                      <td className="px-4 py-3 text-right font-semibold font-mono text-zinc-900">₱{filteredPurchases.reduce((s, p) => s + p.amount, 0).toLocaleString()}</td>
+                      <td colSpan={3}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+  
+          {/* Bills & Dues Tab */}
+        {financeTab === "bills" && (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <button onClick={() => { setEditingBill({ id: "BILL-" + Date.now(), dueDate: "", particular: "", amount: 0, modeOfPayment: "cash", remarks: "", status: "pending", category: "utilities", branch: "" }); setShowAddBill(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Bill</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                  <tr><th className="px-4 py-3">Due Date</th><th className="px-4 py-3">Particular</th><th className="px-4 py-3">Category</th><th className="px-4 py-3">Branch</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th></tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-700 text-[13px]">
+                  {filteredBills.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-12 text-center text-[13px] text-zinc-400">No bills found.</td></tr>
+                  ) : filteredBills.map(item => (
+                    <tr key={item.id} className="hover:bg-zinc-800/60">
+                      <td className="px-4 py-3 text-[12px] text-zinc-600">{item.dueDate}</td>
+                      <td className="px-4 py-3"><div className="font-medium">{item.particular}</div></td>
+                      <td className="px-4 py-3"><span className="text-[12px] text-zinc-500 capitalize">{item.category.replace('_', ' ')}</span></td>
+                      <td className="px-4 py-3 text-[12px] text-zinc-500">{item.branch || "—"}</td>
+                      <td className="px-4 py-3 text-right font-medium" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{item.amount.toLocaleString()}</td>
+                      <td className="px-4 py-3">
+                        <span className={"inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium " + (item.status === "paid" ? "bg-emerald-100 text-emerald-700" : item.status === "overdue" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700")}>{item.status}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => { setEditingBill(item); setShowAddBill(true); }} className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all mr-1">Edit</button>
+                        <button onClick={() => { if (confirm("Delete this bill?")) { onUpdateBillsAndDues(prev => prev.filter(b => b.id !== item.id)); db.deleteBillDue(item.id).catch(console.error); } }} className="rounded-lg border border-red-200 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-zinc-300 bg-zinc-50">
+                      <td colSpan={4} className="px-4 py-3 text-[12px] font-semibold text-zinc-700 uppercase tracking-wider">Total</td>
+                      <td className="px-4 py-3 text-right font-semibold font-mono text-zinc-900">₱{filteredBills.reduce((s, b) => s + b.amount, 0).toLocaleString()}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+  
+          {/* Revenue Tab */}
+        {financeTab === "revenue" && (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <button onClick={() => { setEditingRevenue({ id: "REV-" + Date.now(), source: "manual", particular: "", branch: "", amount: 0, date: new Date().toISOString().slice(0,10), modeOfPayment: "cash", referenceId: "", remarks: "" }); setShowAddRevenue(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Revenue</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                  <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Particular</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Branch</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3 text-right">Actions</th></tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-700 text-[13px]">
+                  {filteredRevenue.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-12 text-center text-[13px] text-zinc-400">No revenue entries found.</td></tr>
+                  ) : filteredRevenue.map(item => (
+                    <tr key={item.id} className="hover:bg-zinc-800/60">
+                      <td className="px-4 py-3 text-[12px] text-zinc-600">{item.date}</td>
+                      <td className="px-4 py-3"><div className="font-medium">{item.particular}</div></td>
+                      <td className="px-4 py-3"><span className="text-[12px] text-zinc-500 capitalize">{item.source.replace('_', ' ')}</span></td>
+                      <td className="px-4 py-3 text-[12px] text-zinc-500">{item.branch || "—"}</td>
+                      <td className="px-4 py-3 text-right font-medium text-emerald-600" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{item.amount.toLocaleString()}</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-block rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium text-zinc-600 capitalize">{item.modeOfPayment}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => { setEditingRevenue(item); setShowAddRevenue(true); }} className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all mr-1">Edit</button>
+                        <button onClick={() => { if (confirm("Delete this revenue entry?")) { onUpdateRevenue(prev => prev.filter(r => r.id !== item.id)); } }} className="rounded-lg border border-red-200 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-zinc-300 bg-zinc-50">
+                      <td colSpan={4} className="px-4 py-3 text-[12px] font-semibold text-zinc-700 uppercase tracking-wider">Total</td>
+                      <td className="px-4 py-3 text-right font-semibold font-mono text-emerald-600">₱{filteredRevenue.reduce((s, r) => s + r.amount, 0).toLocaleString()}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+  
+          {/* Waste Log Tab */}
+        {financeTab === "waste" && (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <button onClick={() => { setEditingWaste({ id: "WST-" + Date.now(), product: "", qtyRejected: 0, unitCost: 0, totalCost: 0, reason: "", source: "", referenceId: "", date: new Date().toISOString().slice(0,10) }); setShowAddWaste(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Log Waste</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                  <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Product</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3 text-right">Unit Cost</th><th className="px-4 py-3 text-right">Total</th><th className="px-4 py-3">Reason</th><th className="px-4 py-3">Source</th><th className="px-4 py-3 text-right">Actions</th></tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-700 text-[13px]">
+                  {filteredWaste.length === 0 ? (
+                    <tr><td colSpan={8} className="px-4 py-12 text-center text-[13px] text-zinc-400">No waste entries found.</td></tr>
+                  ) : filteredWaste.map(item => (
+                    <tr key={item.id} className="hover:bg-zinc-800/60">
+                      <td className="px-4 py-3 text-[12px] text-zinc-600">{item.date}</td>
+                      <td className="px-4 py-3"><div className="font-medium">{item.product}</div></td>
+                      <td className="px-4 py-3 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qtyRejected}</td>
+                      <td className="px-4 py-3 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{item.unitCost.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right font-medium text-red-600" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{item.totalCost.toLocaleString()}</td>
+                      <td className="px-4 py-3 text-[12px] text-zinc-500 max-w-[200px] truncate">{item.reason}</td>
+                      <td className="px-4 py-3 text-[12px] text-zinc-500">{item.source}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => { setEditingWaste(item); setShowAddWaste(true); }} className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all mr-1">Edit</button>
+                        <button onClick={() => { if (confirm("Delete this waste entry?")) { onUpdateWasteLog(prev => prev.filter(w => w.id !== item.id)); } }} className="rounded-lg border border-red-200 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-zinc-300 bg-zinc-50">
+                      <td colSpan={4} className="px-4 py-3 text-[12px] font-semibold text-zinc-700 uppercase tracking-wider">Total</td>
+                      <td className="px-4 py-3 text-right font-semibold font-mono text-red-600">₱{filteredWaste.reduce((s, w) => s + w.totalCost, 0).toLocaleString()}</td>
+                      <td colSpan={3}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+  
+          {/* Purchase Modal */}
+        {showAddPurchase && editingPurchase && (
+          <Modal title={purchases.find(p => p.id === editingPurchase.id) ? "Edit Purchase" : "Add Purchase"} onClose={() => setShowAddPurchase(false)}>
+            <div className="space-y-3 p-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Supplier</label><input value={editingPurchase.supplierName} onChange={e => setEditingPurchase({...editingPurchase, supplierName: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" placeholder="Supplier name" /></div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Amount</label><input type="number" value={editingPurchase.amount || ""} onChange={e => setEditingPurchase({...editingPurchase, amount: Number(e.target.value)})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" placeholder="0" /></div>
+              </div>
+              <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Particular</label><input value={editingPurchase.particular} onChange={e => setEditingPurchase({...editingPurchase, particular: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" placeholder="What was purchased?" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Date Delivered</label><input type="date" value={editingPurchase.dateDelivered} onChange={e => setEditingPurchase({...editingPurchase, dateDelivered: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Due Date</label><input type="date" value={editingPurchase.dueDate} onChange={e => setEditingPurchase({...editingPurchase, dueDate: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Payment Mode</label>
+                  <select value={editingPurchase.modeOfPayment} onChange={e => setEditingPurchase({...editingPurchase, modeOfPayment: e.target.value as any})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1">
+                    <option value="cash">Cash</option><option value="online">Online</option><option value="check">Check</option>
+                  </select>
+                </div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Payment Status</label>
+                  <select value={editingPurchase.paymentStatus} onChange={e => setEditingPurchase({...editingPurchase, paymentStatus: e.target.value as any})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1">
+                    <option value="unpaid">Unpaid</option><option value="paid">Paid</option><option value="partial">Partial</option><option value="overdue">Overdue</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Released Date</label><input type="date" value={editingPurchase.releasedDate} onChange={e => setEditingPurchase({...editingPurchase, releasedDate: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              </div>
+              <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Remarks</label><input value={editingPurchase.remarks} onChange={e => setEditingPurchase({...editingPurchase, remarks: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowAddPurchase(false)} className="rounded-lg border border-zinc-200 px-4 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                <button onClick={() => { onUpdatePurchases(prev => { const idx = prev.findIndex(p => p.id === editingPurchase.id); if (idx >= 0) { const next = [...prev]; next[idx] = editingPurchase; return next; } return [...prev, editingPurchase]; }); db.upsertPurchases([editingPurchase]).catch(console.error); setShowAddPurchase(false); }} className="rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">Save</button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {/* Bill Modal */}
+        {showAddBill && editingBill && (
+          <Modal title={billsAndDues.find(b => b.id === editingBill.id) ? "Edit Bill" : "Add Bill"} onClose={() => setShowAddBill(false)}>
+            <div className="space-y-3 p-4">
+              <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Particular</label><input value={editingBill.particular} onChange={e => setEditingBill({...editingBill, particular: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Amount</label><input type="number" value={editingBill.amount || ""} onChange={e => setEditingBill({...editingBill, amount: Number(e.target.value)})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" placeholder="0" /></div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Due Date</label><input type="date" value={editingBill.dueDate} onChange={e => setEditingBill({...editingBill, dueDate: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Category</label>
+                  <select value={editingBill.category} onChange={e => setEditingBill({...editingBill, category: e.target.value as any})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1">
+                    <option value="utilities">Utilities</option><option value="rent">Rent</option><option value="internet">Internet</option><option value="payroll">Payroll</option><option value="maintenance">Maintenance</option><option value="supplier_dues">Supplier Dues</option><option value="miscellaneous">Miscellaneous</option>
+                  </select>
+                </div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Status</label>
+                  <select value={editingBill.status} onChange={e => setEditingBill({...editingBill, status: e.target.value as any})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1">
+                    <option value="pending">Pending</option><option value="paid">Paid</option><option value="overdue">Overdue</option>
+                  </select>
+                </div>
+              </div>
+              <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Branch</label><input value={editingBill.branch} onChange={e => setEditingBill({...editingBill, branch: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Remarks</label><input value={editingBill.remarks} onChange={e => setEditingBill({...editingBill, remarks: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowAddBill(false)} className="rounded-lg border border-zinc-200 px-4 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                <button onClick={() => { onUpdateBillsAndDues(prev => { const idx = prev.findIndex(b => b.id === editingBill.id); if (idx >= 0) { const next = [...prev]; next[idx] = editingBill; return next; } return [...prev, editingBill]; }); db.upsertBillsAndDues([editingBill]).catch(console.error); setShowAddBill(false); }} className="rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">Save</button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {/* Revenue Modal */}
+        {showAddRevenue && editingRevenue && (
+          <Modal title={revenue.find(r => r.id === editingRevenue.id) ? "Edit Revenue" : "Add Revenue"} onClose={() => setShowAddRevenue(false)}>
+            <div className="space-y-3 p-4">
+              <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Particular</label><input value={editingRevenue.particular} onChange={e => setEditingRevenue({...editingRevenue, particular: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Amount</label><input type="number" value={editingRevenue.amount || ""} onChange={e => setEditingRevenue({...editingRevenue, amount: Number(e.target.value)})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" placeholder="0" /></div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Date</label><input type="date" value={editingRevenue.date} onChange={e => setEditingRevenue({...editingRevenue, date: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Source</label>
+                  <select value={editingRevenue.source} onChange={e => setEditingRevenue({...editingRevenue, source: e.target.value as any})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1">
+                    <option value="delivery">Delivery</option><option value="manual">Manual</option><option value="branch_sales">Branch Sales</option>
+                  </select>
+                </div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Payment Mode</label>
+                  <select value={editingRevenue.modeOfPayment} onChange={e => setEditingRevenue({...editingRevenue, modeOfPayment: e.target.value as any})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1">
+                    <option value="cash">Cash</option><option value="online">Online</option><option value="check">Check</option>
+                  </select>
+                </div>
+              </div>
+              <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Branch</label><input value={editingRevenue.branch} onChange={e => setEditingRevenue({...editingRevenue, branch: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Remarks</label><input value={editingRevenue.remarks} onChange={e => setEditingRevenue({...editingRevenue, remarks: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowAddRevenue(false)} className="rounded-lg border border-zinc-200 px-4 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                <button onClick={() => { onUpdateRevenue(prev => { const idx = prev.findIndex(r => r.id === editingRevenue.id); if (idx >= 0) { const next = [...prev]; next[idx] = editingRevenue; return next; } return [...prev, editingRevenue]; }); db.upsertRevenue([editingRevenue]).catch(console.error); setShowAddRevenue(false); }} className="rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">Save</button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {/* Waste Log Modal */}
+        {showAddWaste && editingWaste && (
+          <Modal title={wasteLog.find(w => w.id === editingWaste.id) ? "Edit Waste Entry" : "Log Waste"} onClose={() => setShowAddWaste(false)}>
+            <div className="space-y-3 p-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Product</label><input value={editingWaste.product} onChange={e => setEditingWaste({...editingWaste, product: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Qty Rejected</label><input type="number" value={editingWaste.qtyRejected || ""} onChange={e => setEditingWaste({...editingWaste, qtyRejected: Number(e.target.value)})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" placeholder="0" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Unit Cost</label><input type="number" value={editingWaste.unitCost || ""} onChange={e => { const c = Number(e.target.value); setEditingWaste({...editingWaste, unitCost: c, totalCost: c * editingWaste.qtyRejected}); }} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" placeholder="0" /></div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Total Cost</label><div className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] mt-1 bg-zinc-50">₱{editingWaste.totalCost.toLocaleString()}</div></div>
+              </div>
+              <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Reason</label><input value={editingWaste.reason} onChange={e => setEditingWaste({...editingWaste, reason: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" placeholder="Why was this wasted?" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Source</label><input value={editingWaste.source} onChange={e => setEditingWaste({...editingWaste, source: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+                <div><label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Date</label><input type="date" value={editingWaste.date} onChange={e => setEditingWaste({...editingWaste, date: e.target.value})} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-[13px] outline-none focus:border-zinc-400 mt-1" /></div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowAddWaste(false)} className="rounded-lg border border-zinc-200 px-4 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                <button onClick={() => { onUpdateWasteLog(prev => { const idx = prev.findIndex(w => w.id === editingWaste.id); if (idx >= 0) { const next = [...prev]; next[idx] = editingWaste; return next; } return [...prev, editingWaste]; }); db.upsertWasteLog([editingWaste]).catch(console.error); setShowAddWaste(false); }} className="rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">Save</button>
+              </div>
+            </div>
+          </Modal>
+        )}
+      </div>
+    );
+  }
+
   /* ── Default: Admin Dashboard ── */
 
   function handleExport() {
@@ -1382,84 +2025,44 @@ export default function AdminDashboard({
         ))}
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div className="xl:col-span-8 rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div><h2 className="text-[16px] font-semibold text-zinc-900" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • May 25</h2><p className="text-[12px] text-zinc-500">Daily Order Sales — auto-generates production tasks</p></div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 border border-amber-200">LOCKED</span>
-              <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white">{todayDOS.length} items</span>
-            </div>
+      {/* Today's DOS */}
+      <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div><h2 className="text-[16px] font-semibold text-zinc-900" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2><p className="text-[12px] text-zinc-500">Daily Order Sales — auto-generates production tasks</p></div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 border border-amber-200">LOCKED</span>
+            <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white">{todayDOS.length} items</span>
           </div>
-          <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-200">
-            <div className="overflow-x-auto">
-              <div className="min-w-[500px]">
-                <div className="grid grid-cols-12 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                  <div className="col-span-3">Product</div><div className="col-span-1 text-right">Qty</div><div className="col-span-2 text-right">Cakes N Styles Gensan</div><div className="col-span-2 text-right">Shadrach's Bake & Brew</div><div className="col-span-2 text-center">Assigned</div><div className="col-span-1 text-right">Pri</div><div className="col-span-1 text-right">Status</div>
-                </div>
-                <div className="divide-y divide-zinc-100">
-                  {todayDOS.map(item => {
-                    const tasks = production.filter(t => t.product === item.product);
-                    const roles = [...new Set(tasks.map(t => t.assignedTo))];
-                    return (
-                      <div key={item.id} className="grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-amber-50/40">
-                        <div className="col-span-3"><div className="text-[13px] font-medium text-zinc-900 truncate">{item.product}</div><div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></div>
-                        <div className="col-span-1 text-right text-[13px] font-medium font-mono">{item.qty}</div>
-                        <div className="col-span-2 text-right text-[13px] font-mono text-zinc-800">{item.branch1}</div>
-                        <div className="col-span-2 text-right text-[13px] font-mono text-zinc-800">{item.branch2}</div>
-                        <div className="col-span-2 flex justify-center gap-1 flex-wrap">{roles.map(r => <span key={r} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${r === "baker" ? "bg-stone-100 text-stone-700" : r === "deco" ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"}`}>{r === "baker" ? "Baker" : r === "deco" ? "Deco" : "Kitchen"}</span>)}{roles.length === 0 && <span className="text-[11px] text-zinc-400">—</span>}</div>
-                        <div className="col-span-1 text-right"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-700"}`}>{item.priority === "HIGH" ? "H" : item.priority === "MEDIUM" ? "M" : "L"}</span></div>
-                        <div className="col-span-1 flex justify-end"><span className={`h-2 w-2 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} /></div>
-                      </div>
-                    );
-                  })}
-                </div>
+        </div>
+        <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-200">
+          <div className="overflow-x-auto">
+            <div className="min-w-[500px]">
+              <div className="grid grid-cols-12 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                <div className="col-span-3">Product</div><div className="col-span-1 text-right">Qty</div><div className="col-span-2 text-right">Cakes N Styles Gensan</div><div className="col-span-2 text-right">Shadrach's Bake & Brew</div><div className="col-span-2 text-center">Assigned</div><div className="col-span-1 text-right">Pri</div><div className="col-span-1 text-right">Status</div>
+              </div>
+              <div className="divide-y divide-zinc-100">
+                {todayDOS.map(item => {
+                  const tasks = production.filter(t => t.product === item.product);
+                  const roles = [...new Set(tasks.map(t => t.assignedTo))];
+                  return (
+                    <div key={item.id} className="grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-amber-50/40">
+                      <div className="col-span-3"><div className="text-[13px] font-medium text-zinc-900 truncate">{item.product}</div><div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></div>
+                      <div className="col-span-1 text-right text-[13px] font-medium font-mono">{item.qty}</div>
+                      <div className="col-span-2 text-right text-[13px] font-mono text-zinc-800">{item.branch1}</div>
+                      <div className="col-span-2 text-right text-[13px] font-mono text-zinc-800">{item.branch2}</div>
+                      <div className="col-span-2 flex justify-center gap-1 flex-wrap">{roles.map(r => <span key={r} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${r === "baker" ? "bg-stone-100 text-stone-700" : r === "deco" ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"}`}>{r === "baker" ? "Baker" : r === "deco" ? "Deco" : "Kitchen"}</span>)}{roles.length === 0 && <span className="text-[11px] text-zinc-400">—</span>}</div>
+                      <div className="col-span-1 text-right"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-700"}`}>{item.priority === "HIGH" ? "H" : item.priority === "MEDIUM" ? "M" : "L"}</span></div>
+                      <div className="col-span-1 flex justify-end"><span className={`h-2 w-2 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} /></div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
-            <div className="mt-4 flex items-center justify-between rounded-xl bg-[#F9F6F1] px-3 py-2.5">
-            <div className="text-[12px] text-zinc-600">Baker: {production.filter(t => t.assignedTo === "baker").length} tasks • Deco: {production.filter(t => t.assignedTo === "deco").length} tasks • Kitchen: {production.filter(t => t.assignedTo === "kitchen").length}</div>
-            <button onClick={() => setActiveTab("dos")} className="text-[12px] font-medium text-zinc-900 underline underline-offset-4">Manage DOS</button>
-          </div>
         </div>
-
-        <div className="xl:col-span-4 rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-          <h3 className="text-[15px] font-semibold text-zinc-900" style={{ fontFamily: "Instrument Sans, system-ui" }}>Live Production</h3>
-          <div className="mt-3 space-y-3">
-            {production.slice(0, 4).map(task => {
-              const pct = Math.round((task.completed / task.target) * 100);
-              return (
-                <div key={task.id} className="rounded-2xl border border-zinc-200 p-3">
-                  <div className="flex items-center justify-between"><div className="text-[13px] font-medium text-zinc-900">{task.product}</div><div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{task.completed}/{task.target}</div></div>
-                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100"><div className={`h-full transition-all ${pct === 100 ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} /></div>
-                  <div className="mt-1.5 flex items-center justify-between"><span className="text-[11px] text-zinc-500 capitalize">{task.assignedTo}</span><span className={`text-[10px] font-medium uppercase tracking-wider ${task.status === "completed" ? "text-emerald-700" : task.status === "in-progress" ? "text-amber-700" : "text-zinc-500"}`}>{task.status}</span></div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-4 pt-3 border-t border-[#E8E0D5]">
-            <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2">Task Distribution</div>
-            {(() => { const todayProds = new Set(todayDOS.map(d => d.product)); const totalTasks = production.filter(t => todayProds.has(t.product)).length; return <div className="space-y-1.5">
-              {[
-                { label: "Baker", count: production.filter(t => t.assignedTo === "baker" && todayProds.has(t.product)).length, color: "bg-stone-500" },
-                { label: "Deco / Free-Mix", count: production.filter(t => t.assignedTo === "deco" && todayProds.has(t.product)).length, color: "bg-rose-500" },
-                { label: "Kitchen", count: production.filter(t => t.assignedTo === "kitchen" && todayProds.has(t.product)).length, color: "bg-emerald-500" },
-              ].filter(p => p.count > 0).map(p => {
-                const pct = totalTasks > 0 ? Math.round((p.count / totalTasks) * 100) : 0;
-                return (
-                  <div key={p.label} className="flex items-center gap-2">
-                    <div className={`h-2 w-2 rounded-full ${p.color}`} />
-                    <span className="text-[12px] text-zinc-600 flex-1">{p.label}</span>
-                    <span className="text-[12px] font-medium text-zinc-900 font-mono">{p.count}</span>
-                    <div className="w-16 h-1.5 rounded-full bg-zinc-100">
-                      <div className={`h-full rounded-full ${p.color}`} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>; })()}
-          </div>
+        <div className="mt-4 flex items-center justify-between rounded-xl bg-[#F9F6F1] px-3 py-2.5">
+          <div className="text-[12px] text-zinc-600">Baker: {production.filter(t => t.assignedTo === "baker").length} tasks • Deco: {production.filter(t => t.assignedTo === "deco").length} tasks • Kitchen: {production.filter(t => t.assignedTo === "kitchen").length}</div>
+          <button onClick={() => setActiveTab("dos")} className="text-[12px] font-medium text-zinc-900 underline underline-offset-4">Manage DOS</button>
         </div>
       </div>
 
@@ -1483,7 +2086,12 @@ export default function AdminDashboard({
             if (expired.length) sections.push({ type: "exp", label: "Expired", items: expired, icon: "✕", color: "text-purple-700", border: "border-purple-200", bg: "bg-purple-50/80", iconBg: "bg-purple-600" });
             if (expiring.length) sections.push({ type: "expg", label: "Expiring Soon", items: expiring, icon: "~", color: "text-amber-700", border: "border-amber-200", bg: "bg-amber-50/80", iconBg: "bg-amber-600" });
             if (sections.length === 0) return <p className="text-[13px] text-zinc-400 text-center py-6">All inventory items are healthy.</p>;
-            return <div className="space-y-2.5">{[...sections].flatMap(s => s.items.map((item, idx) => (
+            const allAlerts = [...sections].flatMap(s => s.items.map(item => ({ ...item, alertType: s })));
+            const totalAlerts = allAlerts.length;
+            const displayed = allAlerts.slice(0, 5);
+            return <div className="space-y-2.5">{displayed.map((item) => {
+              const s = item.alertType;
+              return (
               <div key={item.id + s.type} className={`flex items-center gap-3 rounded-2xl border ${s.border} ${s.bg} p-3`}>
                 <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${s.iconBg} text-white text-[12px] font-bold`} style={{ fontFamily: "Fragment Mono, monospace" }}>{s.icon}</div>
                 <div className="min-w-0 flex-1">
@@ -1503,7 +2111,7 @@ export default function AdminDashboard({
                   <div className="text-[11px] text-zinc-500">{item.supplier}</div>
                 </div>
               </div>
-            )))}</div>;
+            )})}{totalAlerts > 5 && <button onClick={() => setActiveTab("warehouse")} className="w-full rounded-xl border border-dashed border-zinc-200 py-2 text-[12px] font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition-all">See all {totalAlerts} alerts</button>}</div>;
           })()}
         </div>
 
@@ -1620,6 +2228,135 @@ export default function AdminDashboard({
   );
 }
 
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
+          <h2 className="text-[16px] font-semibold">{title}</h2>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600">✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
+  product: string; recipes: ProductRecipe[]; inventory: InventoryItem[];
+  onSave: (recipe: ProductRecipe) => void; onClose: () => void;
+}) {
+  const isNew = !product;
+  const existing = isNew ? null : recipes.find(r => r.productName === product);
+  const [recipeName, setRecipeName] = useState(isNew ? "" : product);
+  const [ingredients, setIngredients] = useState<RecipeIngredient[]>(isNew ? [] : (existing?.ingredients || []));
+  const [notes, setNotes] = useState(isNew ? "" : (existing?.notes || ""));
+  const [showPicker, setShowPicker] = useState(false);
+  const [ingredientSearch, setIngredientSearch] = useState("");
+
+  function addIngredient(inv: InventoryItem) {
+    if (ingredients.some(i => i.inventoryId === inv.id)) return;
+    setIngredients(prev => [...prev, { inventoryId: inv.id, name: inv.name, qtyPerBatch: 1, unit: inv.unit }]);
+    setShowPicker(false);
+  }
+
+  function removeIngredient(id: string) {
+    setIngredients(prev => prev.filter(i => i.inventoryId !== id));
+  }
+
+  function updateQty(id: string, qty: number) {
+    setIngredients(prev => prev.map(i => i.inventoryId === id ? { ...i, qtyPerBatch: qty } : i));
+  }
+
+  function updateUnit(id: string, unit: string) {
+    setIngredients(prev => prev.map(i => i.inventoryId === id ? { ...i, unit } : i));
+  }
+
+  const totalCost = ingredients.reduce((sum, ing) => {
+    const inv = inventory.find(i => i.id === ing.inventoryId);
+    return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+  }, 0);
+
+  const available = inventory.filter(i => !ingredients.some(ing => ing.inventoryId === i.id));
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[640px] max-h-[90vh] overflow-y-auto rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <div><h3 className="text-[16px] font-semibold">{isNew ? "Add Recipe" : "Edit Recipe"}</h3></div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button>
+        </div>
+
+        <div className="mb-4">
+          <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Recipe Name</label>
+          <input value={recipeName} onChange={e => setRecipeName(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. Pandesal" />
+        </div>
+
+        <div className="mb-3 relative">
+          <button onClick={() => { setShowPicker(!showPicker); if (showPicker) setIngredientSearch(""); }} className="text-[12px] font-medium text-blue-600 hover:text-blue-800">+ Add ingredient from inventory</button>
+          {showPicker && (
+            <div className="fixed inset-0 z-0" onClick={() => { setShowPicker(false); setIngredientSearch(""); }} />
+          )}
+          {showPicker && (
+            <div className="absolute top-7 left-0 z-10 mt-1 w-72 rounded-xl border border-zinc-200 bg-white shadow-lg">
+              <input value={ingredientSearch} onChange={e => setIngredientSearch(e.target.value)} placeholder="Search ingredients..." className="w-full rounded-t-xl border-b border-zinc-200 px-3 py-2.5 text-[12px] outline-none focus:border-zinc-400" autoFocus />
+              <div className="max-h-40 overflow-y-auto">
+                {(() => {
+                  const filtered = available.filter(i => i.name.toLowerCase().includes(ingredientSearch.toLowerCase()));
+                  if (filtered.length === 0) return <p className="px-3 py-3 text-[12px] text-zinc-400 text-center">No ingredients found.</p>;
+                  return filtered.map(i => (
+                    <button key={i.id} type="button" onClick={() => { addIngredient(i); setIngredientSearch(""); }} className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 text-[12px]">
+                      <span className="font-medium text-zinc-900">{i.name}</span>
+                      <span className="text-zinc-400 font-mono">{i.unit}</span>
+                    </button>
+                  ));
+                })()}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-1.5 max-h-[200px] overflow-y-auto mb-4">
+          {ingredients.length === 0 ? (
+            <p className="text-[12px] text-zinc-400 text-center py-4">No ingredients added yet.</p>
+          ) : ingredients.map(ing => {
+            const inv = inventory.find(i => i.id === ing.inventoryId);
+            const cost = inv ? inv.cost * ing.qtyPerBatch : 0;
+            return (
+              <div key={ing.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                <span className="text-[12px] font-medium text-zinc-900 flex-1 truncate">{ing.name}</span>
+                <div className="flex items-center gap-1.5">
+                  <input value={ing.unit} onChange={e => updateUnit(ing.inventoryId, e.target.value)} className="w-12 rounded-lg border border-zinc-200 px-1.5 py-1 text-[10px] text-center outline-none focus:border-zinc-900" />
+                  <input type="number" min="0" step="any" value={ing.qtyPerBatch} onChange={e => updateQty(ing.inventoryId, Number(e.target.value))} className="w-16 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-center outline-none focus:border-zinc-400" />
+                  <span className="text-[10px] font-mono text-zinc-500 w-14 text-right">₱{cost.toFixed(2)}</span>
+                  <button onClick={() => removeIngredient(ing.inventoryId)} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mb-4">
+          <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Notes</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 resize-none" rows={3} placeholder="Optional notes about this recipe..." />
+        </div>
+
+        <div className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-3 mb-4">
+          <div className="flex items-center justify-between text-[12px]">
+            <span className="text-zinc-600">{ingredients.length} ingredient{ingredients.length !== 1 ? "s" : ""}</span>
+            <span className="font-medium text-zinc-800" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{totalCost.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
+          <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+          <button onClick={() => onSave({ productId: isNew ? recipeName : product, productName: recipeName, ingredients, notes, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [] })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Sub-components ── */
 
 function CompactTaskCard({ task, color }: { task: ProductionTask; color: string }) {
@@ -1645,25 +2382,188 @@ function CompactTaskCard({ task, color }: { task: ProductionTask; color: string 
   );
 }
 
-function AddProductModal({ onSave, onClose }: {
-  onSave: (name: string) => void; onClose: () => void;
+function AddProductWithRecipeModal({ inventory, recipes, onSave, onClose }: {
+  inventory: InventoryItem[]; recipes: ProductRecipe[]; onSave: (name: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedProduct: string[]) => void; onClose: () => void;
 }) {
   const [name, setName] = useState("");
+  const [linkedProduct, setLinkedProduct] = useState<string[]>([]);
+  const [packagingItems, setPackagingItems] = useState<RecipeIngredient[]>([]);
+  const [decorationItems, setDecorationItems] = useState<RecipeIngredient[]>([]);
+  const [recipeSearch, setRecipeSearch] = useState("");
+  const [showPackagingPicker, setShowPackagingPicker] = useState(false);
+  const [showDecorationPicker, setShowDecorationPicker] = useState(false);
+  const [packagingSearch, setPackagingSearch] = useState("");
+  const [decorationSearch, setDecorationSearch] = useState("");
+
+  function addPackaging(inv: InventoryItem) {
+    if (packagingItems.some(i => i.inventoryId === inv.id)) return;
+    setPackagingItems(prev => [...prev, { inventoryId: inv.id, name: inv.name, qtyPerBatch: 1, unit: inv.unit }]);
+    setShowPackagingPicker(false);
+  }
+  function addDecoration(inv: InventoryItem) {
+    if (decorationItems.some(i => i.inventoryId === inv.id)) return;
+    setDecorationItems(prev => [...prev, { inventoryId: inv.id, name: inv.name, qtyPerBatch: 1, unit: inv.unit }]);
+    setShowDecorationPicker(false);
+  }
+
+  const availablePackaging = inventory.filter(i => i.group === "packaging-materials" && !packagingItems.some(ing => ing.inventoryId === i.id) && (i.name.toLowerCase().includes(packagingSearch.toLowerCase()) || packagingSearch === ""));
+  const availableDecoration = inventory.filter(i => i.group === "decoration-supplies" && !decorationItems.some(ing => ing.inventoryId === i.id) && (i.name.toLowerCase().includes(decorationSearch.toLowerCase()) || decorationSearch === ""));
+
+  function toggleRecipe(r: string) {
+    setLinkedProduct(prev => prev.includes(r) ? prev.filter(p => p !== r) : [...prev, r]);
+  }
+
+  const filteredRecipes = recipes.filter(r => r.productName.toLowerCase().includes(recipeSearch.toLowerCase()) || recipeSearch === "");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(name.trim());
+    onSave(name.trim(), packagingItems, decorationItems, linkedProduct);
   }
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-[420px] rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between"><h3 className="text-[16px] font-semibold">Add Product</h3><button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button></div>
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Product Name</label><input required value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. Pandesal" autoFocus /></div>
-          <p className="text-[12px] text-zinc-400">Recipe will be set up by the Deco team.</p>
-          <div className="flex gap-2 pt-1 border-t border-[#E8E0D5]">
+      <div className="w-full max-w-[600px] max-h-[90vh] overflow-y-auto rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-[16px] font-semibold">Add Product</h3>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-5">
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Product Name</label>
+            <input required value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. Pandesal" autoFocus />
+          </div>
+
+          <div className="mb-4">
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Link Recipes</label>
+            {linkedProduct.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {linkedProduct.map(r => (
+                  <span key={r} className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-700">
+                    {r}
+                    <button type="button" onClick={() => toggleRecipe(r)} className="text-zinc-400 hover:text-red-500 ml-0.5">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="relative">
+              <input value={recipeSearch} onChange={e => setRecipeSearch(e.target.value)} placeholder="Search recipes..." className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-900 transition-colors" />
+              {recipeSearch && (
+                <>
+                  <div className="fixed inset-0 z-0" onClick={() => setRecipeSearch("")} />
+                  <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-40 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
+                    {filteredRecipes.length === 0 ? (
+                      <p className="px-3 py-2 text-[12px] text-zinc-400">No recipes found.</p>
+                    ) : filteredRecipes.map(r => (
+                      <label key={r.productName} className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 cursor-pointer text-[12px]">
+                        <input type="checkbox" checked={linkedProduct.includes(r.productName)} onChange={() => { toggleRecipe(r.productName); setRecipeSearch(""); }} className="rounded border-zinc-300" />
+                        <span className="text-zinc-900">{r.productName}</span>
+                        <span className="text-zinc-400 ml-auto">{r.ingredients.length} ingredients</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Packaging</span>
+                <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-700">{packagingItems.length}</span>
+              </div>
+              <div className="relative">
+                <button type="button" onClick={() => setShowPackagingPicker(!showPackagingPicker)} className="text-[12px] font-medium text-blue-600 hover:text-blue-800">+ Add</button>
+                {showPackagingPicker && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowPackagingPicker(false)} />
+                    <div className="absolute top-5 right-0 z-20 w-60 rounded-xl border border-zinc-200 bg-white shadow-lg">
+                      <div className="p-2 border-b border-zinc-100">
+                        <input value={packagingSearch} onChange={e => setPackagingSearch(e.target.value)} placeholder="Search packaging..." className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] outline-none focus:border-zinc-400" />
+                      </div>
+                      <div className="max-h-40 overflow-y-auto">
+                        {availablePackaging.length === 0 ? (
+                          <p className="px-3 py-3 text-[12px] text-zinc-400 text-center">No packaging items found.</p>
+                        ) : availablePackaging.map(i => (
+                          <button key={i.id} type="button" onClick={() => { addPackaging(i); setPackagingSearch(""); }} className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 text-[12px]">
+                            <span className="font-medium text-zinc-900">{i.name}</span>
+                            <span className="text-zinc-400 font-mono">{i.unit}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            {packagingItems.length === 0 ? (
+              <p className="text-[12px] text-zinc-400 py-3 text-center border border-dashed border-zinc-200 rounded-xl">No packaging added.</p>
+            ) : (
+              <div className="space-y-1 max-h-[140px] overflow-y-auto">
+                {packagingItems.map(item => (
+                  <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                    <span className="text-[12px] font-medium text-zinc-900 truncate flex-1">{item.name}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <input value={item.unit} onChange={e => setPackagingItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, unit: e.target.value } : i))} className="w-12 rounded-lg border border-zinc-200 px-1.5 py-1 text-[10px] text-center outline-none focus:border-zinc-900" />
+                      <input type="number" min="0" step="any" value={item.qtyPerBatch} onChange={e => setPackagingItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, qtyPerBatch: Number(e.target.value) } : i))} className="w-16 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-center outline-none focus:border-zinc-400" />
+                      <button type="button" onClick={() => setPackagingItems(prev => prev.filter(i => i.inventoryId !== item.inventoryId))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Decoration</span>
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">{decorationItems.length}</span>
+              </div>
+              <div className="relative">
+                <button type="button" onClick={() => setShowDecorationPicker(!showDecorationPicker)} className="text-[12px] font-medium text-blue-600 hover:text-blue-800">+ Add</button>
+                {showDecorationPicker && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowDecorationPicker(false)} />
+                    <div className="absolute top-5 right-0 z-20 w-60 rounded-xl border border-zinc-200 bg-white shadow-lg">
+                      <div className="p-2 border-b border-zinc-100">
+                        <input value={decorationSearch} onChange={e => setDecorationSearch(e.target.value)} placeholder="Search decoration..." className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] outline-none focus:border-zinc-400" />
+                      </div>
+                      <div className="max-h-40 overflow-y-auto">
+                        {availableDecoration.length === 0 ? (
+                          <p className="px-3 py-3 text-[12px] text-zinc-400 text-center">No decoration items found.</p>
+                        ) : availableDecoration.map(i => (
+                          <button key={i.id} type="button" onClick={() => { addDecoration(i); setDecorationSearch(""); }} className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 text-[12px]">
+                            <span className="font-medium text-zinc-900">{i.name}</span>
+                            <span className="text-zinc-400 font-mono">{i.unit}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            {decorationItems.length === 0 ? (
+              <p className="text-[12px] text-zinc-400 py-3 text-center border border-dashed border-zinc-200 rounded-xl">No decoration added.</p>
+            ) : (
+              <div className="space-y-1 max-h-[140px] overflow-y-auto">
+                {decorationItems.map(item => (
+                  <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                    <span className="text-[12px] font-medium text-zinc-900 truncate flex-1">{item.name}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <input value={item.unit} onChange={e => setDecorationItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, unit: e.target.value } : i))} className="w-12 rounded-lg border border-zinc-200 px-1.5 py-1 text-[10px] text-center outline-none focus:border-zinc-900" />
+                      <input type="number" min="0" step="any" value={item.qtyPerBatch} onChange={e => setDecorationItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, qtyPerBatch: Number(e.target.value) } : i))} className="w-16 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-center outline-none focus:border-zinc-400" />
+                      <button type="button" onClick={() => setDecorationItems(prev => prev.filter(i => i.inventoryId !== item.inventoryId))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
             <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
             <button type="submit" disabled={!name.trim()} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Add Product</button>
           </div>

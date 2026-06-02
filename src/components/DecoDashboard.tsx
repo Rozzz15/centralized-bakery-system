@@ -139,7 +139,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     const newInv = [...inventory];
     const deductions: string[] = [];
     recipe.ingredients.forEach(ing => {
-      const neededQty = Math.ceil(ing.qtyPerBatch * (dos.qty / 100));
+      const neededQty = Math.ceil(ing.qtyPerBatch * dos.qty);
       const idx = newInv.findIndex(i => i.id === ing.inventoryId);
       if (idx >= 0) { newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - neededQty) }; deductions.push(ing.name); }
     });
@@ -185,19 +185,24 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const pendingDecoTasks = decoQueue.filter(t => t.status === "pending").length;
   const pendingCustomOrders = customOrders.filter(o => o.status === "pending").length;
 
+  const getRecipesForProduct = (product: string) => {
+    const direct = recipes.filter(r => r.productName === product);
+    const linked = recipes.filter(r => (r.linkedProduct ?? []).includes(product) && r.productName !== product);
+    return [...direct, ...linked];
+  };
+
   const totalNeeded = dosForDeco.reduce((s, d) => {
-    const recipe = recipes.find(r => r.productName === d.product);
-    return s + (recipe?.ingredients.length ?? 0);
+    const productRecipes = getRecipesForProduct(d.product);
+    return s + productRecipes.reduce((sum, r) => sum + r.ingredients.length, 0);
   }, 0);
   const totalPrepared = freeMixPrepared.size;
   const allMixesDone = dosForDeco.every(d => freeMixDone.has(d.product));
 
   const workflowSteps = [
     { id: "dashboard", label: "DOS Received" },
-    { id: "recipes", label: "Recipe Formulas" },
     { id: "free-mix", label: "Production Prep" },
     { id: "deco-queue", label: "Decoration Queue" },
-    { id: "custom-orders", label: "Custom Orders" },
+    { id: "freezer", label: "Finished Products" },
   ];
   const currentStepIdx = workflowSteps.findIndex(s => s.id === activeTab);
   const nextStep = currentStepIdx >= 0 && currentStepIdx < workflowSteps.length - 1 ? workflowSteps[currentStepIdx + 1] : null;
@@ -236,7 +241,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
             <div className="text-[10px] text-zinc-400 mt-1">Click to view →</div>
           </button>
           <button onClick={() => setSummaryModal("ingredients")} className="rounded-xl border border-rose-200 bg-rose-50/50 p-3 text-left hover:border-rose-400 hover:shadow-sm transition-all">
-            <div className="text-[11px] text-rose-500 uppercase tracking-wider">Ingredients Needed</div>
+            <div className="text-[11px] text-rose-500 uppercase tracking-wider">Recipe Needed</div>
             <div className="text-[22px] font-semibold mt-0.5 text-rose-700">{totalNeeded}</div>
             <div className="text-[10px] text-rose-400 mt-1">Click to view →</div>
           </button>
@@ -304,7 +309,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
                                   </div>
                                   <div className="flex flex-wrap gap-1 px-2.5 py-1.5">
                                     {recipe!.ingredients.map((ing, i) => {
-                                      const neededQty = Math.ceil(ing.qtyPerBatch * (d.qty / 100));
+                                      const neededQty = Math.ceil(ing.qtyPerBatch * d.qty);
                                       return (
                                         <span key={i} className="inline-flex items-center gap-1 rounded-md bg-white border border-rose-200 px-1.5 py-0.5 text-[10px]">
                                           <span className="text-zinc-700 font-medium">{ing.name}</span>
@@ -373,12 +378,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
           <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setSummaryModal(null)}>
             <div className="w-full max-w-[520px] max-h-[80vh] rounded-[28px] border border-zinc-200 bg-white shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
-                <h3 className="text-[16px] font-semibold">
-                  {summaryModal === "products" && "All Products"}
-                  {summaryModal === "ingredients" && "Ingredients Needed"}
-                  {summaryModal === "packaging" && "Packaging Materials"}
-                  {summaryModal === "deco" && "Decoration Supplies"}
-                </h3>
+                <h3 className="text-[16px] font-semibold">Recipe Formula</h3>
                 <button onClick={() => setSummaryModal(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600">✕</button>
               </div>
               <div className="overflow-y-auto px-6 py-4 space-y-2">
@@ -394,7 +394,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
                 {summaryModal === "ingredients" && dosForDeco.flatMap(d => {
                   const recipe = recipes.find(r => r.productName === d.product);
                   return (recipe?.ingredients ?? []).map(ing => {
-                    const neededQty = Math.ceil(ing.qtyPerBatch * (d.qty / 100));
+                    const neededQty = Math.ceil(ing.qtyPerBatch * d.qty);
                     return { product: d.product, name: ing.name, qty: neededQty, unit: ing.unit, key: `${d.id}-${ing.name}` };
                   });
                 }).map(item => (
@@ -457,11 +457,14 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   /* ── Recipe Formulas ── */
   if (activeTab === "recipes") {
+    const dosRecipeProducts = productCatalog.filter(product => {
+      return dosForDeco.some(d => getRecipesForProduct(d.product).some(r => r.productName === product));
+    });
     return (
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight">Recipe Formulas</h1>
-          <p className="mt-1 text-[13px] text-zinc-500">Create and manage product recipes, ingredient quantities, and formulations.</p>
+          <p className="mt-1 text-[13px] text-zinc-500">Product recipes needed for current DOS items. Direct and linked recipes are shown below.</p>
         </div>
 
         {editingRecipe && (
@@ -499,7 +502,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         )}
 
         <div className="space-y-3">
-          {productCatalog.map(product => {
+          {dosRecipeProducts.map(product => {
             const recipe = recipes.find(r => r.productName === product);
             return (
               <div key={product} className="rounded-2xl border border-zinc-200 bg-white p-5">
@@ -599,7 +602,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
                           </div>
                           <div className="divide-y divide-rose-50">
                             {recipe.ingredients.map((ing, i) => {
-                              const neededQty = Math.ceil(ing.qtyPerBatch * (d.qty / 100));
+                              const neededQty = Math.ceil(ing.qtyPerBatch * d.qty);
                               const invItem = allIngredients.find(ii => ii.id === ing.inventoryId || ii.name.toLowerCase() === ing.name.toLowerCase());
                               const hasStock = invItem ? invItem.onHand >= neededQty : true;
                               const isPrepared = freeMixPrepared.has(`${d.id}-${ing.name}`);

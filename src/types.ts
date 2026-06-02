@@ -171,11 +171,14 @@ export type RecipeIngredient = {
 };
 
 export type ProductRecipe = {
+  id?: string;
   productId: string;
   productName: string;
   ingredients: RecipeIngredient[];
   packagingMaterials: RecipeIngredient[];
   decorationSupplies: RecipeIngredient[];
+  notes?: string;
+  linkedProduct?: string[];
 };
 
 export type ProductPricingVariant = {
@@ -217,4 +220,57 @@ export type FreezerHistory = {
   action: string;
   reference: string;
   timestamp: string;
+};
+
+export type Purchase = {
+  id: string;
+  supplierName: string;
+  modeOfPayment: string;
+  dateDelivered: string;
+  particular: string;
+  amount: number;
+  dueDate: string;
+  releasedDate: string;
+  paymentStatus: string;
+  remarks: string;
+  createdAt?: string;
+};
+
+export type BillDue = {
+  id: string;
+  dueDate: string;
+  particular: string;
+  amount: number;
+  modeOfPayment: string;
+  remarks: string;
+  status: string;
+  category: string;
+  branch: string;
+  createdAt?: string;
+};
+
+export type Revenue = {
+  id: string;
+  source: string;
+  particular: string;
+  branch: string;
+  amount: number;
+  date: string;
+  modeOfPayment: string;
+  referenceId: string;
+  remarks: string;
+  createdAt?: string;
+};
+
+export type WasteLog = {
+  id: string;
+  product: string;
+  qtyRejected: number;
+  unitCost: number;
+  totalCost: number;
+  reason: string;
+  source: string;
+  referenceId: string;
+  date: string;
+  createdAt?: string;
 };
