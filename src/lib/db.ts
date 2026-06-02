@@ -8,10 +8,10 @@ import type {
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
-  return { id: d.id, product: d.product, qty: d.qty, branch1: d.branch1, branch2: d.branch2, priority: d.priority, status: d.status, scheduledDate: d.scheduled_date || undefined };
+  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduledDate: d.scheduled_date || undefined };
 }
 function toDOSRow(d: DOSItem) {
-  return { id: d.id, product: d.product, qty: d.qty, branch1: d.branch1, branch2: d.branch2, priority: d.priority, status: d.status, scheduled_date: d.scheduledDate || null };
+  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduled_date: d.scheduledDate || null };
 }
 
 function parseProduction(p: any): ProductionTask {

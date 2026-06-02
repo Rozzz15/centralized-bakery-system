@@ -43,19 +43,14 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   ],
   baker: [
     { id: "dashboard", label: "My Tasks", icon: "◼" },
-    { id: "recipes", label: "Recipes", icon: "◈" },
-    { id: "requests", label: "Requests", icon: "⬢" },
     { id: "freezer", label: "Freezer", icon: "◇" },
   ],
   deco: [
     { id: "dashboard", label: "Dashboard", icon: "" },
-    { id: "recipes", label: "Recipe Formulas", icon: "" },
     { id: "free-mix", label: "Production Prep", icon: "" },
+    { id: "advanced-premix", label: "Advanced Premix", icon: "" },
     { id: "deco-queue", label: "Decoration Queue", icon: "" },
     { id: "custom-orders", label: "Custom Orders", icon: "" },
-    { id: "decoration-supplies", label: "Decoration Materials", icon: "" },
-    { id: "ingredients", label: "Ingredients", icon: "" },
-    { id: "materials", label: "Materials Request", icon: "" },
     { id: "freezer", label: "Freezer", icon: "" },
   ],
   kitchen: [
@@ -221,11 +216,11 @@ async function seedIfEmpty() {
   ];
 
   const demoSOS: DOSItem[] = [
-    { id: "DOS-1", product: "Pandesal", qty: 500, branch1: 300, branch2: 200, priority: "HIGH", status: "in-progress" },
-    { id: "DOS-2", product: "Loaf Bread", qty: 200, branch1: 120, branch2: 80, priority: "MEDIUM", status: "in-progress" },
-    { id: "DOS-3", product: "Choco Moist Cake", qty: 50, branch1: 20, branch2: 30, priority: "HIGH", status: "pending" },
-    { id: "DOS-4", product: "Sponge Fudge", qty: 40, branch1: 25, branch2: 15, priority: "HIGH", status: "pending" },
-    { id: "DOS-5", product: "Ensaymada", qty: 120, branch1: 70, branch2: 50, priority: "MEDIUM", status: "in-progress" },
+    { id: "DOS-1", product: "Pandesal", qty: 500, priority: "HIGH", status: "in-progress" },
+    { id: "DOS-2", product: "Loaf Bread", qty: 200, priority: "MEDIUM", status: "in-progress" },
+    { id: "DOS-3", product: "Choco Moist Cake", qty: 50, priority: "HIGH", status: "pending" },
+    { id: "DOS-4", product: "Sponge Fudge", qty: 40, priority: "HIGH", status: "pending" },
+    { id: "DOS-5", product: "Ensaymada", qty: 120, priority: "MEDIUM", status: "in-progress" },
   ];
 
   const demoProduction: ProductionTask[] = [
@@ -323,7 +318,7 @@ export default function App() {
       if (dos.length > 0) setDosItems(dos);
       if (prod.length > 0) setProduction(prod);
       if (del.length > 0) setDeliveries(del);
-      if (audit.length > 0) setAuditLogs(audit);
+      setAuditLogs(audit);
       if (catalog.length > 0) setProductCatalog(catalog);
       if (rec.length > 0) setRecipes(rec);
       if (pricing.length > 0) setProductPricing(pricing);
@@ -622,7 +617,7 @@ export default function App() {
   const handleEditDOS = async (item: DOSItem) => {
     try { await db.upsertDOS([item]); } catch (err) { console.error("DOS edit save failed:", err); }
     setDosItems(prev => prev.map(d => d.id === item.id ? item : d));
-    logAudit("DOS_EDITED", `${item.product} — ${item.id}`);
+    logAudit("DOS_EDITED", `${item.product} — ${item.id} — Roles: ${item.roles?.join(', ') || 'None'}`);
   };
 
   const handleDeleteDOS = async (id: string) => {
@@ -689,7 +684,7 @@ export default function App() {
               </div>
               <div className="text-[16px] font-semibold tracking-wide text-zinc-900 whitespace-nowrap" style={{ fontFamily: "Instrument Sans, system-ui" }}>BAKEFLOW ERP</div>
             </div>
-            <div className="flex items-center gap-3 pl-5 ml-1 border-l border-[#E8E0D5]">
+            <div className="hidden md:flex items-center gap-3 pl-5 ml-1 border-l border-[#E8E0D5]">
               <div className={`h-2.5 w-2.5 rounded-full ${isEggCritical ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
               <span className="text-[13px] text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>
                 {now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })} • {now.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
@@ -698,9 +693,9 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-3">
-            <div className="hidden sm:flex items-center gap-2 rounded-lg bg-zinc-100 px-3 py-1.5">
+            <div className="hidden sm:flex items-center gap-2 rounded-xl bg-zinc-100/60 px-3 py-1.5 border border-zinc-200/50">
               <div className={`h-2 w-2 rounded-full ${isEggCritical ? 'bg-red-500' : 'bg-emerald-500'}`} />
-              <span className="text-[12px] font-medium text-zinc-700 whitespace-nowrap">{role === "admin" ? "Admin" : role.charAt(0).toUpperCase() + role.slice(1)}</span>
+              <span className="text-[12px] font-semibold text-zinc-700 whitespace-nowrap uppercase tracking-wider">{role === "admin" ? "Admin" : role.charAt(0).toUpperCase() + role.slice(1)}</span>
             </div>
 
             {/* Notification bell */}
@@ -871,10 +866,10 @@ export default function App() {
                 onUpdateWasteLog={setWasteLog}
               />
             )}
-            {role === "baker" && ["dashboard", "recipes", "requests", "freezer"].includes(activeTab) && (
+            {role === "baker" && ["dashboard", "freezer"].includes(activeTab) && (
               <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
             )}
-            {role === "deco" && ["dashboard", "recipes", "free-mix", "deco-queue", "decoration-supplies", "ingredients", "materials", "freezer"].includes(activeTab) && (
+            {role === "deco" && ["dashboard", "free-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer"].includes(activeTab) && (
               <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (

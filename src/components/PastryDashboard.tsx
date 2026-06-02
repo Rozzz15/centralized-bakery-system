@@ -203,8 +203,6 @@ export default function PastryDashboard({ production, dosItems, activeTab, recip
                 <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                   <th className="px-5 py-3">Product</th>
                   <th className="px-5 py-3 text-right">Total</th>
-                  <th className="px-5 py-3 text-right">Cakes N Styles</th>
-                  <th className="px-5 py-3 text-right">Shadrach's</th>
                   <th className="px-5 py-3 text-center">Priority</th>
                   <th className="px-5 py-3 text-center">Status</th>
                 </tr>
@@ -214,8 +212,6 @@ export default function PastryDashboard({ production, dosItems, activeTab, recip
                   <tr key={d.id} className="hover:bg-zinc-50/50 transition-colors">
                     <td className="px-5 py-3.5 text-[13px] font-medium text-zinc-900">{d.product}</td>
                     <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.qty}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-right text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.branch1}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-right text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.branch2}</td>
                     <td className="px-5 py-3.5 text-center">
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${d.priority === "HIGH" ? "bg-red-100 text-red-700" : d.priority === "MEDIUM" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{d.priority}</span>
                     </td>

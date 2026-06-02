@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { createPortal } from "react-dom";
 import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog } from "../types";
 import * as db from "../lib/db";
@@ -99,7 +100,7 @@ export default function AdminDashboard({
   const [showAddWaste, setShowAddWaste] = useState(false);
   const [editingWaste, setEditingWaste] = useState<WasteLog | null>(null);
   const [financeSearch, setFinanceSearch] = useState("");
-  const [financeTab, setFinanceTab] = useState<"purchases" | "bills" | "revenue" | "waste">("purchases");
+  const [financeTab, setFinanceTab] = useState<"purchases" | "bills" | "revenue" | "waste" | "analytics">("purchases");
   const [financePeriod, setFinancePeriod] = useState<"today" | "week" | "month" | "year" | "custom">("month");
   const [financeCustomMonth, setFinanceCustomMonth] = useState(() => {
     const now = new Date();
@@ -122,6 +123,7 @@ export default function AdminDashboard({
   const [showAddDelivery, setShowAddDelivery] = useState(false);
   const [newDeliveryBranch, setNewDeliveryBranch] = useState("Cakes N Styles Gensan");
   const [newDeliveryCustom, setNewDeliveryCustom] = useState("");
+  const [newDeliveryDate, setNewDeliveryDate] = useState(new Date().toISOString().slice(0, 10));
   const [newDeliveryItems, setNewDeliveryItems] = useState<{ product: string; qty: number }[]>([{ product: "", qty: 1 }]);
   const [newDeliveryEta, setNewDeliveryEta] = useState("");
   const [expandedProducers, setExpandedProducers] = useState<Set<string>>(new Set());
@@ -158,6 +160,7 @@ export default function AdminDashboard({
   const [renamingProduct, setRenamingProduct] = useState("");
 
   const [showAllProdHistory, setShowAllProdHistory] = useState(false);
+  const [showAllDOSHistory, setShowAllDOSHistory] = useState(false);
   const [expandedProdGroups, setExpandedProdGroups] = useState<Set<string>>(new Set());
   const toggleProdGroup = (date: string) => setExpandedProdGroups(prev => { const n = new Set(prev); if (n.has(date)) n.delete(date); else n.add(date); return n; });
 
@@ -471,23 +474,36 @@ export default function AdminDashboard({
           {warehouseSection === "history" ? (
             <div>
               {transactions.length > 0 ? (
-                <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+                <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-[16px] font-semibold">Transaction History</h2>
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 font-mono">{transactions.length} entries</span>
+                    <h2 className="text-[16px] font-semibold text-white">Transaction History</h2>
+                    <span className="rounded-full bg-zinc-700 px-2 py-0.5 text-[10px] font-medium text-zinc-200 font-mono">{transactions.length} entries</span>
                   </div>
-                  <div className="space-y-1">
-                    {[...transactions].reverse().map(tx => (
-                      <div key={tx.id} className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px]">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${tx.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{tx.type}</span>
-                        <span className="font-medium text-zinc-900 min-w-[100px]">{tx.itemName}</span>
-                        {tx.group && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 capitalize">{tx.group.replace(/-/g, " ")}</span>}
-                        <span className="text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{tx.type === "in" ? "+" : "-"}{tx.qty} {tx.unit}</span>
-                        <span className="text-zinc-500">{tx.reference}</span>
-                        {tx.target && <span className="text-zinc-500 capitalize">→ {tx.target}</span>}
-                        <span className="ml-auto text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{tx.timestamp}</span>
+                  
+                  {/* Container with constrained height */}
+                  <div className="max-h-[400px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+                    <div className="space-y-0">
+                      {/* Compact Header Row */}
+                      <div className="grid grid-cols-[auto,1fr,auto] gap-2 px-3 py-1 text-[9px] font-bold text-zinc-500 uppercase tracking-wider sticky top-0 bg-zinc-900/95 backdrop-blur-sm z-10 border-b border-zinc-800">
+                        <span>Type</span>
+                        <span>Item / Reference</span>
+                        <span className="text-right">Qty / Time</span>
                       </div>
-                    ))}
+                      
+                      {[...transactions].reverse().map(tx => (
+                        <div key={tx.id} className="grid grid-cols-[auto,1fr,auto] items-center gap-2 px-3 py-1 text-[11px] hover:bg-zinc-800/50 border-b border-zinc-800/50">
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${tx.type === "in" ? "bg-emerald-950 text-emerald-300" : "bg-amber-950 text-amber-300"}`}>{tx.type}</span>
+                          <div className="flex flex-col truncate">
+                            <span className="font-semibold text-zinc-100 truncate">{tx.itemName}</span>
+                            <span className="text-[9px] text-zinc-500 truncate">{tx.reference || "No Ref"} {tx.group && `· ${tx.group.replace(/-/g, " ")}`}</span>
+                          </div>
+                          <div className="flex flex-col items-end whitespace-nowrap">
+                            <span className="font-mono text-zinc-200 font-medium">{tx.type === "in" ? "+" : "-"}{tx.qty} {tx.unit}</span>
+                            <span className="text-[9px] text-zinc-600 font-mono">{tx.timestamp.split(' ')[1]}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -496,14 +512,14 @@ export default function AdminDashboard({
             </div>
           ) : (
             <>
-              {/* Items filtered by group */}
-              <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+{/* Items filtered by group */}
+              <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-[16px] font-semibold">{sidebarItems.find(s => s.key === warehouseSection)?.label}</h2>
+                  <h2 className="text-[16px] font-semibold text-white">{sidebarItems.find(s => s.key === warehouseSection)?.label}</h2>
                   <div className="flex items-center gap-2">
                     <div className="relative max-w-[220px]">
                       <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
-                      <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search items..." className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-2 pl-8 pr-3 text-[12px] outline-none focus:border-zinc-400" />
+                      <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search items..." className="w-full rounded-xl border border-zinc-700 bg-zinc-800 py-2 pl-8 pr-3 text-[12px] text-white outline-none focus:border-zinc-500" />
                     </div>
                   </div>
                 </div>
@@ -515,21 +531,21 @@ export default function AdminDashboard({
                     const isExpired = item.expiryDate && item.expiryDate < todayStr;
                     const isExpiring = item.expiryDate && item.expiryDate >= todayStr && new Date(item.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000;
                     return (
-                      <div key={item.id} className="flex items-center gap-4 rounded-xl border border-zinc-100 px-4 py-3 hover:bg-zinc-50/60">
+                      <div key={item.id} className="flex items-center gap-4 rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 hover:bg-zinc-700/60">
                         <div className="min-w-[160px]">
-                          <div className="text-[13px] font-medium text-zinc-900">{item.name}</div>
+                          <div className="text-[13px] font-medium text-white">{item.name}</div>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[11px] text-zinc-500">{item.sku} · {item.category}</span>
-                            {isExpired && <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-medium text-purple-700">Expired</span>}
-                            {isExpiring && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">Expiring</span>}
+                            <span className="text-[11px] text-zinc-400">{item.sku} · {item.category}</span>
+                            {isExpired && <span className="rounded-full bg-purple-900 px-1.5 py-0.5 text-[9px] font-medium text-purple-200">Expired</span>}
+                            {isExpiring && <span className="rounded-full bg-amber-900 px-1.5 py-0.5 text-[9px] font-medium text-amber-200">Expiring</span>}
                           </div>
                         </div>
-                        <div className="flex-1"><div className="h-2 rounded-full bg-zinc-100"><div className={`h-full rounded-full ${isExpired ? "bg-purple-500" : isCritical ? "bg-red-500" : item.onHand < item.threshold * 1.5 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} /></div></div>
-                        <div className="text-right min-w-[80px]"><div className={`text-[13px] font-semibold ${isCritical ? "text-red-600" : "text-zinc-900"}`}>{item.onHand} <span className="text-[11px] font-normal text-zinc-500">/ {item.threshold}</span></div><div className="text-[11px] text-zinc-500">{item.unit}</div></div>
-                        <div className="text-[12px] text-zinc-500 min-w-[120px] text-right">{item.supplier}{item.expiryDate ? <span className="block text-[11px] text-zinc-400">Exp: {item.expiryDate}</span> : <span className="block text-[11px] text-zinc-300">No expiry</span>}</div>
+                        <div className="flex-1"><div className="h-2 rounded-full bg-zinc-700"><div className={`h-full rounded-full ${isExpired ? "bg-purple-500" : isCritical ? "bg-red-500" : item.onHand < item.threshold * 1.5 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} /></div></div>
+                        <div className="text-right min-w-[80px]"><div className={`text-[13px] font-semibold ${isCritical ? "text-red-400" : "text-white"}`}>{item.onHand} <span className="text-[11px] font-normal text-zinc-500">/ {item.threshold}</span></div><div className="text-[11px] text-zinc-400">{item.unit}</div></div>
+                        <div className="text-[12px] text-zinc-400 min-w-[120px] text-right">{item.supplier}{item.expiryDate ? <span className="block text-[11px] text-zinc-500">Exp: {item.expiryDate}</span> : <span className="block text-[11px] text-zinc-600">No expiry</span>}</div>
                         <div className="flex items-center gap-1 shrink-0">
-                          <button onClick={() => setEditingInvItem(item)} className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100 hover:border-zinc-400 transition-all">Edit</button>
-                          <button onClick={async () => { if (confirm(`Delete "${item.name}"?`)) { await db.deleteInventoryItem(item.id, item.group); onUpdateInventory(inventory.filter(i => i.id !== item.id)); onAddAuditLog?.("INVENTORY_DELETED", `${item.name} removed from ${item.group}`); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-500 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
+                          <button onClick={() => setEditingInvItem(item)} className="rounded-lg border border-zinc-600 bg-zinc-700 px-2.5 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-zinc-600 hover:border-zinc-500 transition-all">Edit</button>
+                          <button onClick={async () => { if (confirm(`Delete "${item.name}"?`)) { await db.deleteInventoryItem(item.id, item.group); onUpdateInventory(inventory.filter(i => i.id !== item.id)); onAddAuditLog?.("INVENTORY_DELETED", `${item.name} removed from ${item.group}`); } }} className="rounded-lg border border-red-800 bg-red-900/30 px-2.5 py-1.5 text-[11px] font-medium text-red-300 hover:bg-red-900/50 hover:border-red-700 transition-all">Del</button>
                         </div>
                       </div>
                     );
@@ -542,7 +558,7 @@ export default function AdminDashboard({
               {/* Pending Material Requests */}
               {(bakerReqs.filter(r => r.status === "pending-approval" || r.status === "approved").length > 0 ||
                 decoReqs.filter(r => r.status === "pending-approval" || r.status === "approved").length > 0) && (
-          <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+          <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
             <h2 className="text-[16px] font-semibold mb-4">Pending Material Requests</h2>
             <div className="space-y-3">
               {bakerReqs.filter(r => r.status === "pending-approval" || r.status === "approved").map(req => (
@@ -691,9 +707,11 @@ export default function AdminDashboard({
     return (
       <div className="space-y-5">
         <h1 className="text-[24px] font-semibold">Audit Trail</h1>
-        <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+        <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
           <div className="space-y-3">
-            {auditLogs.map(log => (
+            {auditLogs.length === 0 ? (
+              <p className="text-[13px] text-zinc-500 text-center py-8">No audit logs yet. Activity will appear here as you use the system.</p>
+            ) : auditLogs.map(log => (
               <div key={log.id} className="flex items-start gap-3 border-b border-zinc-100 pb-3 last:border-0">
                 <div className="mt-0.5 text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{log.timestamp}</div>
                 <div className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${log.role === "admin" ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700"}`}>{log.role}</div>
@@ -708,7 +726,7 @@ export default function AdminDashboard({
 
   /* ── DOS Tab ── */
   if (activeTab === "dos") {
-    const roleColors: Record<string, string> = { baker: "bg-stone-500", deco: "bg-rose-500", kitchen: "bg-emerald-500" };
+    const roleColors: Record<string, string> = { baker: "bg-stone-500", deco: "bg-rose-500", kitchen: "bg-emerald-500", pastry: "bg-amber-500" };
 
     const dosGroups = (() => {
       const groups = new Map<string, DOSItem[]>();
@@ -720,7 +738,7 @@ export default function AdminDashboard({
       return Array.from(groups.entries()).map(([baseId, items]) => {
         const ts = items[0].id.match(/\w+-(\d+)/)?.[1];
         const date = ts ? new Date(Number(ts)) : null;
-        return { baseId, items, date, total: items.reduce((s, i) => s + i.qty, 0), b1: items.reduce((s, i) => s + i.branch1, 0), b2: items.reduce((s, i) => s + i.branch2, 0) };
+        return { baseId, items, date, total: items.reduce((s, i) => s + i.qty, 0) };
       }).sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0));
     })();
 
@@ -740,30 +758,31 @@ export default function AdminDashboard({
             </div>
             <div className="flex items-center gap-2">
               {(["all", "baker", "deco", "pastry"] as const).map(role => (
-                <button key={role} onClick={() => setDosRoleFilter(role)} className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all ${dosRoleFilter === role ? "bg-white text-zinc-900 shadow-sm" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}>{role === "all" ? "All" : role === "baker" ? "Baker" : "Deco"}</button>
+                <button key={role} onClick={() => setDosRoleFilter(role)} className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all ${dosRoleFilter === role ? "bg-white text-zinc-900 shadow-sm" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}>{role === "all" ? "All" : role.charAt(0).toUpperCase() + role.slice(1)}</button>
               ))}
               <button onClick={() => setTodayAddOpen(true)} className="rounded-lg bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-900 shadow-sm hover:bg-zinc-100 transition-all">+ Add</button>
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-zinc-800 text-left text-[11px] uppercase tracking-wider text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3 text-right">Cakes N Styles Gensan</th><th className="px-4 py-3 text-right">Shadrach's Bake & Brew</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Assigned To</th><th className="px-4 py-3 text-right">Status</th><th className="px-4 py-3 w-10" /></tr></thead>
+              <thead className="bg-zinc-800 text-left text-[11px] uppercase tracking-wider text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Assigned To</th><th className="px-4 py-3 text-right">Status</th><th className="px-4 py-3 w-10" /></tr></thead>
               <tbody className="divide-y divide-zinc-700 text-[13px]">
                 {(() => {
                   const filtered = dosRoleFilter === "all" ? todayDOS : todayDOS.filter(item => {
                     const itemKey = item.id.replace("DOS-", "");
                     return production.some(t => t.id.includes(itemKey) && t.assignedTo === dosRoleFilter);
                   });
-                  if (filtered.length === 0) return <tr><td colSpan={8} className="text-center py-10 text-[13px] text-zinc-500">{dosRoleFilter === "all" ? "No DOS for today yet. Click \"+ New DOS\" to create one." : `No items assigned to ${dosRoleFilter} today.`}</td></tr>;
+                  if (filtered.length === 0) return <tr><td colSpan={6} className="text-center py-10 text-[13px] text-zinc-500">{dosRoleFilter === "all" ? "No DOS for today yet. Click \"+ New DOS\" to create one." : `No items assigned to ${dosRoleFilter} today.`}</td></tr>;
                   return filtered.map(item => {
                     const itemKey = item.id.replace("DOS-", "");
                     const relatedTasks = production.filter(t => t.id.includes(itemKey));
+                    const roles = [...new Set(relatedTasks.map(t => t.assignedTo))];
                     return (
                       <tr key={item.id} className="hover:bg-zinc-800/60">
                         <td className="px-4 py-3"><div className="font-medium text-white">{item.product}</div><div className="text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></td>
                         <td className="px-4 py-3 text-right font-medium text-white" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty}</td>
-                        <td className="px-4 py-3 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.branch1}</td>
-                        <td className="px-4 py-3 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.branch2}</td>
+                        
+                        
                         <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-700"}`}>{item.priority}</span></td>
                         <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{relatedTasks.length > 0 ? [...new Set(relatedTasks.map(t => t.assignedTo))].map(role => (<span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium text-white ${roleColors[role] || "bg-zinc-500"}`}>{role}</span>)) : <span className="text-zinc-400 text-[11px]">—</span>}</div></td>
                         <td className="px-4 py-3 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${item.status === "completed" ? "text-emerald-400" : item.status === "in-progress" ? "text-amber-400" : "text-zinc-400"}`}><span className={`h-1.5 w-1.5 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} />{item.status === "in-progress" ? "In Progress" : item.status === "completed" ? "Completed" : "Pending"}</span></td>
@@ -815,7 +834,7 @@ export default function AdminDashboard({
                             <div key={item.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50/40">
                               <div className="flex-1 min-w-0">
                                 <div className="text-[13px] font-medium text-zinc-900">{item.product}</div>
-                                <div className="text-[11px] text-zinc-500 font-mono">{item.qty}pcs · B1: {item.branch1} · B2: {item.branch2} · {item.priority}</div>
+                                <div className="text-[11px] text-zinc-500 font-mono">{item.qty}pcs · {item.priority}</div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
                                 <button onClick={() => setEditingDOS(item)} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300 transition-all">Edit</button>
@@ -848,7 +867,7 @@ export default function AdminDashboard({
                 if (!historyDateFilter) return true;
                 const gd = group.date ? group.date.toISOString().split("T")[0] : "";
                 return gd === historyDateFilter;
-              }).map(group => {
+              }).slice(0, showAllDOSHistory ? undefined : 3).map(group => {
                 const dateStr = group.date ? group.date.toLocaleDateString("en-PH", { weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
                 const isExpanded = expandedDOS.has(group.baseId);
                 return (
@@ -865,15 +884,15 @@ export default function AdminDashboard({
                         <div className="overflow-x-auto">
                           <table className="w-full text-[13px]">
                             <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                              <tr><th className="px-4 py-2.5">Product</th><th className="px-4 py-2.5 text-right">Qty</th><th className="px-4 py-2.5 text-right">Cakes N Styles Gensan</th><th className="px-4 py-2.5 text-right">Shadrach's Bake & Brew</th><th className="px-4 py-2.5">Priority</th><th className="px-4 py-2.5 text-right">Status</th></tr>
+                              <tr><th className="px-4 py-2.5">Product</th><th className="px-4 py-2.5 text-right">Qty</th><th className="px-4 py-2.5">Priority</th><th className="px-4 py-2.5 text-right">Status</th></tr>
                             </thead>
                             <tbody className="divide-y divide-zinc-100">
                               {group.items.map(item => (
                                 <tr key={item.id} className="hover:bg-zinc-800/60">
                                   <td className="px-4 py-2 font-medium text-zinc-900">{item.product}</td>
                                   <td className="px-4 py-2 text-right font-mono text-zinc-600">{item.qty}</td>
-                                  <td className="px-4 py-2 text-right font-mono text-zinc-600">{item.branch1}</td>
-                                  <td className="px-4 py-2 text-right font-mono text-zinc-600">{item.branch2}</td>
+                                  
+                                  
                                   <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{item.priority}</span></td>
                                   <td className="px-4 py-2 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${item.status === "completed" ? "text-emerald-700" : item.status === "in-progress" ? "text-amber-700" : "text-zinc-500"}`}><span className={`h-1.5 w-1.5 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500" : "bg-zinc-300"}`} />{item.status === "in-progress" ? "In Progress" : item.status === "completed" ? "Completed" : "Pending"}</span></td>
                                 </tr>
@@ -883,8 +902,6 @@ export default function AdminDashboard({
                               <tr className="bg-amber-50/40 text-[12px] font-medium text-zinc-700">
                                 <td className="px-4 py-2">Total</td>
                                 <td className="px-4 py-2 text-right font-mono">{group.total}</td>
-                                <td className="px-4 py-2 text-right font-mono">{group.b1}</td>
-                                <td className="px-4 py-2 text-right font-mono">{group.b2}</td>
                                 <td colSpan={2} />
                               </tr>
                             </tfoot>
@@ -896,10 +913,23 @@ export default function AdminDashboard({
                 );
               })}
             </div>
+            {!showAllDOSHistory && dosGroups.filter(group => {
+              if (!historyDateFilter) return true;
+              const gd = group.date ? group.date.toISOString().split("T")[0] : "";
+              return gd === historyDateFilter;
+            }).length > 3 && (
+              <button onClick={() => setShowAllDOSHistory(true)} className="w-full rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all mt-2">
+                See more ({dosGroups.filter(group => {
+                  if (!historyDateFilter) return true;
+                  const gd = group.date ? group.date.toISOString().split("T")[0] : "";
+                  return gd === historyDateFilter;
+                }).length - 3} remaining)
+              </button>
+            )}
           </div>
         )}
 
-        {editingDOS && <EditDOSModal item={editingDOS} onClose={() => setEditingDOS(null)} onSave={onEditDOS} />}
+        {editingDOS && <EditDOSModal item={editingDOS} onClose={() => { console.log("EditDOSModal: Closing"); setEditingDOS(null); }} onSave={(item) => { console.log("EditDOSModal: Saving:", item); onEditDOS(item); }} />}
         {scheduledAddDate && (
           <DOSBuilderModal
             onClose={() => setScheduledAddDate(null)}
@@ -931,14 +961,16 @@ export default function AdminDashboard({
     const todayProducts = new Set(todayDOS.map(d => d.product));
     const todayTasks = production.filter(t => todayProducts.has(t.product));
     const bakerTasks = todayTasks.filter(t => t.assignedTo === "baker");
+    const pastryTasks = todayTasks.filter(t => t.assignedTo === "pastry");
     const decoTasks = todayTasks.filter(t => t.assignedTo === "deco");
     const kitchenTasks = todayTasks.filter(t => t.assignedTo === "kitchen");
     const pendingBaker = todayTasks.filter(t => t.assignedTo === "baker" && t.status === "pending");
+    const pendingPastry = todayTasks.filter(t => t.assignedTo === "pastry" && t.status === "pending");
     const pendingDeco = todayTasks.filter(t => t.assignedTo === "deco" && t.status === "pending");
 
     return (
       <div className="space-y-5">
-        <div className="flex items-center gap-3"><div><h1 className="text-[24px] font-semibold">Production Control</h1><p className="mt-1 text-[13px] text-zinc-600">Track all tasks across Baker, Deco, and Kitchen.</p></div><div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /><span className="text-[11px] font-medium text-emerald-700">Live</span></div></div>
+        <div className="flex items-center gap-3"><div><h1 className="text-[24px] font-semibold">Production Control</h1><p className="mt-1 text-[13px] text-zinc-600">Track all tasks across Baker, Pastry, Deco, and Kitchen.</p></div><div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /><span className="text-[11px] font-medium text-emerald-700">Live</span></div></div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -948,9 +980,10 @@ export default function AdminDashboard({
         </div>
 
         {/* Department Lanes */}
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-4">
           {[
             { tasks: bakerTasks, label: "Baker", accent: "bg-stone-600", dot: "bg-stone-500", tag: "bg-stone-100 text-stone-700", bar: "bg-stone-500" },
+            { tasks: pastryTasks, label: "Pastry", accent: "bg-amber-600", dot: "bg-amber-500", tag: "bg-amber-100 text-amber-700", bar: "bg-amber-500" },
             { tasks: decoTasks, label: "Deco / Free-Mix", accent: "bg-rose-600", dot: "bg-rose-500", tag: "bg-rose-100 text-rose-700", bar: "bg-rose-500" },
             { tasks: kitchenTasks, label: "Kitchen", accent: "bg-emerald-600", dot: "bg-emerald-500", tag: "bg-emerald-100 text-emerald-700", bar: "bg-emerald-500" },
           ].map(({ tasks, label, accent, dot, tag, bar }) => {
@@ -1113,25 +1146,25 @@ export default function AdminDashboard({
         {/* Delivery Cards */}
         <div className="grid gap-4 sm:grid-cols-2">
           {deliveries.length === 0 ? (
-            <div className="sm:col-span-2 text-center py-12 rounded-[24px] border border-[#E8E0D5] bg-white"><p className="text-[14px] text-zinc-500">No deliveries yet.</p></div>
+            <div className="sm:col-span-2 text-center py-12 rounded-[24px] border border-zinc-800 bg-zinc-900"><p className="text-[14px] text-zinc-500">No deliveries yet.</p></div>
           ) : (
             deliveries.map(d => {
               const val = validations.find(v => v.reportId === d.id);
               return (
-                <div key={d.id} className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+                <div key={d.id} className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
                   <div className="flex items-center justify-between">
-                    <div><h3 className="text-[15px] font-semibold">{d.branch}</h3><p className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.id}</p></div>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium border ${d.status === "delivered" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : d.status === "in-transit" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-zinc-50 text-zinc-600 border-zinc-200"}`}>{d.status}</span>
+                    <div><h3 className="text-[15px] font-semibold text-white">{d.branch}</h3><p className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.id}</p></div>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium border ${d.status === "delivered" ? "bg-emerald-950 text-emerald-400 border-emerald-900/50" : d.status === "in-transit" ? "bg-amber-950 text-amber-400 border-amber-900/50" : "bg-zinc-800 text-zinc-400 border-zinc-700"}`}>{d.status}</span>
                   </div>
-                  <div className="mt-3 border-t border-zinc-100 pt-3">
-                    <div className="text-[12px] font-medium text-zinc-700 mb-1.5">Items</div>
+                  <div className="mt-3 border-t border-zinc-800 pt-3">
+                    <div className="text-[12px] font-medium text-zinc-400 mb-1.5">Items</div>
                     {d.items.map((item, i) => (
-                      <div key={i} className="flex items-center justify-between text-[12px] text-zinc-600 py-0.5">
+                      <div key={i} className="flex items-center justify-between text-[12px] text-zinc-400 py-0.5">
                         <div className="flex items-center gap-1.5">
-                          <span>{item.product}</span>
-                          {item.source && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium text-white ${item.source === "baker" ? "bg-stone-500" : "bg-rose-500"}`}>{item.source}</span>}
+                          <span className="text-zinc-200">{item.product}</span>
+                          {item.source && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium text-white ${item.source === "baker" ? "bg-stone-700" : "bg-rose-800"}`}>{item.source}</span>}
                         </div>
-                        <span style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty} pcs</span>
+                        <span className="text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty} pcs</span>
                       </div>
                     ))}
                   </div>
@@ -1144,20 +1177,20 @@ export default function AdminDashboard({
                         setValidations(prev => [...prev, newVal]);
                         await db.replaceDeliveryValidations([...validations, newVal]).catch(console.error);
                         onAddAuditLog?.("DELIVERY_VALIDATED", `${d.id} — ${d.branch} (${d.items.length} items)`);
-                      }} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-zinc-800">Validate</button>
+                      }} className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-900 hover:bg-zinc-100 transition-colors">Validate</button>
                     )}
                     {val && val.status === "validated" && (
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-blue-600 font-medium">✓ Validated</span>
+                        <span className="text-[11px] text-sky-400 font-medium">✓ Validated</span>
                         <button onClick={async () => {
                           const updated = validations.map(v => v.id === val.id ? { ...v, status: "posted" as const } : v);
                           setValidations(updated);
                           await db.replaceDeliveryValidations(updated).catch(console.error);
                           onAddAuditLog?.("DELIVERY_POSTED", `${val.branch} — ${val.items.length} items posted to branch inventory`);
-                        }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700">Post to Branch</button>
+                        }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700 transition-colors">Post to Branch</button>
                       </div>
                     )}
-                    {val && val.status === "posted" && <span className="text-[11px] text-emerald-600 font-medium">✓ Posted to Branch IN</span>}
+                    {val && val.status === "posted" && <span className="text-[11px] text-emerald-500 font-medium">✓ Posted to Branch IN</span>}
                   </div>
                 </div>
               );
@@ -1167,16 +1200,16 @@ export default function AdminDashboard({
 
         {/* Validations Log */}
         {validations.length > 0 && (
-          <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-            <h2 className="text-[16px] font-semibold mb-4">Validation Log</h2>
+          <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
+            <h2 className="text-[16px] font-semibold text-white mb-4">Validation Log</h2>
             <div className="space-y-1">
               {[...validations].reverse().map(v => (
-                <div key={v.id} className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px]">
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${v.status === "posted" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>{v.status}</span>
-                  <span className="font-medium text-zinc-900">{v.branch}</span>
+                <div key={v.id} className="flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] hover:bg-zinc-800/40 transition-colors">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${v.status === "posted" ? "bg-emerald-950 text-emerald-400 border border-emerald-900/50" : "bg-sky-950 text-sky-400 border border-sky-900/50"}`}>{v.status}</span>
+                  <span className="font-medium text-zinc-200">{v.branch}</span>
                   <span className="text-zinc-500">{v.items.length} item{v.items.length > 1 ? "s" : ""}</span>
-                  <span className="text-[11px] text-zinc-400 font-mono">{v.reportId}</span>
-                  <span className="ml-auto text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{v.timestamp}</span>
+                  <span className="text-[11px] text-zinc-600 font-mono">{v.reportId}</span>
+                  <span className="ml-auto text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{v.timestamp}</span>
                 </div>
               ))}
             </div>
@@ -1203,26 +1236,19 @@ export default function AdminDashboard({
                 )}
               </div>
 
-              {/* 2. Delivery Time */}
-              <div className="mb-4">
-                <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Delivery Time</label>
-                <div className="flex gap-2">
-                  <input type="time" value={newDeliveryEta} onChange={e => setNewDeliveryEta(e.target.value)} className="flex-1 rounded-xl border border-zinc-200 px-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
-                  <div className="flex gap-1.5">
-                    {(["+30m", "+1h", "+2h", "+3h"] as const).map(preset => {
-                      const mins = preset === "+30m" ? 30 : parseInt(preset.replace("+", "").replace("h", "")) * 60;
-                      const d = new Date(Date.now() + mins * 60 * 1000);
-                      const hh = String(d.getHours()).padStart(2, "0");
-                      const mm = String(d.getMinutes()).padStart(2, "0");
-                      return (
-                        <button key={preset} type="button" onClick={() => setNewDeliveryEta(`${hh}:${mm}`)} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300 transition-all">{preset}</button>
-                      );
-                    })}
-                  </div>
+              {/* 2. Date & 3. Time */}
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Date</label>
+                  <input type="date" value={newDeliveryDate} onChange={e => setNewDeliveryDate(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+                </div>
+                <div>
+                  <label className="text-[12px] font-medium text-zinc-700 mb-1.5 block">Delivery Time (ETA)</label>
+                  <input type="time" value={newDeliveryEta} onChange={e => setNewDeliveryEta(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
                 </div>
               </div>
 
-              {/* Delivery Details */}
+              {/* 4. Delivery Details */}
               <div className="mb-4 rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
                 <div className="text-[12px] font-semibold text-zinc-700 mb-3">Delivery Details</div>
                 <div className="grid grid-cols-2 gap-3">
@@ -1253,30 +1279,13 @@ export default function AdminDashboard({
                 </div>
               </div>
 
-              {/* Selected Items - Above Role Cards */}
-              {newDeliveryItems.filter(i => i.product.trim()).length > 0 && (
-                <div className="mb-4">
-                  <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5">Selected Items ({newDeliveryItems.filter(i => i.product.trim()).length})</div>
-                  <div className="space-y-1.5 max-h-[120px] overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50/50 p-2">
-                    {newDeliveryItems.filter(i => i.product.trim()).map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2 rounded-lg border border-zinc-100 bg-white px-3 py-2">
-                        <span className="text-[13px] font-medium text-zinc-900 flex-1">{item.product}</span>
-                        <input type="number" min={1} value={item.qty} onChange={e => { const updated = [...newDeliveryItems]; const ri = updated.findIndex(i => i.product === item.product); if (ri >= 0) updated[ri] = { ...updated[ri], qty: parseInt(e.target.value) || 1 }; setNewDeliveryItems(updated); }} className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-[12px] text-center focus:outline-none focus:border-zinc-400 bg-white" />
-                        <button onClick={() => setNewDeliveryItems(prev => prev.filter(i => i.product !== item.product))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 3. Products by Role - Card Selector */}
+              {/* 5. Select Role to View Freezer */}
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-[12px] font-medium text-zinc-700">Select Role to View Freezer</label>
                   <button onClick={() => db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error)} className="text-[11px] text-blue-600 hover:text-blue-800 font-medium">↻ Refresh</button>
                 </div>
 
-                {/* Role Cards - Single Select */}
                 <div className="flex items-center justify-center gap-3 mb-3">
                   {(["baker", "deco", "pastry"] as const).map(producer => {
                     const producerItems = freezerItems.filter(i => i.status === "stored" && i.producedBy === producer);
@@ -1295,7 +1304,6 @@ export default function AdminDashboard({
                   })}
                 </div>
 
-                {/* Show selected role's products with search */}
                 {(["baker", "deco", "pastry"] as const).map(producer => {
                   if (!expandedProducers.has(producer)) return null;
                   const searchKey = `search_${producer}`;
@@ -1337,6 +1345,22 @@ export default function AdminDashboard({
                 })}
               </div>
 
+              {/* 6. Selected Items */}
+              {newDeliveryItems.filter(i => i.product.trim()).length > 0 && (
+                <div className="mb-4">
+                  <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5">Selected Items ({newDeliveryItems.filter(i => i.product.trim()).length})</div>
+                  <div className="space-y-1.5 max-h-[120px] overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50/50 p-2">
+                    {newDeliveryItems.filter(i => i.product.trim()).map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2 rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                        <span className="text-[13px] font-medium text-zinc-900 flex-1">{item.product}</span>
+                        <input type="number" min={1} value={item.qty} onChange={e => { const updated = [...newDeliveryItems]; const ri = updated.findIndex(i => i.product === item.product); if (ri >= 0) updated[ri] = { ...updated[ri], qty: parseInt(e.target.value) || 1 }; setNewDeliveryItems(updated); }} className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-[12px] text-center focus:outline-none focus:border-zinc-400 bg-white" />
+                        <button onClick={() => setNewDeliveryItems(prev => prev.filter(i => i.product !== item.product))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100">
                 <button onClick={() => setShowAddDelivery(false)} className="rounded-xl border border-zinc-200 px-4 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
@@ -1359,6 +1383,7 @@ export default function AdminDashboard({
                     eta: newDeliveryEta || new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true }),
                     paymentStatus: newDeliveryPayment,
                     notes: newDeliveryNotes.trim(),
+                    date: newDeliveryDate,
                   };
                   const updated = [...deliveries, newDelivery];
                   onUpdateDeliveries?.(updated);
@@ -1486,7 +1511,7 @@ export default function AdminDashboard({
               </thead>
               <tbody className="divide-y divide-zinc-50">
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-[13px] text-zinc-400">No products found.</td></tr>
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No products found.</td></tr>
                 ) : filtered.map(p => {
                   const margin = p.sellingPrice > 0 ? ((p.sellingPrice - p.estimatedCost) / p.sellingPrice * 100) : 0;
                   return (
@@ -1637,18 +1662,46 @@ export default function AdminDashboard({
 
         {/* Tab Navigation */}
         <div className="flex gap-1 border-b border-zinc-200">
-          {([
+          {[
             { id: "purchases", label: "Purchases", count: purchases.length },
-            { id: "bills", label: "Bills &amp; Dues", count: billsAndDues.length },
+            { id: "bills", label: "Bills & Dues", count: billsAndDues.length },
             { id: "revenue", label: "Revenue", count: revenue.length },
+            { id: "analytics", label: "Sales Analytics", count: null },
             { id: "waste", label: "Waste Log", count: wasteLog.length },
-          ] as const).map(tab => (
-            <button key={tab.id} onClick={() => { setFinanceTab(tab.id); setFinanceSearch(""); }} className={
+          ].map(tab => (
+            <button key={tab.id} onClick={() => { setFinanceTab(tab.id as any); setFinanceSearch(""); }} className={
               "px-4 py-2.5 text-[13px] font-medium border-b-2 transition-all " +
               (financeTab === tab.id ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-500 hover:text-zinc-700")
-            }>{tab.label} <span className="text-[11px] text-zinc-400">({tab.count})</span></button>
+            }>{tab.label} {tab.count !== null ? <span className="text-[11px] text-zinc-400">({tab.count})</span> : ""}</button>
           ))}
         </div>
+
+        {/* Tab Content */}
+        {financeTab === "purchases" && (
+          <div className="space-y-4">
+             {/* Purchases Tab Content */}
+          </div>
+        )}
+        {financeTab === "bills" && (
+          <div className="space-y-4">
+             {/* Bills Tab Content */}
+          </div>
+        )}
+        {financeTab === "revenue" && (
+          <div className="space-y-4">
+             {/* Revenue Tab Content */}
+          </div>
+        )}
+        {financeTab === "analytics" && (
+          <div className="space-y-6">
+             {/* Analytics Tab Content */}
+          </div>
+        )}
+        {financeTab === "waste" && (
+          <div className="space-y-4">
+             {/* Waste Log Tab Content */}
+          </div>
+        )}
 
         {/* Purchases Tab */}
         {financeTab === "purchases" && (
@@ -1688,12 +1741,12 @@ export default function AdminDashboard({
                       <td colSpan={3}></td>
                     </tr>
                   </tfoot>
-                </table>
-              </div>
-            </div>
-          )}
-  
-          {/* Bills & Dues Tab */}
+                  </table>
+                  </div>
+                  </div>
+                  )}
+
+                  {/* Waste Log Tab */}
         {financeTab === "bills" && (
           <div className="space-y-4">
             <div className="flex justify-end">
@@ -1731,12 +1784,64 @@ export default function AdminDashboard({
                       <td colSpan={2}></td>
                     </tr>
                   </tfoot>
-                </table>
+                  </table>
+                  </div>
+                  </div>
+                  )}
+
+                  {/* Waste Log Tab */}
+        {financeTab === "analytics" && (
+          <div className="space-y-6">
+            <h2 className="text-[18px] font-bold text-zinc-900 border-b border-zinc-200 pb-2">Sales Analytics</h2>
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm lg:col-span-2 min-h-[300px]">
+                <h3 className="mb-4 text-[14px] font-semibold text-zinc-900">Revenue Trends</h3>
+                <div className="h-[250px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={filteredRevenue.map(r => ({ date: r.date, amount: r.amount }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+                      <XAxis dataKey="date" fontSize={10} />
+                      <YAxis fontSize={10} />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm min-h-[300px]">
+                <h3 className="mb-4 text-[14px] font-semibold text-zinc-900">Source Breakdown</h3>
+                <div className="h-[250px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={Object.entries(filteredRevenue.reduce((acc, r) => ({ ...acc, [r.source]: (acc[r.source] || 0) + r.amount }), {} as Record<string, number>)).map(([source, amount]) => ({ source, amount }))} dataKey="amount" nameKey="source" cx="50%" cy="50%" outerRadius={80} label>
+                        {Object.entries(filteredRevenue.reduce((acc, r) => ({ ...acc, [r.source]: (acc[r.source] || 0) + r.amount }), {} as Record<string, number>)).map((_, index) => <Cell key={`cell-${index}`} fill={['#10b981', '#f59e0b', '#3b82f6'][index % 3]} />)}
+                      </Pie>
+                      <Tooltip />
+                      <Legend fontSize={10} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm lg:col-span-3 min-h-[300px]">
+                <h3 className="mb-4 text-[14px] font-semibold text-zinc-900">Daily Revenue</h3>
+                <div className="h-[250px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={filteredRevenue.map(r => ({ date: r.date, amount: r.amount }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
+                      <XAxis dataKey="date" fontSize={10} />
+                      <YAxis fontSize={10} />
+                      <Tooltip />
+                      <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
-          )}
-  
-          {/* Revenue Tab */}
+          </div>
+        )}
+
+        {/* Revenue Tab */}
         {financeTab === "revenue" && (
           <div className="space-y-4">
             <div className="flex justify-end">
@@ -1778,8 +1883,8 @@ export default function AdminDashboard({
               </div>
             </div>
           )}
-  
-          {/* Waste Log Tab */}
+
+                    {/* Waste Log Tab */}
         {financeTab === "waste" && (
           <div className="space-y-4">
             <div className="flex justify-end">
@@ -1792,7 +1897,7 @@ export default function AdminDashboard({
                 </thead>
                 <tbody className="divide-y divide-zinc-700 text-[13px]">
                   {filteredWaste.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-12 text-center text-[13px] text-zinc-400">No waste entries found.</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-12 text-center text-[13px] text-zinc-400">No waste entries found.</td></tr>
                   ) : filteredWaste.map(item => (
                     <tr key={item.id} className="hover:bg-zinc-800/60">
                       <td className="px-4 py-3 text-[12px] text-zinc-600">{item.date}</td>
@@ -1820,7 +1925,7 @@ export default function AdminDashboard({
               </div>
             </div>
           )}
-  
+
           {/* Purchase Modal */}
         {showAddPurchase && editingPurchase && (
           <Modal title={purchases.find(p => p.id === editingPurchase.id) ? "Edit Purchase" : "Add Purchase"} onClose={() => setShowAddPurchase(false)}>
@@ -1963,8 +2068,8 @@ export default function AdminDashboard({
     rows.push([]);
 
     rows.push(["=== DOS ITEMS ===", "", "", ""]);
-    rows.push(["ID", "Product", "Qty", "Cakes N Styles Gensan", "Shadrach's Bake & Brew", "Priority", "Status"]);
-    dosItems.forEach(d => rows.push([d.id, d.product, String(d.qty), String(d.branch1), String(d.branch2), d.priority, d.status]));
+    rows.push(["ID", "Product", "Qty", "Priority", "Status"]);
+    dosItems.forEach(d => rows.push([d.id, d.product, String(d.qty), , d.priority, d.status]));
     rows.push([]);
 
     rows.push(["=== PRODUCTION ===", "", "", ""]);
@@ -2026,33 +2131,39 @@ export default function AdminDashboard({
       </div>
 
       {/* Today's DOS */}
-      <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+      <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <div><h2 className="text-[16px] font-semibold text-zinc-900" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2><p className="text-[12px] text-zinc-500">Daily Order Sales — auto-generates production tasks</p></div>
+          <div><h2 className="text-[16px] font-semibold text-white" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2><p className="text-[12px] text-zinc-400">Daily Order Sales — auto-generates production tasks</p></div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 border border-amber-200">LOCKED</span>
-            <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white">{todayDOS.length} items</span>
+            <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-amber-500 border border-amber-900/50">LOCKED</span>
+            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-900">{todayDOS.length} items</span>
           </div>
         </div>
-        <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-200">
+        <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800">
           <div className="overflow-x-auto">
             <div className="min-w-[500px]">
-              <div className="grid grid-cols-12 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                <div className="col-span-3">Product</div><div className="col-span-1 text-right">Qty</div><div className="col-span-2 text-right">Cakes N Styles Gensan</div><div className="col-span-2 text-right">Shadrach's Bake & Brew</div><div className="col-span-2 text-center">Assigned</div><div className="col-span-1 text-right">Pri</div><div className="col-span-1 text-right">Status</div>
+              <div className="grid grid-cols-12 gap-2 border-b border-zinc-800 bg-zinc-950/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                <div className="col-span-4">Product</div><div className="col-span-2 text-right">Qty</div><div className="col-span-2 text-center">Assigned</div><div className="col-span-2 text-right">Pri</div><div className="col-span-2 text-right">Status</div>
               </div>
-              <div className="divide-y divide-zinc-100">
+              <div className="divide-y divide-zinc-800">
                 {todayDOS.map(item => {
-                  const tasks = production.filter(t => t.product === item.product);
-                  const roles = [...new Set(tasks.map(t => t.assignedTo))];
+                  // Enhanced matching: link by unique ID suffix OR by product name (fallback for older entries)
+                  const itemSuffix = item.id.split('-').pop(); // e.g. "0"
+                  const itemTimestamp = item.id.split('-')[1]; // e.g. "1780388834830"
+                  const relatedTasks = production.filter(t => 
+                    (t.id.includes(itemTimestamp) && t.id.split('-').includes(itemSuffix)) ||
+                    (t.product === item.product && t.id.includes(itemTimestamp))
+                  );
+                  const roles = [...new Set(relatedTasks.map(t => t.assignedTo))];
                   return (
-                    <div key={item.id} className="grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-amber-50/40">
-                      <div className="col-span-3"><div className="text-[13px] font-medium text-zinc-900 truncate">{item.product}</div><div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></div>
-                      <div className="col-span-1 text-right text-[13px] font-medium font-mono">{item.qty}</div>
-                      <div className="col-span-2 text-right text-[13px] font-mono text-zinc-800">{item.branch1}</div>
-                      <div className="col-span-2 text-right text-[13px] font-mono text-zinc-800">{item.branch2}</div>
-                      <div className="col-span-2 flex justify-center gap-1 flex-wrap">{roles.map(r => <span key={r} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${r === "baker" ? "bg-stone-100 text-stone-700" : r === "deco" ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"}`}>{r === "baker" ? "Baker" : r === "deco" ? "Deco" : "Kitchen"}</span>)}{roles.length === 0 && <span className="text-[11px] text-zinc-400">—</span>}</div>
-                      <div className="col-span-1 text-right"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-700"}`}>{item.priority === "HIGH" ? "H" : item.priority === "MEDIUM" ? "M" : "L"}</span></div>
-                      <div className="col-span-1 flex justify-end"><span className={`h-2 w-2 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} /></div>
+                    <div key={item.id} className="grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-zinc-800/40 transition-colors">
+                      <div className="col-span-4"><div className="text-[13px] font-medium text-white truncate">{item.product}</div><div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></div>
+                      <div className="col-span-2 text-right text-[13px] font-medium text-white font-mono">{item.qty}</div>
+                      
+                      
+                      <div className="col-span-2 flex justify-center gap-1 flex-wrap">{roles.map(r => <span key={r} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${r === "baker" ? "bg-stone-800 text-stone-300" : r === "deco" ? "bg-rose-900/40 text-rose-300" : r === "pastry" ? "bg-amber-900/40 text-amber-300" : "bg-sky-900/40 text-sky-300"}`}>{r === "baker" ? "Baker" : r === "deco" ? "Deco" : r === "pastry" ? "Pastry" : "Kitchen"}</span>)}{roles.length === 0 && <span className="text-[11px] text-zinc-600">—</span>}</div>
+                      <div className="col-span-2 text-right"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-950 text-red-400 border border-red-900/50" : item.priority === "MEDIUM" ? "bg-amber-950 text-amber-400 border border-amber-900/50" : "bg-zinc-800 text-zinc-400"}`}>{item.priority === "HIGH" ? "H" : item.priority === "MEDIUM" ? "M" : "L"}</span></div>
+                      <div className="col-span-2 flex justify-end"><span className={`h-2 w-2 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-700"}`} /></div>
                     </div>
                   );
                 })}
@@ -2060,9 +2171,9 @@ export default function AdminDashboard({
             </div>
           </div>
         </div>
-        <div className="mt-4 flex items-center justify-between rounded-xl bg-[#F9F6F1] px-3 py-2.5">
-          <div className="text-[12px] text-zinc-600">Baker: {production.filter(t => t.assignedTo === "baker").length} tasks • Deco: {production.filter(t => t.assignedTo === "deco").length} tasks • Kitchen: {production.filter(t => t.assignedTo === "kitchen").length}</div>
-          <button onClick={() => setActiveTab("dos")} className="text-[12px] font-medium text-zinc-900 underline underline-offset-4">Manage DOS</button>
+        <div className="mt-4 flex items-center justify-between rounded-xl bg-zinc-950/40 px-3 py-2.5">
+          <div className="text-[12px] text-zinc-500">Baker: {production.filter(t => t.assignedTo === "baker").length} tasks • Deco: {production.filter(t => t.assignedTo === "deco").length} tasks • Kitchen: {production.filter(t => t.assignedTo === "kitchen").length}</div>
+          <button onClick={() => setActiveTab("dos")} className="text-[12px] font-medium text-white underline underline-offset-4 hover:text-zinc-300 transition-colors">Manage DOS</button>
         </div>
       </div>
 
@@ -2107,30 +2218,30 @@ export default function AdminDashboard({
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="text-[12px] font-medium text-zinc-900">₱{item.cost}</div>
+                  <div className="text-[12px] font-medium text-white">₱{item.cost}</div>
                   <div className="text-[11px] text-zinc-500">{item.supplier}</div>
                 </div>
               </div>
-            )})}{totalAlerts > 5 && <button onClick={() => setActiveTab("warehouse")} className="w-full rounded-xl border border-dashed border-zinc-200 py-2 text-[12px] font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition-all">See all {totalAlerts} alerts</button>}</div>;
+            )})}{totalAlerts > 5 && <button onClick={() => setActiveTab("warehouse")} className="w-full rounded-xl border border-dashed border-zinc-800 py-2 text-[12px] font-medium text-zinc-500 hover:text-white hover:border-zinc-600 hover:bg-zinc-800/40 transition-all">See all {totalAlerts} alerts</button>}</div>;
           })()}
         </div>
 
-        <div className="lg:col-span-5 rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-          <h3 className="text-[15px] font-semibold text-zinc-900">Activity Feed</h3>
+        <div className="lg:col-span-5 rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
+          <h3 className="text-[15px] font-semibold text-white">Activity Feed</h3>
           <div className="mt-4 space-y-1">
             {auditLogs.slice(0, 5).map(log => {
-              const typeConfig = log.action.includes("ALERT") ? { label: "Alert", color: "bg-red-100 text-red-700", dot: "bg-red-500" }
-                : log.action.includes("COMPLETE") ? { label: "Done", color: "bg-emerald-100 text-emerald-700", dot: "bg-emerald-500" }
-                : log.action.includes("DISPATCH") ? { label: "Dispatch", color: "bg-blue-100 text-blue-700", dot: "bg-blue-500" }
-                : { label: "Update", color: "bg-zinc-100 text-zinc-600", dot: "bg-zinc-400" };
+              const typeConfig = log.action.includes("ALERT") ? { label: "Alert", color: "bg-red-950 text-red-400 border border-red-900/50", dot: "bg-red-500" }
+                : log.action.includes("COMPLETE") ? { label: "Done", color: "bg-emerald-950 text-emerald-400 border border-emerald-900/50", dot: "bg-emerald-500" }
+                : log.action.includes("DISPATCH") ? { label: "Dispatch", color: "bg-sky-950 text-sky-400 border border-sky-900/50", dot: "bg-sky-500" }
+                : { label: "Update", color: "bg-zinc-800 text-zinc-300 border border-zinc-700", dot: "bg-zinc-400" };
               return (
-                <div key={log.id} onClick={() => setSelectedLog(log)} className="flex items-start gap-3 rounded-xl px-3 py-2.5 hover:bg-zinc-50 transition-all cursor-pointer">
+                <div key={log.id} onClick={() => setSelectedLog(log)} className="flex items-start gap-3 rounded-xl px-3 py-2.5 hover:bg-zinc-800/40 transition-all cursor-pointer">
                   <div className={`mt-1 grid h-2 w-2 shrink-0 place-items-center rounded-full ${typeConfig.dot}`} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2"><span className="text-[13px] font-medium text-zinc-900">{log.user}</span><span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${typeConfig.color}`}>{typeConfig.label}</span></div>
-                    <div className="mt-0.5 text-[12px] leading-snug text-zinc-600">{log.details}</div>
+                    <div className="flex items-center gap-2"><span className="text-[13px] font-medium text-white">{log.user}</span><span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${typeConfig.color}`}>{typeConfig.label}</span></div>
+                    <div className="mt-0.5 text-[12px] leading-snug text-zinc-400">{log.details}</div>
                   </div>
-                  <div className="shrink-0 text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{log.timestamp}</div>
+                  <div className="shrink-0 text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{log.timestamp}</div>
                 </div>
               );
             })}
@@ -2140,29 +2251,29 @@ export default function AdminDashboard({
 
       {/* Deliveries + Scheduled DOS */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-6 rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[15px] font-semibold text-zinc-900">Delivery Status</h3>
-            <button onClick={() => setActiveTab("deliveries")} className="text-[12px] font-medium text-zinc-700 hover:underline">View all</button>
+        <div className="lg:col-span-6 rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[15px] font-semibold text-white">Delivery Status</h3>
+            <button onClick={() => setActiveTab("deliveries")} className="text-[12px] font-medium text-zinc-400 hover:text-white transition-colors">View all</button>
           </div>
           {deliveries.filter(d => d.status !== "delivered").length === 0 ? (
-            <p className="text-[13px] text-zinc-400 text-center py-6">No active deliveries.</p>
+            <p className="text-[13px] text-zinc-500 text-center py-6">No active deliveries.</p>
           ) : (
             <div className="space-y-2.5">
               {deliveries.filter(d => d.status !== "delivered").map(d => (
-                <div key={d.id} className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/60 p-3">
-                  <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${d.status === "in-transit" ? "bg-amber-600" : "bg-blue-600"} text-white text-[12px] font-bold`}>
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h3l2-7 4 14 2-7h3" /></svg>
+                <div key={d.id} className="flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/40 p-3 hover:bg-zinc-800/40 transition-colors">
+                  <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${d.status === "in-transit" ? "bg-amber-600/20 text-amber-500 border border-amber-500/30" : "bg-sky-600/20 text-sky-500 border border-sky-500/30"} text-[12px] font-bold`}>
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20m10-10H2" /></svg>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-[13px] font-medium text-zinc-900 truncate">{d.branch}</span>
-                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${d.status === "in-transit" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>{d.status === "in-transit" ? "In Transit" : "Preparing"}</span>
+                      <span className="text-[13px] font-medium text-white truncate">{d.branch}</span>
+                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${d.status === "in-transit" ? "bg-amber-950 text-amber-400 border border-amber-900/50" : "bg-sky-950 text-sky-400 border border-sky-900/50"}`}>{d.status === "in-transit" ? "In Transit" : "Preparing"}</span>
                     </div>
-                    <div className="mt-0.5 text-[11px] text-zinc-600">{d.items.length} item{d.items.length > 1 ? "s" : ""} • ETA {d.eta}</div>
+                    <div className="mt-0.5 text-[11px] text-zinc-500">{d.items.length} item{d.items.length > 1 ? "s" : ""} • ETA {d.eta}</div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="text-[12px] font-medium text-zinc-900">{d.items.reduce((s, i) => s + i.qty, 0)} pcs</div>
+                    <div className="text-[12px] font-medium text-white">{d.items.reduce((s, i) => s + i.qty, 0)} pcs</div>
                   </div>
                 </div>
               ))}
@@ -2361,7 +2472,7 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
 
 function CompactTaskCard({ task, color }: { task: ProductionTask; color: string }) {
   const pct = Math.round((task.completed / task.target) * 100);
-  const barMap: Record<string, string> = { "stone-500": "bg-stone-500", "rose-500": "bg-rose-500", "emerald-500": "bg-emerald-500" };
+  const barMap: Record<string, string> = { "stone-500": "bg-stone-500", "rose-500": "bg-rose-500", "emerald-500": "bg-emerald-500", "amber-500": "bg-amber-500" };
   const barColor = barMap[color] || "bg-stone-500";
   return (
     <div className="flex items-center gap-3 px-5 py-3 hover:bg-[#F9F6F1] transition-all cursor-default">
@@ -2574,23 +2685,70 @@ function AddProductWithRecipeModal({ inventory, recipes, onSave, onClose }: {
 }
 
 function EditDOSModal({ item, onClose, onSave }: { item: DOSItem; onClose: () => void; onSave: (item: DOSItem) => void }) {
-  const [product, setProduct] = useState(item.product); const [qty, setQty] = useState(item.qty);
-  const [branch1, setBranch1] = useState(item.branch1); const [branch2, setBranch2] = useState(item.branch2); const [priority, setPriority] = useState(item.priority);
+  const [product, setProduct] = useState(item.product); 
+  const [qty, setQty] = useState(item.qty);
+  const [priority, setPriority] = useState(item.priority);
   const [scheduledDate, setScheduledDate] = useState(item.scheduledDate || "");
+  const [selectedRoles, setSelectedRoles] = useState<Set<"baker" | "pastry" | "deco">>(new Set(item.roles || []));
+  
+  // Debug effect to log roles on modal open
+  useEffect(() => {
+    console.log("EditDOSModal: Initializing with roles:", item.roles);
+  }, [item.roles]);
+
   const isScheduled = item.status === "scheduled";
-  const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave({ ...item, product, qty, branch1, branch2, priority, scheduledDate: isScheduled ? scheduledDate : undefined }); onClose(); };
+  const handleSubmit = (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    const rolesArray = Array.from(selectedRoles);
+    console.log("EditDOSModal: Submitting. Roles:", rolesArray);
+    onSave({ ...item, product, qty, priority, scheduledDate: isScheduled ? scheduledDate : undefined, roles: rolesArray }); 
+    onClose(); 
+  };
+
+  const toggleRole = (role: "baker" | "pastry" | "deco") => {
+    console.log("Toggling role:", role);
+    setSelectedRoles(prev => {
+      const next = new Set(prev);
+      if (next.has(role)) {
+        console.log("Removing role:", role);
+        next.delete(role);
+      } else {
+        console.log("Adding role:", role);
+        next.add(role);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-[480px] rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between"><div><h3 className="text-[16px] font-semibold">Edit DOS Item</h3><p className="mt-0.5 text-[12px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</p></div><button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button></div>
         <form onSubmit={handleSubmit} className="mt-5 space-y-3.5">
-          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Product Name</label><input required value={product} onChange={e => setProduct(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" /></div>
-          <div className="grid grid-cols-3 gap-3">
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Total</label><input readOnly value={qty} className="mt-1 w-full rounded-xl border border-zinc-100 bg-zinc-50 px-3.5 py-2.5 text-[13px] text-zinc-500 outline-none" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cakes N Styles Gensan</label><input required type="number" min="0" value={branch1} onChange={e => { const b1 = Number(e.target.value); setBranch1(b1); setQty(b1 + branch2); }} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
-            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Shadrach's Bake & Brew</label><input required type="number" min="0" value={branch2} onChange={e => { const b2 = Number(e.target.value); setBranch2(b2); setQty(branch1 + b2); }} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
+          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5">Production Team</label>
+            <div className="flex gap-2">
+                {[
+                  { id: "baker" as const, label: "Baker", color: "from-stone-600 to-neutral-700" },
+                  { id: "pastry" as const, label: "Pastry", color: "from-amber-600 to-yellow-700" },
+                  { id: "deco" as const, label: "Deco", color: "from-rose-600 to-pink-600" },
+                ].map(role => {
+                    const on = selectedRoles.has(role.id);
+                    return (
+                        <button key={role.id} type="button" onClick={() => toggleRole(role.id)} className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-medium transition-all flex-1 justify-center ${on ? `bg-gradient-to-br ${role.color} text-white border-transparent shadow-sm` : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400"}`}>
+                            <span className={`grid h-5 w-5 place-items-center rounded-full border text-[10px] font-bold transition-all ${on ? "border-white/40 bg-white/20" : "border-zinc-300"}`}>
+                                {on ? "✓" : ""}
+                            </span>
+                            {role.label}
+                        </button>
+                    )
+                })}
+            </div>
           </div>
-          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Priority</label><select value={priority} onChange={e => setPriority(e.target.value as typeof priority)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400"><option value="HIGH">HIGH</option><option value="MEDIUM">MEDIUM</option><option value="LOW">LOW</option></select></div>
+          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Product Name</label><input required value={product} onChange={e => setProduct(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Total</label><input type="number" value={qty} onChange={e => setQty(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Priority</label><select value={priority} onChange={e => setPriority(e.target.value as typeof priority)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400"><option value="HIGH">HIGH</option><option value="MEDIUM">MEDIUM</option><option value="LOW">LOW</option></select></div>
+          </div>
           {isScheduled && (
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Schedule Date</label><input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" /></div>
           )}

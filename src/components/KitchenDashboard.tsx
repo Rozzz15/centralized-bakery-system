@@ -42,17 +42,8 @@ export default function KitchenDashboard({ production, deliveries, dosItems, onU
   const pendingVerification = completedTasks.filter(t => !verifications.some(v => v.taskId === t.id));
   const rejectedTasks = verifications.filter(v => v.status === "rejected");
 
-  function getDOSRatio(product: string) {
-    const dos = dosItems.find(d => d.product === product);
-    if (!dos || (dos.branch1 === 0 && dos.branch2 === 0)) return null;
-    return { branch1: dos.branch1, branch2: dos.branch2, total: dos.qty };
-  }
-
-  function splitByDOS(product: string, passedQty: number) {
-    const ratio = getDOSRatio(product);
-    if (!ratio) return { b1: Math.floor(passedQty / 2), b2: Math.ceil(passedQty / 2) };
-    const b1 = Math.round(passedQty * (ratio.branch1 / ratio.total));
-    return { b1, b2: passedQty - b1 };
+  function splitByDOS(_product: string, passedQty: number) {
+    return { b1: Math.floor(passedQty / 2), b2: Math.ceil(passedQty / 2) };
   }
 
   const handleVerify = (task: ProductionTask, qtyReceived: number, qtyRejected: number, qualityOk: boolean, consistencyOk: boolean, notes: string) => {
@@ -161,7 +152,6 @@ export default function KitchenDashboard({ production, deliveries, dosItems, onU
               <div className="mt-4 space-y-2">
                 {completedTasks.map(task => {
                   const ver = verifications.find(v => v.taskId === task.id);
-                  const dosSplit = getDOSRatio(task.product);
                   return (
                     <div key={task.id} className={`rounded-2xl border p-4 ${ver?.status === "verified" ? "border-emerald-200 bg-emerald-50/50" : ver?.status === "rejected" ? "border-red-200 bg-red-50/50" : "border-zinc-200"}`}>
                       <div className="flex items-center justify-between">
@@ -174,7 +164,6 @@ export default function KitchenDashboard({ production, deliveries, dosItems, onU
                           {ver ? <span className={`text-[11px] font-medium ${ver.status === "verified" ? "text-emerald-600" : "text-red-600"}`}>{ver.status === "verified" ? "✓ Verified" : "✕ Rejected"}</span> : <span className="text-[11px] text-amber-600 font-medium">Pending</span>}
                         </div>
                       </div>
-                      {dosSplit && <div className="mt-1 text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>DOS split: B1 {dosSplit.branch1} / B2 {dosSplit.branch2}</div>}
                     </div>
                   );
                 })}
@@ -198,7 +187,7 @@ export default function KitchenDashboard({ production, deliveries, dosItems, onU
               <div className="mt-8 text-center py-8"><p className="text-[14px] text-zinc-400">Nothing to verify yet.</p><p className="text-[12px] text-zinc-400 mt-1">Receive production first.</p></div>
             ) : (
               <div className="mt-4 space-y-3">
-                {pendingVerification.map(task => <VerificationCard key={task.id} task={task} dosItems={dosItems} onVerify={handleVerify} />)}
+                {pendingVerification.map(task => <VerificationCard key={task.id} task={task} onVerify={handleVerify} />)}
                 {verifiedTasks.map(v => (
                   <div key={v.taskId} className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-3">
                     <div className="flex items-center justify-between">
@@ -374,13 +363,12 @@ export default function KitchenDashboard({ production, deliveries, dosItems, onU
   );
 }
 
-function VerificationCard({ task, dosItems, onVerify }: { task: ProductionTask; dosItems: DOSItem[]; onVerify: (task: ProductionTask, qtyReceived: number, qtyRejected: number, qualityOk: boolean, consistencyOk: boolean, notes: string) => void }) {
+function VerificationCard({ task, onVerify }: { task: ProductionTask; onVerify: (task: ProductionTask, qtyReceived: number, qtyRejected: number, qualityOk: boolean, consistencyOk: boolean, notes: string) => void }) {
   const [qtyReceived, setQtyReceived] = useState(task.completed);
   const [qtyRejected, setQtyRejected] = useState(0);
   const [qualityOk, setQualityOk] = useState(true);
   const [consistencyOk, setConsistencyOk] = useState(true);
   const [notes, setNotes] = useState("");
-  const dosRef = dosItems.find(d => d.product === task.product);
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4">
@@ -389,7 +377,7 @@ function VerificationCard({ task, dosItems, onVerify }: { task: ProductionTask; 
           <span className="text-[14px] font-medium text-zinc-900">{task.product}</span>
           <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-700">{task.assignedTo}</span>
         </div>
-        <span className="text-[12px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>DOS: {dosRef ? `${dosRef.branch1} / ${dosRef.branch2}` : `${task.target} pcs`}</span>
+        <span className="text-[12px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{task.target} pcs</span>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <div><label className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Received</label><input type="number" min="0" value={qtyReceived} onChange={e => setQtyReceived(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[12px] outline-none" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>

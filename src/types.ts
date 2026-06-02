@@ -20,8 +20,6 @@ export type DOSItem = {
   id: string;
   product: string;
   qty: number;
-  branch1: number;
-  branch2: number;
   priority: "HIGH" | "MEDIUM" | "LOW";
   status: "pending" | "in-progress" | "completed" | "scheduled";
   scheduledDate?: string;
@@ -47,6 +45,7 @@ export type Delivery = {
   eta: string;
   paymentStatus: "unpaid" | "paid" | "cod";
   notes: string;
+  date?: string;
 };
 
 export type AuditLog = {

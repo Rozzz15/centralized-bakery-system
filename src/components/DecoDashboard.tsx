@@ -1,5 +1,5 @@
 import { useEffect, useState, Fragment } from "react";
-import type { ProductionTask, DOSItem, MaterialRequest, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory } from "../types";
+import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory } from "../types";
 import * as db from "../lib/db";
 
 type CustomOrder = {
@@ -62,9 +62,8 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [recipeDraft, setRecipeDraft] = useState<{ inventoryId: string; name: string; qtyPerBatch: number; unit: string }[]>([]);
   const [freeMixPrepared, setFreeMixPrepared] = useState<Set<string>>(new Set());
   const [freeMixDone, setFreeMixDone] = useState<Set<string>>(new Set());
-  const [materialReqs, setMaterialReqs] = useState<MaterialRequest[]>([]);
-  const [showMatForm, setShowMatForm] = useState(false);
-  const [matDraftItems, setMatDraftItems] = useState<{ name: string; qty: number; unit: string }[]>([]);
+  const [advMixSearch, setAdvMixSearch] = useState("");
+  const [selectedAdvRecipes, setSelectedAdvRecipes] = useState<Set<string>>(new Set());
 
   // Freezer state
   const [showAddFreezer, setShowAddFreezer] = useState(false);
@@ -96,10 +95,6 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const decoMaterials = inventory.filter(i => i.group === "decoration-supplies");
   const ingredientItems = inventory.filter(i => i.group === "ingredients");
   const lowDecoMaterials = decoMaterials.filter(i => i.onHand > 0 && i.onHand < i.threshold);
-
-  useEffect(() => {
-    db.fetchMaterialRequests().then(setMaterialReqs).catch(() => {});
-  }, []);
 
   const togglePrepared = (id: string) => setFreeMixPrepared(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
@@ -150,29 +145,6 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     recipe.ingredients.forEach(ing => togglePrepared(`${dos.id}-${ing.name}`));
   };
 
-  const openMatForm = () => {
-    const suggested: { name: string; qty: number; unit: string }[] = [];
-    dosForDeco.forEach(d => {
-      const recipe = recipes.find(r => r.productName === d.product);
-      if (recipe) recipe.decorationSupplies.forEach(sup => {
-        const existing = suggested.find(s => s.name === sup.name && s.unit === sup.unit);
-        if (existing) existing.qty += sup.qtyPerBatch;
-        else suggested.push({ name: sup.name, qty: sup.qtyPerBatch, unit: sup.unit });
-      });
-    });
-    setMatDraftItems(suggested.length > 0 ? suggested : [{ name: "", qty: 1, unit: "" }]);
-    setShowMatForm(true);
-  };
-
-  const submitMatForm = async () => {
-    const items = matDraftItems.filter(i => i.name.trim());
-    if (items.length === 0) return;
-    const req: MaterialRequest = { id: `MAT-${Date.now()}`, items, status: "pending-approval", createdAt: new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) };
-    setMaterialReqs(prev => [...prev, req]);
-    await db.replaceMaterialRequests([...materialReqs, req]).catch(console.error);
-    setShowMatForm(false);
-  };
-
   const updateCustomOrder = (id: string, status: CustomOrder["status"]) => {
     setCustomOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
   };
@@ -201,6 +173,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const workflowSteps = [
     { id: "dashboard", label: "DOS Received" },
     { id: "free-mix", label: "Production Prep" },
+    { id: "advanced-premix", label: "Advanced Premix" },
     { id: "deco-queue", label: "Decoration Queue" },
     { id: "freezer", label: "Finished Products" },
   ];
@@ -218,58 +191,58 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
       return s + ((recipe?.decorationSupplies ?? []).length || 0);
     }, 0);
 
-    return (
+return (
       <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-[28px] font-semibold tracking-tight">DOS Received</h1>
-            <p className="mt-1 text-[13px] text-zinc-500">Admin issued these items. Your job is to prepare the Free Mix (ingredient pre-mixes) for each product.</p>
-          </div>
-          {dosForDeco.length > 0 && (
-            <div className="shrink-0 rounded-xl bg-rose-100 px-4 py-2.5 text-center">
-              <div className="text-[10px] text-rose-600 uppercase font-medium tracking-wider">DOS Total</div>
-              <div className="text-[22px] font-bold text-zinc-900 mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{dosForDeco.reduce((s, d) => s + d.qty, 0)}</div>
-              <div className="text-[10px] text-rose-500">{dosForDeco.length} item{dosForDeco.length > 1 ? "s" : ""}</div>
+        <div className="rounded-2xl bg-zinc-900 p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-[28px] font-semibold tracking-tight text-white">DOS Received</h1>
+              <p className="mt-1 text-[13px] text-zinc-400">Admin issued these items. Your job is to prepare the Free Mix (ingredient pre-mixes) for each product.</p>
             </div>
-          )}
-        </div>
+            {dosForDeco.length > 0 && (
+              <div className="shrink-0 rounded-xl bg-white/10 px-4 py-2.5 text-center">
+                <div className="text-[10px] text-zinc-400 uppercase font-medium tracking-wider">DOS Total</div>
+                <div className="text-[22px] font-bold text-white mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{dosForDeco.reduce((s, d) => s + d.qty, 0)}</div>
+                <div className="text-[10px] text-zinc-500">{dosForDeco.length} item{dosForDeco.length > 1 ? "s" : ""}</div>
+              </div>
+            )}
+          </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <button onClick={() => setSummaryModal("products")} className="rounded-xl border border-zinc-200 bg-white p-3 text-left hover:border-zinc-400 hover:shadow-sm transition-all">
-            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Products to Mix</div>
-            <div className="text-[22px] font-semibold mt-0.5">{dosForDeco.length}</div>
-            <div className="text-[10px] text-zinc-400 mt-1">Click to view →</div>
-          </button>
-          <button onClick={() => setSummaryModal("ingredients")} className="rounded-xl border border-rose-200 bg-rose-50/50 p-3 text-left hover:border-rose-400 hover:shadow-sm transition-all">
-            <div className="text-[11px] text-rose-500 uppercase tracking-wider">Recipe Needed</div>
-            <div className="text-[22px] font-semibold mt-0.5 text-rose-700">{totalNeeded}</div>
-            <div className="text-[10px] text-rose-400 mt-1">Click to view →</div>
-          </button>
-          <button onClick={() => setSummaryModal("packaging")} className="rounded-xl border border-blue-200 bg-blue-50/50 p-3 text-left hover:border-blue-400 hover:shadow-sm transition-all">
-            <div className="text-[11px] text-blue-500 uppercase tracking-wider">Packaging Materials</div>
-            <div className="text-[22px] font-semibold mt-0.5 text-blue-700">{totalPkg}</div>
-            <div className="text-[10px] text-blue-400 mt-1">Click to view →</div>
-          </button>
-          <button onClick={() => setSummaryModal("deco")} className="rounded-xl border border-purple-200 bg-purple-50/50 p-3 text-left hover:border-purple-400 hover:shadow-sm transition-all">
-            <div className="text-[11px] text-purple-500 uppercase tracking-wider">Deco Supplies</div>
-            <div className="text-[22px] font-semibold mt-0.5 text-purple-700">{totalDecoItems}</div>
-            <div className="text-[10px] text-purple-400 mt-1">Click to view →</div>
-          </button>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+            <button onClick={() => setSummaryModal("products")} className="rounded-xl border border-zinc-700 bg-zinc-800 p-3 text-left hover:border-zinc-500 hover:shadow-sm transition-all">
+              <div className="text-[11px] text-zinc-400 uppercase tracking-wider">Products to Mix</div>
+              <div className="text-[22px] font-semibold mt-0.5 text-white">{dosForDeco.length}</div>
+              <div className="text-[10px] text-zinc-500 mt-1">Click to view →</div>
+            </button>
+            <button onClick={() => setSummaryModal("ingredients")} className="rounded-xl border border-rose-800 bg-rose-950/50 p-3 text-left hover:border-rose-600 hover:shadow-sm transition-all">
+              <div className="text-[11px] text-rose-400 uppercase tracking-wider">Recipe Needed</div>
+              <div className="text-[22px] font-semibold mt-0.5 text-rose-300">{totalNeeded}</div>
+              <div className="text-[10px] text-rose-500 mt-1">Click to view →</div>
+            </button>
+            <button onClick={() => setSummaryModal("packaging")} className="rounded-xl border border-blue-800 bg-blue-950/50 p-3 text-left hover:border-blue-600 hover:shadow-sm transition-all">
+              <div className="text-[11px] text-blue-400 uppercase tracking-wider">Packaging Materials</div>
+              <div className="text-[22px] font-semibold mt-0.5 text-blue-300">{totalPkg}</div>
+              <div className="text-[10px] text-blue-500 mt-1">Click to view →</div>
+            </button>
+            <button onClick={() => setSummaryModal("deco")} className="rounded-xl border border-purple-800 bg-purple-950/50 p-3 text-left hover:border-purple-600 hover:shadow-sm transition-all">
+              <div className="text-[11px] text-purple-400 uppercase tracking-wider">Deco Supplies</div>
+              <div className="text-[22px] font-semibold mt-0.5 text-purple-300">{totalDecoItems}</div>
+              <div className="text-[10px] text-purple-500 mt-1">Click to view →</div>
+            </button>
+          </div>
         </div>
 
         {dosForDeco.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No DOS items assigned for today.</p></div>
+          <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center"><p className="text-[14px] text-zinc-400">No DOS items assigned for today.</p></div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+          <div className="overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-zinc-100 bg-rose-50 text-left text-[11px] font-medium text-zinc-500 uppercase tracking-wider">
+                <tr className="border-b border-zinc-700 bg-zinc-800 text-left text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
                   <th className="w-10 px-3 py-2.5"></th>
                   <th className="px-2 py-2.5">Product</th>
                   <th className="px-2 py-2.5">Priority</th>
                   <th className="px-2 py-2.5 text-right">Total</th>
-                  <th className="px-2 py-2.5 text-right">Cakes N Styles Gensan</th>
-                  <th className="px-2 py-2.5 text-right">Shadrach's Bake & Brew</th>
                   <th className="w-14 px-3 py-2.5 text-right">Status</th>
                 </tr>
               </thead>
@@ -278,77 +251,48 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
                   const recipe = recipes.find(r => r.productName === d.product);
                   const hasDetails = recipe && ((recipe.ingredients.length > 0) || (recipe.packagingMaterials ?? []).length > 0 || (recipe.decorationSupplies ?? []).length > 0);
                   const isExpanded = expandedRows.has(d.id);
-                  const pColor = d.priority === "HIGH" ? "bg-red-100 text-red-700" : d.priority === "MEDIUM" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600";
-                  const sDot = d.status === "completed" ? "bg-emerald-500" : d.status === "in-progress" ? "bg-amber-500" : "bg-zinc-300";
+                  const pColor = d.priority === "HIGH" ? "bg-red-900/60 text-red-300" : d.priority === "MEDIUM" ? "bg-amber-900/60 text-amber-300" : "bg-zinc-700 text-zinc-400";
+                  const sDot = d.status === "completed" ? "bg-emerald-500" : d.status === "in-progress" ? "bg-amber-500" : "bg-zinc-500";
                   return (
                     <Fragment key={d.id}>
-                      <tr className="border-b border-zinc-50 text-[13px] hover:bg-zinc-50/50 transition-colors">
+                      <tr className="border-b border-zinc-800 text-[13px] hover:bg-zinc-800/50 transition-colors">
                         <td className="px-3 py-2.5 text-center">
                           {hasDetails && (
-                            <button onClick={() => setExpandedRows(prev => { const n = new Set(prev); if (n.has(d.id)) n.delete(d.id); else n.add(d.id); return n; })} className="grid h-6 w-6 place-items-center rounded-lg hover:bg-zinc-200 transition-colors text-zinc-500 text-[10px]">
+                            <button onClick={() => setExpandedRows(prev => { const n = new Set(prev); if (n.has(d.id)) n.delete(d.id); else n.add(d.id); return n; })} className="grid h-6 w-6 place-items-center rounded-lg hover:bg-zinc-700 transition-colors text-zinc-400 text-[10px]">
                               {isExpanded ? "▾" : "▸"}
                             </button>
                           )}
                         </td>
-                        <td className="px-2 py-2.5 font-medium text-zinc-900">{d.product} {newDOSIds?.has(d.id) && <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 uppercase tracking-wider">New</span>}</td>
-                        <td className="px-2 py-2.5"><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${pColor}`}>{d.priority}</span></td>
-                        <td className="px-2 py-2.5 text-right font-mono text-zinc-800">{d.qty}</td>
-                        <td className="px-2 py-2.5 text-right font-mono text-zinc-600">{d.branch1}</td>
-                        <td className="px-2 py-2.5 text-right font-mono text-zinc-600">{d.branch2}</td>
-                        <td className="px-3 py-2.5 text-right"><span className={`inline-block h-2 w-2 rounded-full ${sDot}`} /></td>
+                        <td className="px-2 py-2.5 font-medium text-zinc-100">{d.product} {newDOSIds?.has(d.id) && <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-900/60 px-1.5 py-0.5 text-[9px] font-bold text-blue-300 uppercase tracking-wider">New</span>}</td>
+                        <td className="px-2 py-2.5"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${pColor}`}>{d.priority}</span></td>
+                        <td className="px-2 py-2.5 text-right font-mono text-zinc-300">{d.qty}</td>
+                        <td className="px-3 py-2.5 text-right"><span className={`inline-flex items-center gap-1.5 ${d.status === "completed" ? "text-emerald-400" : d.status === "in-progress" ? "text-amber-400" : "text-zinc-400"}`}><span className={`h-1.5 w-1.5 rounded-full ${sDot}`} />{d.status === "in-progress" ? "In Progress" : d.status === "completed" ? "Completed" : "Pending"}</span></td>
                       </tr>
-                      {isExpanded && hasDetails && (
-                        <tr key={`${d.id}-details`}>
-                          <td colSpan={7} className="px-3 pb-3 pt-1">
-                            <div className="ml-7 space-y-2">
-                              {recipe!.ingredients.length > 0 && (
-                                <div className="rounded-lg border border-rose-200 bg-rose-50/50 overflow-hidden">
-                                  <div className="flex items-center gap-1.5 bg-rose-100/60 px-2.5 py-1 border-b border-rose-100">
-                                    <span className="text-[9px] font-semibold text-rose-500 uppercase tracking-wider">Ingredients</span>
-                                    <span className="ml-auto rounded-full bg-rose-100 px-1.5 py-0.5 text-[8px] font-mono text-rose-600">{recipe!.ingredients.length}</span>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1 px-2.5 py-1.5">
-                                    {recipe!.ingredients.map((ing, i) => {
-                                      const neededQty = Math.ceil(ing.qtyPerBatch * d.qty);
-                                      return (
-                                        <span key={i} className="inline-flex items-center gap-1 rounded-md bg-white border border-rose-200 px-1.5 py-0.5 text-[10px]">
-                                          <span className="text-zinc-700 font-medium">{ing.name}</span>
-                                          <span className="text-rose-600 font-mono">×{neededQty}{ing.unit}</span>
-                                        </span>
-                                      );
-                                    })}
+                      {isExpanded && recipe && (
+                        <tr key={`${d.id}-detail`}>
+                          <td colSpan={5} className="px-3 pb-3">
+                            <div className="bg-zinc-800 rounded-xl p-3 space-y-2 mt-1">
+                              {recipe.ingredients.length > 0 && (
+                                <div>
+                                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Ingredients</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {recipe.ingredients.map((ing, i) => <span key={i} className="rounded-lg bg-zinc-700 border border-zinc-600 px-2 py-1 text-[11px] text-zinc-200">{ing.name} {ing.qtyPerBatch}{ing.unit}</span>)}
                                   </div>
                                 </div>
                               )}
-                              {(recipe!.packagingMaterials ?? []).length > 0 && (
-                                <div className="rounded-lg border border-blue-200 bg-blue-50/50 overflow-hidden">
-                                  <div className="flex items-center gap-1.5 bg-blue-100/60 px-2.5 py-1 border-b border-blue-100">
-                                    <span className="text-[9px] font-semibold text-blue-500 uppercase tracking-wider">Packaging</span>
-                                    <span className="ml-auto rounded-full bg-blue-100 px-1.5 py-0.5 text-[8px] font-mono text-blue-600">{recipe!.packagingMaterials.length}</span>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1 px-2.5 py-1.5">
-                                    {recipe!.packagingMaterials.map((mat, i) => (
-                                      <span key={i} className="inline-flex items-center gap-1 rounded-md bg-white border border-blue-200 px-1.5 py-0.5 text-[10px]">
-                                        <span className="text-zinc-700 font-medium">{mat.name}</span>
-                                        <span className="text-blue-600 font-mono">×{mat.qtyPerBatch}{mat.unit}</span>
-                                      </span>
-                                    ))}
+                              {(recipe.packagingMaterials ?? []).length > 0 && (
+                                <div>
+                                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Packaging</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {recipe.packagingMaterials!.map((p, i) => <span key={i} className="rounded-lg bg-zinc-700 border border-blue-800 px-2 py-1 text-[11px] text-blue-300">{p.name} {p.qtyPerBatch}{p.unit}</span>)}
                                   </div>
                                 </div>
                               )}
-                              {(recipe!.decorationSupplies ?? []).length > 0 && (
-                                <div className="rounded-lg border border-purple-200 bg-purple-50/50 overflow-hidden">
-                                  <div className="flex items-center gap-1.5 bg-purple-100/60 px-2.5 py-1 border-b border-purple-100">
-                                    <span className="text-[9px] font-semibold text-purple-500 uppercase tracking-wider">Deco Supplies</span>
-                                    <span className="ml-auto rounded-full bg-purple-100 px-1.5 py-0.5 text-[8px] font-mono text-purple-600">{recipe!.decorationSupplies.length}</span>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1 px-2.5 py-1.5">
-                                    {recipe!.decorationSupplies.map((sup, i) => (
-                                      <span key={i} className="inline-flex items-center gap-1 rounded-md bg-white border border-purple-200 px-1.5 py-0.5 text-[10px]">
-                                        <span className="text-zinc-700 font-medium">{sup.name}</span>
-                                        <span className="text-purple-600 font-mono">×{sup.qtyPerBatch}{sup.unit}</span>
-                                      </span>
-                                    ))}
+                              {(recipe.decorationSupplies ?? []).length > 0 && (
+                                <div>
+                                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Decoration</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {recipe.decorationSupplies!.map((s, i) => <span key={i} className="rounded-lg bg-zinc-700 border border-purple-800 px-2 py-1 text-[11px] text-purple-300">{s.name} {s.qtyPerBatch}{s.unit}</span>)}
                                   </div>
                                 </div>
                               )}
@@ -360,16 +304,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
                   );
                 })}
               </tbody>
-              <tfoot>
-                <tr className="border-t border-zinc-200 bg-rose-50 text-[13px] font-semibold text-zinc-800">
-                  <td colSpan={3} className="px-3 py-2.5">Total</td>
-                  <td className="px-2 py-2.5 text-right font-mono">{dosForDeco.reduce((s, d) => s + d.qty, 0)}</td>
-                  <td className="px-2 py-2.5 text-right font-mono">{dosForDeco.reduce((s, d) => s + d.branch1, 0)}</td>
-                  <td className="px-2 py-2.5 text-right font-mono">{dosForDeco.reduce((s, d) => s + d.branch2, 0)}</td>
-                  <td className="px-3 py-2.5" />
-                </tr>
-              </tfoot>
-            </table>
+</table>
           </div>
         )}
 
@@ -441,98 +376,6 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
             </div>
           </div>
         )}
-
-        {/* Workflow Nav */}
-        <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
-          <div className="text-[12px] text-zinc-400">Step {currentStepIdx + 1} of {workflowSteps.length}</div>
-          {nextStep && (
-            <button onClick={() => setActiveTab(nextStep.id)} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
-              Next: {nextStep.label} →
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  /* ── Recipe Formulas ── */
-  if (activeTab === "recipes") {
-    const dosRecipeProducts = productCatalog.filter(product => {
-      return dosForDeco.some(d => getRecipesForProduct(d.product).some(r => r.productName === product));
-    });
-    return (
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-[28px] font-semibold tracking-tight">Recipe Formulas</h1>
-          <p className="mt-1 text-[13px] text-zinc-500">Product recipes needed for current DOS items. Direct and linked recipes are shown below.</p>
-        </div>
-
-        {editingRecipe && (
-          <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setEditingRecipe(null)}>
-            <div className="w-full max-w-[520px] rounded-[28px] border border-zinc-200 bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between mb-5">
-                <div>
-                  <h3 className="text-[17px] font-semibold text-zinc-900">Recipe: {editingRecipe}</h3>
-                  <p className="mt-0.5 text-[12px] text-zinc-500">Define ingredients and quantities per batch.</p>
-                </div>
-                <button onClick={() => setEditingRecipe(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700">✕</button>
-              </div>
-              <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-                {recipeDraft.map((ing, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-xl border border-zinc-100 p-2.5">
-                    <div className="flex-1">
-                      <input value={ing.name} onChange={e => updIngredient(i, "name", e.target.value)} placeholder="Ingredient name" list="ingredient-list" className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400" />
-                    </div>
-                    <input type="number" min="0" step="0.01" value={ing.qtyPerBatch || ""} onChange={e => updIngredient(i, "qtyPerBatch", Number(e.target.value))} placeholder="Qty" className="w-16 rounded-lg border border-zinc-200 px-2 py-1.5 text-[13px] text-center outline-none focus:border-zinc-400 font-mono" />
-                    <input value={ing.unit} onChange={e => updIngredient(i, "unit", e.target.value)} placeholder="Unit" className="w-16 rounded-lg border border-zinc-200 px-2 py-1.5 text-[13px] outline-none focus:border-zinc-400" />
-                    <button onClick={() => delIngredient(i)} className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-500">✕</button>
-                  </div>
-                ))}
-              </div>
-              <datalist id="ingredient-list">
-                {allIngredients.map(i => <option key={i.id} value={i.name} />)}
-              </datalist>
-              <button onClick={addIngredient} className="mt-2 text-[12px] font-medium text-rose-600 hover:text-rose-700">+ Add Ingredient</button>
-              <div className="mt-4 flex gap-2">
-                <button onClick={() => setEditingRecipe(null)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-                <button onClick={handleSaveRecipe} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">Save Recipe</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-3">
-          {dosRecipeProducts.map(product => {
-            const recipe = recipes.find(r => r.productName === product);
-            return (
-              <div key={product} className="rounded-2xl border border-zinc-200 bg-white p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <span className="text-[15px] font-semibold text-zinc-900">{product}</span>
-                    {recipe && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">Active</span>}
-                    {!recipe && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">No Recipe</span>}
-                  </div>
-                  <button onClick={() => handleEditRecipe(product)} className="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-100 transition-all">
-                    {recipe ? "Edit Formula" : "+ Set Formula"}
-                  </button>
-                </div>
-                {recipe && recipe.ingredients.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {recipe.ingredients.map((ing, i) => (
-                      <span key={i} className="inline-flex items-center gap-1 rounded-lg bg-rose-50 border border-rose-200 px-2 py-0.5 text-[11px]">
-                        <span className="text-zinc-700 font-medium">{ing.name}</span>
-                        <span className="text-rose-600 font-mono">{ing.qtyPerBatch}{ing.unit}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {(!recipe || recipe.ingredients.length === 0) && (
-                  <p className="text-[12px] text-zinc-400 italic">No ingredients defined yet.</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
 
         {/* Workflow Nav */}
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
@@ -683,6 +526,96 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         )}
 
         {/* Workflow Nav */}
+        <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
+          <div className="text-[12px] text-zinc-400">Step {currentStepIdx + 1} of {workflowSteps.length}</div>
+          {nextStep && (
+            <button onClick={() => setActiveTab(nextStep.id)} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
+              Next: {nextStep.label} →
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Advanced Premix ── */
+  if (activeTab === "advanced-premix") {
+    const filteredRecipes = recipes.filter(r => r.productName.toLowerCase().includes(advMixSearch.toLowerCase()) || advMixSearch === "").sort((a, b) => a.productName.localeCompare(b.productName));
+
+    function toggleAdvRecipe(name: string) {
+      setSelectedAdvRecipes(prev => {
+        const next = new Set(prev);
+        if (next.has(name)) next.delete(name); else next.add(name);
+        return next;
+      });
+    }
+
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-[28px] font-semibold tracking-tight">Advanced Freemix</h1>
+            <p className="mt-1 text-[13px] text-zinc-500">Select multiple recipes, then lock them in to set batch details and adjust composition.</p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-[15px] font-semibold">1. Choose Recipes</h2>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-mono font-medium text-zinc-500">{selectedAdvRecipes.size} of {recipes.length} selected</span>
+            </div>
+          </div>
+
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
+            <input value={advMixSearch} onChange={e => setAdvMixSearch(e.target.value)} placeholder="Search recipes..." className="w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-9 pr-3 py-2.5 text-[13px] outline-none focus:border-zinc-400 transition-all" />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {filteredRecipes.length === 0 ? (
+              <div className="col-span-full text-center py-8 text-[13px] text-zinc-400">No recipes found.</div>
+            ) : filteredRecipes.map(r => {
+              const isSelected = selectedAdvRecipes.has(r.productName);
+              const maxVisible = 6;
+              const showMore = r.ingredients.length > maxVisible;
+              const visibleIngredients = r.ingredients.slice(0, maxVisible);
+              return (
+                <button key={r.productName} type="button" onClick={() => toggleAdvRecipe(r.productName)} className={`text-left rounded-2xl border-2 p-4 transition-all ${isSelected ? "border-zinc-900 bg-zinc-50" : "border-zinc-100 bg-white hover:border-zinc-300 hover:shadow-sm"}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all ${isSelected ? "bg-zinc-900 border-zinc-900" : "border-zinc-300 bg-white"}`}>
+                        {isSelected && <span className="text-white text-[11px]">✓</span>}
+                      </div>
+                      <h3 className="text-[15px] font-bold text-zinc-900">{r.productName}</h3>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">{r.ingredients.length} ingredients</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{r.ingredients.length} items</span>
+                  </div>
+                  {r.ingredients.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-zinc-100">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Ingredients</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {visibleIngredients.map((ing, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 rounded-md bg-white border border-rose-200 px-1.5 py-0.5 text-[10px]">
+                            <span className="text-zinc-700 font-medium">{ing.name}</span>
+                            <span className="text-rose-600 font-mono">{ing.qtyPerBatch}{ing.unit}</span>
+                          </span>
+                        ))}
+                        {showMore && (
+                          <span className="inline-flex items-center rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">+{r.ingredients.length - maxVisible} more</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
           <div className="text-[12px] text-zinc-400">Step {currentStepIdx + 1} of {workflowSteps.length}</div>
           {nextStep && (
@@ -850,65 +783,6 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  /* ── Materials Request ── */
-  if (activeTab === "materials") {
-    return (
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-[28px] font-semibold tracking-tight">Materials Request</h1>
-          <p className="mt-1 text-[13px] text-zinc-500">Request decoration materials from the Warehouse.</p>
-        </div>
-
-        <button onClick={openMatForm} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ New Request</button>
-
-        {showMatForm && (
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-semibold">New Material Request</h3>
-              <button onClick={() => setShowMatForm(false)} className="grid h-7 w-7 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400">✕</button>
-            </div>
-            {matDraftItems.map((item, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input value={item.name} onChange={e => setMatDraftItems(prev => prev.map((it, idx) => idx === i ? { ...it, name: e.target.value } : it))} placeholder="Material name" className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[13px] outline-none focus:border-zinc-400" />
-                <input type="number" min="1" value={item.qty} onChange={e => setMatDraftItems(prev => prev.map((it, idx) => idx === i ? { ...it, qty: Number(e.target.value) } : it))} className="w-20 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[13px] text-center outline-none focus:border-zinc-400 font-mono" />
-                <input value={item.unit} onChange={e => setMatDraftItems(prev => prev.map((it, idx) => idx === i ? { ...it, unit: e.target.value } : it))} placeholder="Unit" className="w-20 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[13px] outline-none focus:border-zinc-400" />
-                <button onClick={() => setMatDraftItems(prev => prev.filter((_, idx) => idx !== i))} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50">✕</button>
-              </div>
-            ))}
-            <div className="flex gap-2">
-              <button onClick={() => setMatDraftItems(prev => [...prev, { name: "", qty: 1, unit: "" }])} className="rounded-xl border border-zinc-200 px-3 py-2 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50">+ Add Item</button>
-              <button onClick={submitMatForm} className="ml-auto rounded-xl bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">Submit Request</button>
-            </div>
-          </div>
-        )}
-
-        {materialReqs.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No material requests yet.</p></div>
-        ) : (
-          <div className="space-y-3">
-            {materialReqs.map(req => (
-              <div key={req.id} className="rounded-2xl border border-zinc-200 bg-white p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-mono text-zinc-400">{req.id}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${req.status === "approved" || req.status === "released" ? "bg-emerald-100 text-emerald-700" : req.status === "cancelled" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{req.status}</span>
-                </div>
-                <div className="space-y-1">
-                  {req.items.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between text-[13px]">
-                      <span className="text-zinc-800">{item.name}</span>
-                      <span className="font-mono text-zinc-600">{item.qty} {item.unit}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-2 text-[11px] text-zinc-400">{req.createdAt}</div>
-              </div>
-            ))}
           </div>
         )}
       </div>
