@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog } from "../types";
 import * as db from "../lib/db";
 import DOSBuilderModal from "./DOSBuilderModal";
+import EditProductModal from "./EditProductModal";
 
 type Props = {
   activeTab: string;
@@ -163,6 +164,7 @@ export default function AdminDashboard({
   const [showAllDOSHistory, setShowAllDOSHistory] = useState(false);
   const [expandedProdGroups, setExpandedProdGroups] = useState<Set<string>>(new Set());
   const toggleProdGroup = (date: string) => setExpandedProdGroups(prev => { const n = new Set(prev); if (n.has(date)) n.delete(date); else n.add(date); return n; });
+  const [recipeSearch, setRecipeSearch] = useState("");
 
   // Toasts
   type ToastItem = { name: string; detail: string };
@@ -260,15 +262,20 @@ export default function AdminDashboard({
                         <div className="font-medium text-zinc-900">{product}</div>
                       </td>
                       <td className="px-4 py-3">
-                        {recipe && recipe.ingredients.length > 0 ? (
+                        {recipe && recipe.ingredients.length > 0 && (
                           <button
                             onClick={() => { setRecipeProduct(product); setShowRecipe(true); }}
                             className="rounded-lg bg-zinc-100 px-2.5 py-1 text-[12px] font-medium text-zinc-700 hover:bg-zinc-200 transition-all text-left"
                           >
                             {recipe.ingredients.map(i => i.name).join(", ")}
                           </button>
-                        ) : (
-                          <span className="text-[12px] text-zinc-400 italic">—</span>
+                        )}
+                        {recipe?.linkedProduct && recipe.linkedProduct.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {recipe.linkedProduct.map(lp => (
+                              <span key={lp} className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700">{lp}</span>
+                            ))}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -306,9 +313,13 @@ export default function AdminDashboard({
 
         {/* Recipes Section */}
         <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
-          <div className="flex items-center justify-between px-5 pt-5 pb-3">
-            <h2 className="text-[16px] font-semibold">Recipes <span className="text-[13px] font-normal text-zinc-400">({recipes.length})</span></h2>
-            <button onClick={() => { setRecipeProduct(""); setShowRecipe(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Recipe</button>
+          <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3 flex-wrap">
+            <h2 className="text-[16px] font-semibold shrink-0">Recipes <span className="text-[13px] font-normal text-zinc-400">({recipes.length})</span></h2>
+            <div className="relative flex-1 max-w-xs min-w-[160px]">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+              <input type="text" value={recipeSearch} onChange={e => setRecipeSearch(e.target.value)} placeholder="Search recipes..." className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
+            </div>
+            <button onClick={() => { setRecipeProduct(""); setShowRecipe(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 shrink-0">+ Add Recipe</button>
           </div>
           {recipes.length === 0 ? (
             <div className="px-5 pb-5">
@@ -316,14 +327,19 @@ export default function AdminDashboard({
                 <p className="text-[13px] text-zinc-500">No recipes yet. Select a product above to add ingredients.</p>
               </div>
             </div>
-          ) : (
+          ) : (() => {
+            const filteredRecipes = !recipeSearch ? recipes : recipes.filter(r =>
+              r.productName.toLowerCase().includes(recipeSearch.toLowerCase())
+            );
+            return (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                   <tr><th className="px-4 py-3">Recipe Name</th><th className="px-4 py-3">Items</th><th className="px-4 py-3">Linked Product</th><th className="px-4 py-3">Notes</th><th className="px-4 py-3 text-right">Cost</th><th className="px-4 py-3 w-32" /></tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 text-[13px]">
-                  {recipes.map(recipe => {
+                  {filteredRecipes.map(recipe => {
                     const cost = computeRecipeCost(recipe);
                     return (
                       <tr key={recipe.productName} className="hover:bg-zinc-50/60">
@@ -356,7 +372,16 @@ export default function AdminDashboard({
                 </tbody>
               </table>
             </div>
-          )}
+            {filteredRecipes.length === 0 && recipeSearch && (
+              <div className="px-5 pb-5">
+                <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center">
+                  <p className="text-[13px] text-zinc-400">No recipes match "{recipeSearch}".</p>
+                </div>
+              </div>
+            )}
+            </>
+          );
+            })()}
         </div>
 
         {/* Add Product Modal */}
@@ -398,6 +423,47 @@ export default function AdminDashboard({
               setRecipeProduct(null);
             }}
             onClose={() => { setShowRecipe(false); setRecipeProduct(null); }}
+          />
+        )}
+
+        {/* Edit Product Modal */}
+        {editingProduct !== null && (
+          <EditProductModal
+            productName={editingProduct}
+            recipes={recipes}
+            inventory={inventory}
+            onSave={(originalName, newName, packagingMaterials, decorationSupplies, linkedProduct) => {
+              if (originalName !== newName) {
+                onUpdateProductCatalog(prev => {
+                  const next = prev.filter(p => p !== originalName);
+                  return next.includes(newName) ? next : [...next, newName];
+                });
+                db.removeFromCatalog(originalName).catch(console.error);
+                db.addToCatalog(newName).catch(console.error);
+              }
+              const recipe: ProductRecipe = {
+                productId: newName,
+                productName: newName,
+                ingredients: recipes.find(r => r.productName === originalName)?.ingredients || [],
+                packagingMaterials,
+                decorationSupplies,
+                notes: recipes.find(r => r.productName === originalName)?.notes || "",
+                linkedProduct,
+              };
+              onUpdateRecipes(prev => {
+                const idx = prev.findIndex(p => p.productName === originalName);
+                if (idx >= 0) {
+                  const next = [...prev];
+                  next[idx] = recipe;
+                  return next;
+                }
+                return [...prev, recipe];
+              });
+              db.upsertRecipe(recipe).catch(console.error);
+              setEditingProduct(null);
+              setRenamingProduct("");
+            }}
+            onClose={() => { setEditingProduct(null); setRenamingProduct(""); }}
           />
         )}
       </div>
@@ -715,7 +781,7 @@ export default function AdminDashboard({
               <div key={log.id} className="flex items-start gap-3 border-b border-zinc-100 pb-3 last:border-0">
                 <div className="mt-0.5 text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{log.timestamp}</div>
                 <div className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${log.role === "admin" ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700"}`}>{log.role}</div>
-                <div className="flex-1"><div className="text-[13px] font-medium text-zinc-900">{log.action.replace("_", " ")}</div><div className="text-[12px] text-zinc-600">{log.details} — {log.user}</div></div>
+                <div className="flex-1"><div className="text-[13px] font-medium text-zinc-900">{log.action.replace("_", " ")}</div><div className="text-[12px] text-zinc-600">{log.details} — {log.userName}</div></div>
               </div>
             ))}
           </div>
@@ -776,7 +842,7 @@ export default function AdminDashboard({
                   return filtered.map(item => {
                     const itemKey = item.id.replace("DOS-", "");
                     const relatedTasks = production.filter(t => t.id.includes(itemKey));
-                    const roles = [...new Set(relatedTasks.map(t => t.assignedTo))];
+                    const roles = relatedTasks.length > 0 ? [...new Set(relatedTasks.map(t => t.assignedTo))] : (item.roles || []);
                     return (
                       <tr key={item.id} className="hover:bg-zinc-800/60">
                         <td className="px-4 py-3"><div className="font-medium text-white">{item.product}</div><div className="text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></td>
@@ -784,7 +850,7 @@ export default function AdminDashboard({
                         
                         
                         <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-700"}`}>{item.priority}</span></td>
-                        <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{relatedTasks.length > 0 ? [...new Set(relatedTasks.map(t => t.assignedTo))].map(role => (<span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium text-white ${roleColors[role] || "bg-zinc-500"}`}>{role}</span>)) : <span className="text-zinc-400 text-[11px]">—</span>}</div></td>
+                        <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{roles.length > 0 ? roles.map(role => (<span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium text-white ${roleColors[role] || "bg-zinc-500"}`}>{role}</span>)) : <span className="text-zinc-400 text-[11px]">—</span>}</div></td>
                         <td className="px-4 py-3 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${item.status === "completed" ? "text-emerald-400" : item.status === "in-progress" ? "text-amber-400" : "text-zinc-400"}`}><span className={`h-1.5 w-1.5 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} />{item.status === "in-progress" ? "In Progress" : item.status === "completed" ? "Completed" : "Pending"}</span></td>
                         <td className="px-4 py-3 text-right"><div className="flex items-center gap-1 justify-end">
                           <button onClick={() => setEditingDOS(item)} className="rounded-lg border border-zinc-600 px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all">Edit</button>
@@ -810,43 +876,61 @@ export default function AdminDashboard({
           };
           return (
             <div className="rounded-[24px] border border-blue-200 bg-blue-50 p-5 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-[16px] font-semibold text-blue-900">Scheduled DOS</span>
-                <span className="rounded-full bg-blue-200 px-2.5 py-0.5 text-[11px] font-medium text-blue-800 font-mono">{scheduled.length} item{scheduled.length !== 1 ? "s" : ""}</span>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-[16px] font-semibold text-blue-900">Scheduled DOS</span>
+                  <span className="rounded-full bg-blue-200 px-2.5 py-0.5 text-[11px] font-medium text-blue-800 font-mono">{scheduled.length} item{scheduled.length !== 1 ? "s" : ""}</span>
+                </div>
               </div>
-              <div className="space-y-3">
-                {[...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, items]) => {
-                  const isOpen = expandedSched.has(date);
-                  return (
-                    <div key={date} className="rounded-2xl border border-blue-200 bg-white overflow-hidden">
-                      <div onClick={() => toggleSched(date)} className="w-full flex items-center justify-between bg-blue-100/60 px-4 py-2.5 hover:bg-blue-200/60 transition-colors text-left cursor-pointer">
-                        <span className="text-[13px] font-semibold text-blue-900">{fmtDate(date)}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="rounded-full bg-blue-200/80 px-2 py-0.5 text-[10px] font-medium text-blue-800 font-mono">{items.length} item{items.length !== 1 ? "s" : ""}</span>
-                          <button onClick={e => { e.stopPropagation(); setScheduledAddDate(date); }} className="rounded-lg bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-blue-700 transition-all">+ Add</button>
-                          <button onClick={e => { e.stopPropagation(); if (confirm(`Delete entire scheduled DOS for ${fmtDate(date)} (${items.length} item${items.length !== 1 ? "s" : ""})?`)) { items.forEach(i => onDeleteDOS(i.id)); } }} className="rounded-lg border border-red-300 bg-white px-2 py-0.5 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del All</button>
-                          <span className="text-blue-500 text-[12px]">{isOpen ? "▾" : "▸"}</span>
-                        </div>
-                        </div>
-                      {isOpen && (
-                        <div className="divide-y divide-blue-50">
-                          {items.map(item => (
-                            <div key={item.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50/40">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[13px] font-medium text-zinc-900">{item.product}</div>
-                                <div className="text-[11px] text-zinc-500 font-mono">{item.qty}pcs · {item.priority}</div>
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button onClick={() => setEditingDOS(item)} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300 transition-all">Edit</button>
-                                <button onClick={async () => { if (confirm(`Delete "${item.product}" scheduled for ${fmtDate(date)}?`)) { onDeleteDOS(item.id); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+              <div className="space-y-4">
+                {[...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, items]) => (
+                  <div key={date} className="overflow-hidden rounded-xl border border-blue-200 bg-white">
+                    <div className="flex items-center justify-between bg-blue-100/60 px-4 py-2">
+                      <span className="text-[13px] font-semibold text-blue-900">{fmtDate(date)}</span>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setScheduledAddDate(date)} className="rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 transition-all">+ Add</button>
+                        <button onClick={() => { if (confirm(`Delete entire scheduled DOS for ${fmtDate(date)} (${items.length} item${items.length !== 1 ? "s" : ""})?`)) { items.forEach(i => onDeleteDOS(i.id)); } }} className="rounded-lg border border-red-300 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del All</button>
+                      </div>
                     </div>
-                  );
-                })}
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                          <tr><th className="px-4 py-2.5">Product</th><th className="px-4 py-2.5 text-right">Qty</th><th className="px-4 py-2.5">Priority</th><th className="px-4 py-2.5">Assigned To</th><th className="px-4 py-2.5 text-right">Status</th><th className="px-4 py-2.5 w-24" /></tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100 text-[13px]">
+                          {items.map(item => {
+                            const roles = item.roles || [];
+                            return (
+                              <tr key={item.id} className="hover:bg-blue-50/40">
+                                <td className="px-4 py-2.5 font-medium text-zinc-900">{item.product}</td>
+                                <td className="px-4 py-2.5 text-right font-mono text-zinc-600">{item.qty}</td>
+                                <td className="px-4 py-2.5"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-600 border border-zinc-200"}`}>{item.priority}</span></td>
+                                <td className="px-4 py-2.5">
+                                  {roles.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {roles.map(role => (
+                                        <span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium text-white ${roleColors[role] || "bg-zinc-500"}`}>{role}</span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[12px] text-zinc-400 italic">—</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${item.status === "completed" ? "text-emerald-600" : item.status === "in-progress" ? "text-amber-600" : "text-zinc-400"}`}><span className={`h-1.5 w-1.5 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} />{item.status === "in-progress" ? "In Progress" : item.status === "completed" ? "Completed" : "Scheduled"}</span></td>
+                                <td className="px-4 py-2.5 text-right">
+                                  <div className="flex items-center gap-1 justify-end">
+                                    <button onClick={() => setEditingDOS(item)} className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
+                                    <button onClick={async () => { if (confirm(`Delete "${item.product}" scheduled for ${fmtDate(date)}?`)) { onDeleteDOS(item.id); } }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50 transition-all">Del</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           );
@@ -1150,47 +1234,117 @@ export default function AdminDashboard({
           ) : (
             deliveries.map(d => {
               const val = validations.find(v => v.reportId === d.id);
+              const statusPill = d.status === "delivered"
+                ? "bg-emerald-950 text-emerald-400 border-emerald-900/50"
+                : d.status === "in-transit"
+                  ? "bg-amber-950 text-amber-400 border-amber-900/50"
+                  : d.status === "preparing"
+                    ? "bg-sky-950 text-sky-400 border-sky-900/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700";
+
+              const dateLine = (() => {
+                const ts = d.id.match(/DLV-(\d+)/)?.[1];
+                if (!ts) return "";
+                return `Date: ${new Date(Number(ts)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+              })();
+
               return (
-                <div key={d.id} className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div><h3 className="text-[15px] font-semibold text-white">{d.branch}</h3><p className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.id}</p></div>
-                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium border ${d.status === "delivered" ? "bg-emerald-950 text-emerald-400 border-emerald-900/50" : d.status === "in-transit" ? "bg-amber-950 text-amber-400 border-amber-900/50" : "bg-zinc-800 text-zinc-400 border-zinc-700"}`}>{d.status}</span>
+                <div key={d.id} className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm hover:border-zinc-700 transition-colors">
+                  {/* Header */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="text-[16px] font-semibold text-white truncate">{d.branch}</h3>
+                      <div className="mt-1 flex items-center gap-2">
+                        <p className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.id}</p>
+                        {d.items.length > 0 && (
+                          <span className="rounded-full border border-zinc-800 bg-zinc-800/40 px-2 py-0.5 text-[10px] font-medium text-zinc-300">
+                            {d.items.reduce((s, i) => s + i.qty, 0)} pcs
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-medium ${statusPill}`}>{d.status}</span>
                   </div>
-                  <div className="mt-3 border-t border-zinc-800 pt-3">
-                    <div className="text-[12px] font-medium text-zinc-400 mb-1.5">Items</div>
-                    {d.items.map((item, i) => (
-                      <div key={i} className="flex items-center justify-between text-[12px] text-zinc-400 py-0.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-zinc-200">{item.product}</span>
-                          {item.source && <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium text-white ${item.source === "baker" ? "bg-stone-700" : "bg-rose-800"}`}>{item.source}</span>}
+
+                  {/* Body: Items */}
+                  <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950/30 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[12px] font-medium text-zinc-400">Items</div>
+                      <div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.items.length} line{d.items.length !== 1 ? "s" : ""}</div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {d.items.map((item, i) => (
+                        <div key={i} className="flex items-center justify-between gap-3 text-[12px]">
+                          <div className="min-w-0 flex items-center gap-2">
+                            <span className="truncate text-zinc-200">{item.product}</span>
+                            {item.source && (
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[9px] font-medium text-white ${item.source === "baker" ? "bg-stone-700" : item.source === "deco" ? "bg-rose-800" : "bg-zinc-700"}`}
+                              >
+                                {item.source}
+                              </span>
+                            )}
+                          </div>
+                          <span className="shrink-0 text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty} pcs</span>
                         </div>
-                        <span className="text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty} pcs</span>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{(() => { const ts = d.id.match(/DLV-(\d+)/)?.[1]; return ts ? `Date: ${new Date(Number(ts)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}  •  ` : ""; })()}ETA: {d.eta}</span>
-                    {!val && d.status === "preparing" && (
-                      <button onClick={async () => {
-                        const id = `VAL-${Date.now()}`;
-                        const newVal = { id, reportId: d.id, branch: d.branch, items: [...d.items], status: "validated" as const, timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) };
-                        setValidations(prev => [...prev, newVal]);
-                        await db.replaceDeliveryValidations([...validations, newVal]).catch(console.error);
-                        onAddAuditLog?.("DELIVERY_VALIDATED", `${d.id} — ${d.branch} (${d.items.length} items)`);
-                      }} className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-900 hover:bg-zinc-100 transition-colors">Validate</button>
-                    )}
-                    {val && val.status === "validated" && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-sky-400 font-medium">✓ Validated</span>
-                        <button onClick={async () => {
-                          const updated = validations.map(v => v.id === val.id ? { ...v, status: "posted" as const } : v);
-                          setValidations(updated);
-                          await db.replaceDeliveryValidations(updated).catch(console.error);
-                          onAddAuditLog?.("DELIVERY_POSTED", `${val.branch} — ${val.items.length} items posted to branch inventory`);
-                        }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700 transition-colors">Post to Branch</button>
+
+                  {/* Footer: Date/ETA + actions */}
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                        {dateLine ? `${dateLine}  •  ` : ""}ETA: {d.eta}
                       </div>
-                    )}
-                    {val && val.status === "posted" && <span className="text-[11px] text-emerald-500 font-medium">✓ Posted to Branch IN</span>}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!val && d.status === "preparing" && (
+                        <button
+                          onClick={async () => {
+                            const id = `VAL-${Date.now()}`;
+                            const newVal = {
+                              id,
+                              reportId: d.id,
+                              branch: d.branch,
+                              items: [...d.items],
+                              status: "validated" as const,
+                              timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+                            };
+                            setValidations(prev => [...prev, newVal]);
+                            await db.replaceDeliveryValidations([...validations, newVal]).catch(console.error);
+                            onAddAuditLog?.("DELIVERY_VALIDATED", `${d.id} — ${d.branch} (${d.items.length} items)`);
+                          }}
+                          className="rounded-xl bg-white px-3.5 py-1.5 text-[11px] font-medium text-zinc-900 hover:bg-zinc-100 transition-colors shadow-sm"
+                        >
+                          Validate
+                        </button>
+                      )}
+
+                      {val && val.status === "validated" && (
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full border border-sky-900/40 bg-sky-950/40 px-2 py-0.5 text-[11px] font-medium text-sky-300">✓ Validated</span>
+                          <button
+                            onClick={async () => {
+                              const updated = validations.map(v => (v.id === val.id ? { ...v, status: "posted" as const } : v));
+                              setValidations(updated);
+                              await db.replaceDeliveryValidations(updated).catch(console.error);
+                              onAddAuditLog?.("DELIVERY_POSTED", `${val.branch} — ${val.items.length} items posted to branch inventory`);
+                            }}
+                            className="rounded-xl bg-emerald-600 px-3.5 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700 transition-colors shadow-sm"
+                          >
+                            Post to Branch
+                          </button>
+                        </div>
+                      )}
+
+                      {val && val.status === "posted" && (
+                        <span className="rounded-full border border-emerald-900/50 bg-emerald-950/40 px-3 py-1 text-[11px] font-medium text-emerald-400">✓ Posted to Branch IN</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -2154,7 +2308,7 @@ export default function AdminDashboard({
                     (t.id.includes(itemTimestamp) && t.id.split('-').includes(itemSuffix)) ||
                     (t.product === item.product && t.id.includes(itemTimestamp))
                   );
-                  const roles = [...new Set(relatedTasks.map(t => t.assignedTo))];
+                  const roles = relatedTasks.length > 0 ? [...new Set(relatedTasks.map(t => t.assignedTo))] : (item.roles || []);
                   return (
                     <div key={item.id} className="grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-zinc-800/40 transition-colors">
                       <div className="col-span-4"><div className="text-[13px] font-medium text-white truncate">{item.product}</div><div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></div>
@@ -2238,7 +2392,7 @@ export default function AdminDashboard({
                 <div key={log.id} onClick={() => setSelectedLog(log)} className="flex items-start gap-3 rounded-xl px-3 py-2.5 hover:bg-zinc-800/40 transition-all cursor-pointer">
                   <div className={`mt-1 grid h-2 w-2 shrink-0 place-items-center rounded-full ${typeConfig.dot}`} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2"><span className="text-[13px] font-medium text-white">{log.user}</span><span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${typeConfig.color}`}>{typeConfig.label}</span></div>
+                    <div className="flex items-center gap-2"><span className="text-[13px] font-medium text-white">{log.userName}</span><span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${typeConfig.color}`}>{typeConfig.label}</span></div>
                     <div className="mt-0.5 text-[12px] leading-snug text-zinc-400">{log.details}</div>
                   </div>
                   <div className="shrink-0 text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{log.timestamp}</div>
@@ -2461,7 +2615,7 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
 
         <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
           <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-          <button onClick={() => onSave({ productId: isNew ? recipeName : product, productName: recipeName, ingredients, notes, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [] })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
+          <button onClick={() => onSave({ id: existing?.id, productId: isNew ? recipeName : product, productName: recipeName, ingredients, notes, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [] })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
         </div>
       </div>
     </div>

@@ -291,13 +291,11 @@ export default function App() {
   const [newDOSIds, setNewDOSIds] = useState<Set<string>>(new Set());
   const seenDOS = useRef(new Set<string>());
   const syncReady = useRef(false);
-  const auditCleaned = useRef(false);
 
   // Load all data from Supabase
   async function loadAllData(): Promise<DOSItem[]> {
     setDataLoading(true);
     try {
-      if (!auditCleaned.current) { auditCleaned.current = true; await db.clearAuditLogs().catch(() => {}); }
       const [inv, dos, prod, del, audit, catalog, rec, pricing, freezer, fHistory, purch, bills, rev, waste] = await Promise.all([
         db.fetchAllInventory(),
         db.fetchDOS(),
@@ -555,7 +553,7 @@ export default function App() {
   };
 
   const logAudit = (action: string, details: string) => {
-    const entry = { timestamp: getPHTimestamp(), user: displayName, role, action, details };
+    const entry = { timestamp: getPHTimestamp(), userName: displayName, role, action, details };
     db.addAuditLog(entry).catch(console.error);
     setAuditLogs(prev => [{ ...entry, id: `AUD-${Date.now()}-${prev.length}` }, ...prev]);
   };
@@ -616,6 +614,32 @@ export default function App() {
 
   const handleEditDOS = async (item: DOSItem) => {
     try { await db.upsertDOS([item]); } catch (err) { console.error("DOS edit save failed:", err); }
+    // Update production tasks to match the new roles
+    const tsMatch = item.id.match(/^DOS-(\d+)-(\d+)$/);
+    if (tsMatch) {
+      const [, ts, idx] = tsMatch;
+      const taskPrefix = `PRD-${ts}-${idx}-`;
+      // Delete old production tasks for this DOS item
+      const oldTasks = production.filter(t => t.id.startsWith(taskPrefix));
+      if (oldTasks.length > 0) {
+        await Promise.all(oldTasks.map(t => db.deleteProductionTask(t.id).catch(() => {})));
+        setProduction(prev => prev.filter(t => !t.id.startsWith(taskPrefix)));
+      }
+      // Create new production tasks for the new roles
+      const newRoles = item.roles || [];
+      if (newRoles.length > 0) {
+        const newTasks: ProductionTask[] = newRoles.map((role, roleIdx) => ({
+          id: `${taskPrefix}${roleIdx}`,
+          product: item.product,
+          target: item.qty,
+          completed: 0,
+          assignedTo: role,
+          status: "pending" as const,
+        }));
+        await db.upsertProduction(newTasks).catch(err => console.error("Production task upsert failed:", err));
+        setProduction(prev => [...prev, ...newTasks]);
+      }
+    }
     setDosItems(prev => prev.map(d => d.id === item.id ? item : d));
     logAudit("DOS_EDITED", `${item.product} — ${item.id} — Roles: ${item.roles?.join(', ') || 'None'}`);
   };

@@ -8,10 +8,10 @@ import type {
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
-  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduledDate: d.scheduled_date || undefined };
+  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduledDate: d.scheduled_date || undefined, roles: d.roles || undefined };
 }
 function toDOSRow(d: DOSItem) {
-  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduled_date: d.scheduledDate || null };
+  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduled_date: d.scheduledDate || null, roles: d.roles ?? [] };
 }
 
 function parseProduction(p: any): ProductionTask {
@@ -141,6 +141,7 @@ export async function updateDOS(id: string, updates: Partial<DOSItem>) {
   if ("status" in updates) row.status = updates.status;
   if ("priority" in updates) row.priority = updates.priority;
   if ("scheduledDate" in updates) row.scheduled_date = updates.scheduledDate || null;
+  if ("roles" in updates) row.roles = updates.roles ?? [];
   const { error } = await supabase.from("dos_items").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -160,6 +161,11 @@ export async function updateProduction(id: string, updates: Partial<ProductionTa
   if ("completed" in updates) row.completed = updates.completed;
   if ("status" in updates) row.status = updates.status;
   const { error } = await supabase.from("production_tasks").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteProductionTask(id: string) {
+  const { error } = await supabase.from("production_tasks").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -193,18 +199,36 @@ export function subscribeFreezer(onChange: () => void) {
 export async function fetchAuditLogs(): Promise<AuditLog[]> {
   const { data, error } = await supabase.from("audit_logs").select("*").order("id", { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((d: any) => ({ id: d.id, timestamp: d.timestamp, user: d.user, role: d.role, action: d.action, details: d.details }));
+  return (data ?? []).map((d: any) => ({ id: d.id, timestamp: d.timestamp, userName: d.user_name, role: d.role, action: d.action, details: d.details }));
 }
 
 export async function clearAuditLogs(): Promise<void> {
-  await supabase.from("audit_logs").delete().neq("id", ""); // wipe all old demo entries
+  await supabase.from("audit_logs").delete().neq("id", "");
+}
+
+function generateId(): string {
+  // Works across all modern browsers, with fallback for older environments
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // crypto.getRandomValues is supported in all modern browsers
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const buf = new Uint8Array(16);
+    crypto.getRandomValues(buf);
+    buf[6] = (buf[6] & 0x0f) | 0x40; // version 4
+    buf[8] = (buf[8] & 0x3f) | 0x80; // variant 10
+    const hex = Array.from(buf).map(b => b.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  // Last-resort fallback for very old environments
+  return `AUD-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export async function addAuditLog(log: Omit<AuditLog, "id">): Promise<void> {
   const { error } = await supabase.from("audit_logs").insert({
-    id: crypto.randomUUID(),
+    id: generateId(),
     timestamp: log.timestamp,
-    user: log.user,
+    user_name: log.userName,
     role: log.role,
     action: log.action,
     details: log.details,
@@ -227,6 +251,11 @@ export async function removeFromCatalog(name: string) {
   if (error) throw error;
 }
 export async function deleteRecipe(productName: string) {
+  // Delete links first, then the recipe
+  const { data: found } = await supabase.from("recipes").select("id").eq("name", productName).maybeSingle();
+  if (found) {
+    await supabase.from("product_recipe_links").delete().eq("recipe_id", found.id);
+  }
   const { error } = await supabase.from("recipes").delete().eq("name", productName);
   if (error) throw error;
 }
@@ -261,14 +290,19 @@ export async function upsertRecipe(recipe: ProductRecipe) {
     console.error("recipe upsert failed:", error);
     return;
   }
-  // Update product_recipe_links
+  // Update product_recipe_links — save each linked product name
   if (recipe.productName) {
     const { data: inserted } = await supabase.from("recipes").select("id").eq("name", recipe.productName).maybeSingle();
     if (inserted) {
-      await supabase.from("product_recipe_links").upsert({
-        product_name: recipe.productName,
-        recipe_id: inserted.id,
-      }, { onConflict: "product_name, recipe_id" });
+      // Delete existing links for this recipe, then insert new ones
+      await supabase.from("product_recipe_links").delete().eq("recipe_id", inserted.id);
+      const linked = recipe.linkedProduct ?? [];
+      if (linked.length > 0) {
+        const { error: linkErr } = await supabase.from("product_recipe_links").insert(
+          linked.map(product_name => ({ product_name, recipe_id: inserted.id }))
+        );
+        if (linkErr) console.error("product_recipe_links insert failed:", linkErr);
+      }
     }
   }
 }

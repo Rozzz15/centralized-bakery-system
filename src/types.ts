@@ -23,6 +23,7 @@ export type DOSItem = {
   priority: "HIGH" | "MEDIUM" | "LOW";
   status: "pending" | "in-progress" | "completed" | "scheduled";
   scheduledDate?: string;
+  roles?: ("baker" | "pastry" | "deco")[];
 };
 
 export type ProductionTask = {
@@ -51,7 +52,7 @@ export type Delivery = {
 export type AuditLog = {
   id: string;
   timestamp: string;
-  user: string;
+  userName: string;
   role: Role;
   action: string;
   details: string;
