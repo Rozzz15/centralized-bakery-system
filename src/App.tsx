@@ -232,8 +232,8 @@ async function seedIfEmpty() {
   ];
 
   const demoDeliveries: Delivery[] = [
-    { id: "DLV-101", branch: "Cakes N Styles Gensan", address: "123 GenSan St", contactNumber: "09171234567", assignedRider: "Juan", items: [{ product: "Pandesal", qty: 300 }, { product: "Loaf Bread", qty: 120 }], status: "in-transit", eta: "08:30", paymentStatus: "paid", notes: "" },
-    { id: "DLV-102", branch: "Shadrach's Bake & Brew", address: "456 BGC Ave", contactNumber: "09181234567", assignedRider: "Pedro", items: [{ product: "Pandesal", qty: 200 }, { product: "Loaf Bread", qty: 80 }], status: "preparing", eta: "09:15", paymentStatus: "cod", notes: "Fragile items" },
+    { id: "DLV-101", branch: "Cakes N Styles Gensan", address: "123 GenSan St", contactNumber: "09171234567", assignedRider: "Juan", items: [{ product: "Pandesal", qty: 300 }, { product: "Loaf Bread", qty: 120 }], status: "in-transit", eta: "08:30", paymentStatus: "paid", modeOfPayment: "cash", notes: "" },
+    { id: "DLV-102", branch: "Shadrach's Bake & Brew", address: "456 BGC Ave", contactNumber: "09181234567", assignedRider: "Pedro", items: [{ product: "Pandesal", qty: 200 }, { product: "Loaf Bread", qty: 80 }], status: "preparing", eta: "09:15", paymentStatus: "unpaid", modeOfPayment: "online", notes: "Fragile items" },
   ];
 
   await Promise.all([
@@ -360,6 +360,7 @@ export default function App() {
             await db.upsertProduction(tasks);
             setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending", scheduledDate: undefined } : i));
             setProduction(prev => [...prev, ...tasks]);
+            logAudit("SCHEDULED_ACTIVATED", `${scheduled.length} scheduled DOS item${scheduled.length > 1 ? "s" : ""} activated for today`);
           }
           setLoggedIn(true);
         }
@@ -424,12 +425,12 @@ export default function App() {
           target: item.qty,
           completed: 0,
           assignedTo: "baker" as const,
-          status: "pending" as const,
+          status: "in-progress" as const,
         }));
         db.upsertDOS(updated).catch(console.error);
         db.upsertProduction(tasks).catch(console.error);
         setProduction(p => [...p, ...tasks]);
-        logAudit("SCHEDULED_ACTIVATED", `${scheduled.length} scheduled item${scheduled.length > 1 ? "s" : ""} activated`);
+        logAudit("SCHEDULED_ACTIVATED", `${scheduled.length} scheduled DOS item${scheduled.length > 1 ? "s" : ""} activated for today`);
         return prev.map(i => {
           const found = scheduled.find(s => s.id === i.id);
           return found ? { ...i, status: "pending" as const, scheduledDate: undefined } : i;

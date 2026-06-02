@@ -97,7 +97,10 @@ export default function KitchenDashboard({ production, deliveries, dosItems, onU
   const handleSubmitReport = (report: DeliveryReport) => {
     setReports(prev => prev.map(r => r.id === report.id ? { ...r, status: "submitted" as const } : r));
     setBatches(prev => prev.map(b => b.id === report.batchId ? { ...b, status: "dispatched" as const } : b));
-    const newDelivery: Delivery = { id: `DLV-${Date.now()}`, branch: report.branch, address: "", contactNumber: "", assignedRider: "", items: report.items, status: "preparing", eta: new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }), paymentStatus: "unpaid", notes: "" };
+    const newDelivery: Delivery = { id: `DLV-${Date.now()}`, branch: report.branch, address: "", contactNumber: "", assignedRider: "", items: report.items, status: "preparing", eta: new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }),  paymentStatus: "unpaid",
+  modeOfPayment: "cash",
+  notes: ""
+};
     const updatedDeliveries = [...deliveries, newDelivery];
     onUpdateDeliveries(updatedDeliveries);
     db.upsertDeliveries(updatedDeliveries).catch(console.error);

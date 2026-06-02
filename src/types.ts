@@ -44,9 +44,11 @@ export type Delivery = {
   items: { product: string; qty: number; source?: string }[];
   status: "preparing" | "in-transit" | "delivered";
   eta: string;
-  paymentStatus: "unpaid" | "paid" | "cod";
+  paymentStatus: "unpaid" | "paid" | "half";
+  modeOfPayment: "cash" | "check" | "online" | "bank";
   notes: string;
   date?: string;
+  totalAmount?: number;
 };
 
 export type AuditLog = {

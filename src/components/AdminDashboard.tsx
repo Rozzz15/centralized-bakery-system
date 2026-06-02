@@ -265,9 +265,9 @@ export default function AdminDashboard({
                         {recipe && recipe.ingredients.length > 0 && (
                           <button
                             onClick={() => { setRecipeProduct(product); setShowRecipe(true); }}
-                            className="rounded-lg bg-zinc-100 px-2.5 py-1 text-[12px] font-medium text-zinc-700 hover:bg-zinc-200 transition-all text-left"
+                            className="text-[12px] font-medium text-blue-600 hover:text-blue-800 transition-all text-left"
                           >
-                            {recipe.ingredients.map(i => i.name).join(", ")}
+                            View Ingredients
                           </button>
                         )}
                         {recipe?.linkedProduct && recipe.linkedProduct.length > 0 && (

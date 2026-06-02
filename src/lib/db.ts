@@ -22,10 +22,10 @@ function toProductionRow(p: ProductionTask) {
 }
 
 function parseDelivery(d: any): Delivery {
-  return { id: d.id, branch: d.branch, address: d.address ?? "", contactNumber: d.contact_number ?? "", assignedRider: d.assigned_rider ?? "", items: d.items ?? [], status: d.status, eta: d.eta, paymentStatus: d.payment_status ?? "unpaid", notes: d.notes ?? "" };
+  return { id: d.id, branch: d.branch, address: d.address ?? "", contactNumber: d.contact_number ?? "", assignedRider: d.assigned_rider ?? "", items: d.items ?? [], status: d.status, eta: d.eta, paymentStatus: d.payment_status ?? "unpaid", modeOfPayment: d.mode_of_payment ?? "cash", notes: d.notes ?? "", totalAmount: d.total_amount ?? undefined };
 }
 function toDeliveryRow(d: Delivery) {
-  return { id: d.id, branch: d.branch, address: d.address ?? "", contact_number: d.contactNumber ?? "", assigned_rider: d.assignedRider ?? "", items: d.items, status: d.status, eta: d.eta, payment_status: d.paymentStatus ?? "unpaid", notes: d.notes ?? "" };
+  return { id: d.id, branch: d.branch, address: d.address ?? "", contact_number: d.contactNumber ?? "", assigned_rider: d.assignedRider ?? "", items: d.items, status: d.status, eta: d.eta, payment_status: d.paymentStatus ?? "unpaid", mode_of_payment: d.modeOfPayment ?? "cash", notes: d.notes ?? "", total_amount: d.totalAmount ?? null };
 }
 
 // ─── Inventory ───
@@ -234,6 +234,49 @@ export async function addAuditLog(log: Omit<AuditLog, "id">): Promise<void> {
     details: log.details,
   });
   if (error) console.error("audit log error:", error);
+}
+
+// ─── Product Categories ───
+export async function fetchCategories(): Promise<string[]> {
+  const { data, error } = await supabase.from("product_categories").select("name").order("name");
+  if (error) throw error;
+  return (data ?? []).map((r: any) => r.name);
+}
+
+export async function addCategory(name: string) {
+  const { error } = await supabase.from("product_categories").insert({ name }).maybeSingle();
+  if (error && !error.message.includes("duplicate")) throw error;
+}
+
+export async function removeCategory(name: string) {
+  // Unassign from products first, then delete
+  await supabase.from("product_catalog").update({ category: null }).eq("category", name);
+  const { error } = await supabase.from("product_categories").delete().eq("name", name);
+  if (error) throw error;
+}
+
+export async function renameCategory(oldName: string, newName: string) {
+  // Update the category name in product_categories
+  const { error: catErr } = await supabase.from("product_categories").update({ name: newName }).eq("name", oldName);
+  if (catErr) throw catErr;
+  // Update all products assigned to this category
+  const { error: prodErr } = await supabase.from("product_catalog").update({ category: newName }).eq("category", oldName);
+  if (prodErr) throw prodErr;
+}
+
+export async function fetchProductCategories(): Promise<Record<string, string>> {
+  const { data, error } = await supabase.from("product_catalog").select("name, category");
+  if (error) throw error;
+  const map: Record<string, string> = {};
+  for (const r of (data ?? [])) {
+    if (r.category) map[r.name] = r.category;
+  }
+  return map;
+}
+
+export async function saveProductCategory(productName: string, category: string | null) {
+  const { error } = await supabase.from("product_catalog").update({ category }).eq("name", productName);
+  if (error) throw error;
 }
 
 // ─── Product Catalog ───
@@ -788,6 +831,11 @@ export async function fetchRevenue(): Promise<Revenue[]> {
     referenceId: d.reference_id, remarks: d.remarks, createdAt: d.created_at,
   }));
 }
+export async function deleteRevenue(id: string) {
+  const { error } = await supabase.from("revenue").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function upsertRevenue(items: Revenue[]) {
   const { error } = await supabase.from("revenue").upsert(items.map(r => ({
     id: r.id, source: r.source, particular: r.particular, branch: r.branch,

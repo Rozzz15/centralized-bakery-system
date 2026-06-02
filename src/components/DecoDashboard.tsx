@@ -64,6 +64,9 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [freeMixDone, setFreeMixDone] = useState<Set<string>>(new Set());
   const [advMixSearch, setAdvMixSearch] = useState("");
   const [selectedAdvRecipes, setSelectedAdvRecipes] = useState<Set<string>>(new Set());
+  const [advMixQtys, setAdvMixQtys] = useState<Record<string, number>>({});
+  const [advMixAdjustments, setAdvMixAdjustments] = useState<Record<string, Record<string, number>>>({});
+  const [isAdvLocked, setIsAdvLocked] = useState(false);
 
   // Freezer state
   const [showAddFreezer, setShowAddFreezer] = useState(false);
@@ -75,6 +78,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [newBatch, setNewBatch] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [freezerSearch, setFreezerSearch] = useState("");
+  const [freezerTab, setFreezerTab] = useState<"Display Cakes" | "Production Recipe" | "My Inventory">("Display Cakes");
 
   const [customOrders, setCustomOrders] = useState<CustomOrder[]>([
     { id: "CO-001", customer: "Anna Santos", product: "Chocolate Cake", request: "Pink ribbon + gold topper + #21 candle", status: "pending", createdAt: "May 28, 10:30 AM" },
@@ -552,26 +556,119 @@ return (
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center justify-between gap-6 pb-6 border-b border-zinc-100">
           <div>
-            <h1 className="text-[28px] font-semibold tracking-tight">Advanced Freemix</h1>
-            <p className="mt-1 text-[13px] text-zinc-500">Select multiple recipes, then lock them in to set batch details and adjust composition.</p>
+            <h1 className="text-[32px] font-extrabold tracking-tight text-zinc-900">Advanced Freemix</h1>
+            <p className="mt-1 text-[14px] text-zinc-500">Curate recipe batches and fine-tune ingredient compositions.</p>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[14px]">⌕</span>
+              <input 
+                value={advMixSearch} 
+                onChange={e => setAdvMixSearch(e.target.value)} 
+                placeholder="Search recipes..." 
+                className="w-64 rounded-xl border border-zinc-200 bg-zinc-50 pl-10 pr-3 py-2.5 text-[13px] outline-none focus:border-zinc-400 transition-all" 
+              />
+            </div>
+            
+            <button 
+              onClick={() => setIsAdvLocked(!isAdvLocked)}
+              disabled={selectedAdvRecipes.size === 0}
+              className={`group relative flex items-center gap-3 rounded-2xl px-6 py-3 text-[14px] font-bold text-white transition-all duration-300 shadow-md ${
+                selectedAdvRecipes.size === 0 
+                  ? "bg-zinc-200 text-zinc-400 cursor-not-allowed" 
+                  : isAdvLocked 
+                    ? "bg-amber-600 hover:bg-amber-700 shadow-amber-200" 
+                    : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200"
+              }`}
+            >
+              <span className="text-[18px]">{isAdvLocked ? "🔓" : "🔒"}</span>
+              {isAdvLocked ? "Unlock" : "Lock"}
+              <span className="flex items-center justify-center rounded-full bg-white/20 w-6 h-6 text-[12px] font-mono group-hover:bg-white/30">
+                {selectedAdvRecipes.size}
+              </span>
+            </button>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold">1. Choose Recipes</h2>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-mono font-medium text-zinc-500">{selectedAdvRecipes.size} of {recipes.length} selected</span>
+        {/* Locked State View */}
+        {isAdvLocked && (
+          <div className="rounded-3xl border border-zinc-200 bg-white shadow-sm p-8 space-y-8">
+            <div className="flex items-center gap-3">
+              <div className="bg-amber-100 p-2.5 rounded-xl">
+                 <span className="text-[20px]">⚖️</span>
+              </div>
+              <h2 className="text-[20px] font-bold text-zinc-900">Composition Adjustment</h2>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {Array.from(selectedAdvRecipes).map(productName => {
+                const recipe = recipes.find(r => r.productName === productName);
+                const qty = advMixQtys[productName] || 1;
+                if (!recipe) return null;
+                return (
+                  <div key={productName} className="rounded-2xl bg-zinc-50 p-5 border border-zinc-100 shadow-inner">
+                    <div className="flex justify-between items-center mb-5">
+                      <span className="font-bold text-[15px] text-zinc-900">{productName}</span>
+                      <div className="flex items-center gap-2 bg-white rounded-lg border border-zinc-200 p-1">
+                         <span className="text-[11px] font-semibold text-zinc-400 uppercase pl-2">Qty</span>
+                         <input 
+                            type="number" 
+                            min="1"
+                            value={qty}
+                            onChange={e => {
+                              const val = Math.max(1, parseInt(e.target.value) || 1);
+                              setAdvMixQtys(prev => ({ ...prev, [productName]: val }));
+                            }}
+                            className="w-16 text-center rounded-md bg-zinc-100 px-2 py-1 text-[13px] font-bold font-mono outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {recipe.ingredients.map((ing, i) => {
+                        const baseQty = advMixAdjustments[productName]?.[ing.name] ?? ing.qtyPerBatch;
+                        return (
+                          <div key={i} className="flex justify-between text-[13px] items-center">
+                            <span className="text-zinc-600">{ing.name} <span className="text-[10px] text-zinc-400 font-mono">(+{ing.qtyPerBatch})</span></span>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                value={((ing.qtyPerBatch + (advMixAdjustments[productName]?.[ing.name] || 0)) * qty).toFixed(1)}
+                                onChange={(e) => {
+                                  const total = parseFloat(e.target.value) || 0;
+                                  const newVal = (total / qty) - ing.qtyPerBatch;
+                                  setAdvMixAdjustments(prev => ({
+                                    ...prev,
+                                    [productName]: { ...prev[productName], [ing.name]: isNaN(newVal) ? 0 : newVal }
+                                  }));
+                                }}
+                                className="w-20 text-right font-mono font-semibold text-zinc-900 bg-white px-2 py-0.5 rounded border border-zinc-200 focus:ring-1 focus:ring-emerald-500 outline-none"
+                              />
+                              <span className="text-zinc-500 text-[11px] font-mono">{ing.unit}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="pt-6 border-t border-zinc-100 flex justify-end gap-3">
+              <button onClick={() => setIsAdvLocked(false)} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-zinc-600 hover:bg-zinc-100">Cancel</button>
+              <button className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-zinc-900 hover:bg-zinc-800 flex items-center gap-2">
+                Save to Freezer 📦
+              </button>
             </div>
           </div>
-
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
-            <input value={advMixSearch} onChange={e => setAdvMixSearch(e.target.value)} placeholder="Search recipes..." className="w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-9 pr-3 py-2.5 text-[13px] outline-none focus:border-zinc-400 transition-all" />
-          </div>
-
+        )}
+        
+        {/* Original Selection Grid - hide when locked to avoid confusion, or keep visible? User said "when its Locked the Ingredients ... must be Adjustable" */}
+        {!isAdvLocked && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {filteredRecipes.length === 0 ? (
               <div className="col-span-full text-center py-8 text-[13px] text-zinc-400">No recipes found.</div>
@@ -581,41 +678,66 @@ return (
               const showMore = r.ingredients.length > maxVisible;
               const visibleIngredients = r.ingredients.slice(0, maxVisible);
               return (
-                <button key={r.productName} type="button" onClick={() => toggleAdvRecipe(r.productName)} className={`text-left rounded-2xl border-2 p-4 transition-all ${isSelected ? "border-zinc-900 bg-zinc-50" : "border-zinc-100 bg-white hover:border-zinc-300 hover:shadow-sm"}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all ${isSelected ? "bg-zinc-900 border-zinc-900" : "border-zinc-300 bg-white"}`}>
-                        {isSelected && <span className="text-white text-[11px]">✓</span>}
+                <button 
+                  key={r.productName} 
+                  type="button" 
+                  onClick={() => toggleAdvRecipe(r.productName)} 
+                  className={`group relative text-left rounded-3xl border p-5 transition-all duration-200 ${
+                    isSelected 
+                      ? "border-zinc-900 bg-white shadow-xl shadow-zinc-200" 
+                      : "border-zinc-200 bg-white hover:border-zinc-400 hover:shadow-lg hover:shadow-zinc-100"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${
+                        isSelected ? "bg-zinc-900 border-zinc-900" : "border-zinc-300 group-hover:border-zinc-400"
+                      }`}>
+                        {isSelected && <span className="text-white text-[12px]">✓</span>}
                       </div>
-                      <h3 className="text-[15px] font-bold text-zinc-900">{r.productName}</h3>
+                      <div>
+                        <h3 className={`text-[16px] font-bold ${isSelected ? "text-zinc-900" : "text-zinc-800"}`}>{r.productName}</h3>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">{r.ingredients.length} Ingredients • {r.ingredients.length} items</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 mt-3">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">{r.ingredients.length} ingredients</span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{r.ingredients.length} items</span>
-                  </div>
-                  {r.ingredients.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-zinc-100">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">Ingredients</div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {visibleIngredients.map((ing, i) => (
-                          <span key={i} className="inline-flex items-center gap-1 rounded-md bg-white border border-rose-200 px-1.5 py-0.5 text-[10px]">
-                            <span className="text-zinc-700 font-medium">{ing.name}</span>
-                            <span className="text-rose-600 font-mono">{ing.qtyPerBatch}{ing.unit}</span>
-                          </span>
-                        ))}
-                        {showMore && (
-                          <span className="inline-flex items-center rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500">+{r.ingredients.length - maxVisible} more</span>
-                        )}
+                    {isSelected && (
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Qty</span>
+                        <input 
+                          type="number" 
+                          min="1"
+                          value={advMixQtys[r.productName] || 1}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => {
+                            const val = Math.max(1, parseInt(e.target.value) || 1);
+                            setAdvMixQtys(prev => ({ ...prev, [r.productName]: val }));
+                          }}
+                          className="w-16 text-center rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-[13px] font-bold font-mono outline-none focus:border-zinc-600 focus:bg-white"
+                        />
                       </div>
+                    )}
+                  </div>
+                  
+                  {r.ingredients.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-zinc-100">
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                        {visibleIngredients.map((ing, i) => (
+                          <div key={i} className="flex justify-between items-center text-[11px]">
+                            <span className="text-zinc-600 truncate mr-2">{ing.name}</span>
+                            <span className="font-mono font-medium text-zinc-900 shrink-0">{ing.qtyPerBatch}{ing.unit}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {showMore && (
+                        <p className="text-[10px] text-zinc-400 mt-2 font-medium">+ {r.ingredients.length - maxVisible} more ingredients</p>
+                      )}
                     </div>
                   )}
                 </button>
               );
             })}
           </div>
-        </div>
-
+        )}
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
           <div className="text-[12px] text-zinc-400">Step {currentStepIdx + 1} of {workflowSteps.length}</div>
           {nextStep && (
@@ -792,27 +914,16 @@ return (
   /* ── Freezer Tab ── */
   if (activeTab === "freezer") {
     const myFreezer = freezerItems.filter(i => i.producedBy === "deco");
-    const stored = myFreezer.filter(i => i.status === "stored");
-    const filtered = myFreezer.filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()));
-
-    const handleAdd = () => {
-      if (!newProduct.trim() || !newQty) return;
-      const item: FreezerItem = {
-        id: `FRZ-${Date.now()}`,
-        productName: newProduct.trim(),
-        qty: Number(newQty),
-        unit: newUnit,
-        batchRef: newBatch.trim(),
-        producedBy: "deco",
-        dateProduced: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
-        status: "stored",
-        notes: newNotes.trim(),
-      };
-      onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, item]);
-      db.upsertFreezerItems([item]).catch(console.error);
-      setShowAddFreezer(false);
-      setNewProduct(""); setNewQty(""); setNewBatch(""); setNewNotes("");
+    
+    // Categorization logic
+    const tabs: ("Display Cakes" | "Production Recipe" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "My Inventory"];
+    const getFilteredItems = () => {
+        if (freezerTab === "Display Cakes") return myFreezer.filter(i => i.notes?.toLowerCase().includes("cake") || i.productName.toLowerCase().includes("cake"));
+        if (freezerTab === "Production Recipe") return myFreezer.filter(i => i.batchRef !== "");
+        return myFreezer; // My Inventory
     };
+    
+    const filtered = getFilteredItems().filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()));
 
     return (
       <div className="space-y-5">
@@ -821,9 +932,18 @@ return (
           <button onClick={() => setShowAddFreezer(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Product</button>
         </div>
 
+        {/* Tabs */}
+        <div className="flex border-b border-zinc-200">
+            {tabs.map(tab => (
+                <button key={tab} onClick={() => setFreezerTab(tab)} className={`px-4 py-2 text-[13px] font-medium ${freezerTab === tab ? "border-b-2 border-zinc-900 text-zinc-900" : "text-zinc-500 hover:text-zinc-700"}`}>
+                    {tab}
+                </button>
+            ))}
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Products</div><div className="text-[24px] font-semibold mt-1">{stored.length}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Qty</div><div className="text-[24px] font-semibold mt-1">{myFreezer.reduce((s, i) => s + i.qty, 0)} pcs</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">{freezerTab}</div><div className="text-[24px] font-semibold mt-1">{filtered.length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Qty</div><div className="text-[24px] font-semibold mt-1">{filtered.reduce((s, i) => s + i.qty, 0)} pcs</div></div>
         </div>
 
         <div className="relative max-w-[280px]">

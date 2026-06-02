@@ -5,14 +5,17 @@ type Props = {
   productName: string;
   recipes: ProductRecipe[];
   inventory: InventoryItem[];
-  onSave: (originalName: string, newName: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedProduct: string[]) => void;
+  categories: string[];
+  initialCategory: string;
+  onSave: (originalName: string, newName: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedProduct: string[], category: string) => void;
   onClose: () => void;
 };
 
-export default function EditProductModal({ productName, recipes, inventory, onSave, onClose }: Props) {
+export default function EditProductModal({ productName, recipes, inventory, categories, initialCategory, onSave, onClose }: Props) {
   const existing = recipes.find(r => r.productName === productName);
 
   const [name, setName] = useState(productName);
+  const [category, setCategory] = useState(initialCategory);
   const [linkedProduct, setLinkedProduct] = useState<string[]>(existing?.linkedProduct || []);
   const [packagingItems, setPackagingItems] = useState<RecipeIngredient[]>(existing?.packagingMaterials || []);
   const [decorationItems, setDecorationItems] = useState<RecipeIngredient[]>(existing?.decorationSupplies || []);
@@ -45,7 +48,7 @@ export default function EditProductModal({ productName, recipes, inventory, onSa
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(productName, name.trim(), packagingItems, decorationItems, linkedProduct);
+    onSave(productName, name.trim(), packagingItems, decorationItems, linkedProduct, category);
   }
 
   return (
@@ -59,6 +62,14 @@ export default function EditProductModal({ productName, recipes, inventory, onSa
           <div className="mb-5">
             <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Product Name</label>
             <input required value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. Pandesal" autoFocus />
+          </div>
+
+          <div className="mb-4">
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Category</label>
+            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+              <option value="">No category</option>
+              {(categories || []).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
 
           <div className="mb-4">
