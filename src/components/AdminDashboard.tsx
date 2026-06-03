@@ -87,6 +87,7 @@ export default function AdminDashboard({
   const [expandedProdGroups, setExpandedProdGroups] = useState<Set<string>>(new Set());
   const toggleProdGroup = (date: string) => setExpandedProdGroups(prev => { const n = new Set(prev); if (n.has(date)) n.delete(date); else n.add(date); return n; });
   const [showAllProdHistory, setShowAllProdHistory] = useState(false);
+  const [showAllDOSHistory, setShowAllDOSHistory] = useState(false);
   const [historyDateFilter, setHistoryDateFilter] = useState("");
   const [editingDOS, setEditingDOS] = useState<DOSItem | null>(null);
   const [scheduledAddDate, setScheduledAddDate] = useState<string | null>(null);
@@ -2136,10 +2137,10 @@ return (
         {/* Tab Navigation */}
         <div className="flex gap-1 border-b border-zinc-200">
           {[
+            { id: "analytics", label: "Sales Analytics", count: null },
             { id: "purchases", label: "Purchases", count: purchases.length },
             { id: "bills", label: "Bills & Dues", count: billsAndDues.length },
             { id: "revenue", label: "Revenue", count: revenue.length },
-            { id: "analytics", label: "Sales Analytics", count: null },
             { id: "waste", label: "Waste Log", count: wasteLog.length },
           ].map(tab => (
             <button key={tab.id} onClick={() => { setFinanceTab(tab.id as any); setFinanceSearch(""); }} className={
@@ -2150,31 +2151,265 @@ return (
         </div>
 
         {/* Tab Content */}
-        {financeTab === "purchases" && (
-          <div className="space-y-4">
-             {/* Purchases Tab Content */}
-          </div>
-        )}
-        {financeTab === "bills" && (
-          <div className="space-y-4">
-             {/* Bills Tab Content */}
-          </div>
-        )}
-        {financeTab === "revenue" && (
-          <div className="space-y-4">
-             {/* Revenue Tab Content */}
-          </div>
-        )}
-        {financeTab === "analytics" && (
-          <div className="space-y-6">
-             {/* Analytics Tab Content */}
-          </div>
-        )}
-        {financeTab === "waste" && (
-          <div className="space-y-4">
-             {/* Waste Log Tab Content */}
-          </div>
-        )}
+  
+
+
+        {financeTab === "analytics" && (() => {
+          const purchaseData = [...filteredPurchases];
+          const billData = [...filteredBills];
+          const revenueData = [...filteredRevenue];
+          const wasteData = [...filteredWaste];
+
+          const totalRev = revenueData.reduce((s, r) => s + r.amount, 0);
+          const totalPur = purchaseData.reduce((s, p) => s + p.amount, 0);
+          const totalBill = billData.reduce((s, b) => s + b.amount, 0);
+          const totalWaste = wasteData.reduce((s, w) => s + w.totalCost, 0);
+          const netIncome = totalRev - totalPur - totalBill - totalWaste;
+          const activeDays = new Set(revenueData.map(r => r.date)).size;
+          const avgDailyRev = activeDays > 0 ? totalRev / activeDays : 0;
+          const topRevenueSource = revenueData.length > 0
+            ? Object.entries(revenueData.reduce((acc, r) => ({ ...acc, [r.source]: (acc[r.source] || 0) + r.amount }), {} as Record<string, number>))
+                .sort((a, b) => b[1] - a[1])[0]?.[0] || "N/A"
+            : "N/A";
+
+          const byDate = revenueData.reduce((acc, r) => { const d = r.date; acc[d] = (acc[d] || 0) + r.amount; return acc; }, {} as Record<string, number>);
+          const revenueByDate = Object.entries(byDate).map(([date, amount]) => ({ date, amount })).sort((a, b) => a.date.localeCompare(b.date));
+
+          const bySource = revenueData.reduce((acc, r) => { acc[r.source] = (acc[r.source] || 0) + r.amount; return acc; }, {} as Record<string, number>);
+          const sourceData = Object.entries(bySource).map(([source, amount]) => ({ source, amount })).sort((a, b) => b.amount - a.amount);
+
+          const bySupplier = purchaseData.reduce((acc, p) => { acc[p.supplierName] = (acc[p.supplierName] || 0) + p.amount; return acc; }, {} as Record<string, number>);
+          const supplierData = Object.entries(bySupplier).map(([supplier, amount]) => ({ supplier, amount })).sort((a, b) => b.amount - a.amount).slice(0, 6);
+
+          const byBillCategory = billData.reduce((acc, b) => { const cat = b.category || "Uncategorized"; acc[cat] = (acc[cat] || 0) + b.amount; return acc; }, {} as Record<string, number>);
+          const billCategoryData = Object.entries(byBillCategory).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+
+          const byBillStatus = billData.reduce((acc, b) => { const st = b.status || "unknown"; acc[st] = (acc[st] || 0) + b.amount; return acc; }, {} as Record<string, number>);
+          const billStatusData = Object.entries(byBillStatus).map(([status, amount]) => ({ status, amount })).sort((a, b) => b.amount - a.amount);
+
+
+          const byParticular = revenueData.reduce((acc, r) => { const p = r.particular || "Unspecified"; acc[p] = (acc[p] || 0) + r.amount; return acc; }, {} as Record<string, number>);
+          const particularData = Object.entries(byParticular).map(([product, amount]) => ({ product, amount })).sort((a, b) => b.amount - a.amount).slice(0, 6);
+
+          const byWasteProduct = wasteData.reduce((acc, w) => { acc[w.product] = (acc[w.product] || 0) + w.totalCost; return acc; }, {} as Record<string, number>);
+          const wasteProductData = Object.entries(byWasteProduct).map(([product, amount]) => ({ product, amount })).sort((a, b) => b.amount - a.amount).slice(0, 6);
+
+          const byPurParticular = purchaseData.reduce((acc, p) => { const pt = p.particular || "Unspecified"; acc[pt] = (acc[pt] || 0) + p.amount; return acc; }, {} as Record<string, number>);
+          const purParticularData = Object.entries(byPurParticular).map(([product, amount]) => ({ product, amount })).sort((a, b) => b.amount - a.amount).slice(0, 6);
+
+          const COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6', '#6366f1', '#84cc16', '#06b6d4'];
+          const fmt = (n: number) => "\u20b1" + n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const maxRevenue = particularData[0]?.amount || 1;
+          const maxWaste = wasteProductData[0]?.amount || 1;
+          const maxPur = purParticularData[0]?.amount || 1;
+
+          return (
+            <div className="space-y-6">
+
+              {/* Quick Summary - 3 compact stat cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-xl border border-zinc-200 bg-gradient-to-br from-emerald-50 to-white p-4">
+                  <div className="text-[11px] font-medium text-emerald-600 uppercase tracking-wider">Net Income</div>
+                  <div className={"text-[22px] font-bold mt-0.5 " + (netIncome >= 0 ? "text-emerald-700" : "text-red-700")}>
+                    {netIncome >= 0 ? "+" : ""}{fmt(netIncome)}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 mt-1">
+                    Revenue {fmt(totalRev)} - Expenses {fmt(totalPur + totalBill + totalWaste)}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-zinc-200 bg-white p-4">
+                  <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Top Revenue Source</div>
+                  <div className="text-[22px] font-bold text-zinc-800 mt-0.5 truncate" title={topRevenueSource}>{topRevenueSource}</div>
+                  <div className="text-[10px] text-zinc-400 mt-1">
+                    Avg. {fmt(avgDailyRev)}/day  {activeDays} active day{activeDays !== 1 ? 's' : ''}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-zinc-200 bg-white p-4">
+                  <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Total Revenue</div>
+                  <div className="text-[22px] font-bold text-zinc-800 mt-0.5">{fmt(totalRev)}</div>
+                  <div className="text-[10px] text-zinc-400 mt-1">
+                    {revenueData.length} transaction{revenueData.length !== 1 ? 's' : ''}  {sourceData.length} source{sourceData.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              </div>
+
+              {/* Revenue Trends */}
+              <div>
+                <h3 className="text-[12px] font-semibold text-zinc-500 uppercase tracking-widest mb-3">Revenue Trends</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm lg:col-span-2">
+                    <h4 className="mb-3 text-[13px] font-semibold text-zinc-800">Daily Revenue</h4>
+                    {revenueByDate.length > 0 ? (
+                      <div className="h-[200px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={revenueByDate}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                            <XAxis dataKey="date" fontSize={9} tickFormatter={v => { try { const d = new Date(v + "T00:00:00"); return d.toLocaleDateString("en-PH", { month: "short", day: "numeric" }); } catch(e) { return v; }}} />
+                            <YAxis fontSize={9} tickFormatter={v => "\u20b1" + (v >= 1000 ? (v/1000).toFixed(1) + "k" : v)} />
+                            <Tooltip formatter={(value: any) => [fmt(value), "Revenue"]} labelFormatter={v => { try { const d = new Date(v + "T00:00:00"); return d.toLocaleDateString("en-PH", { weekday: "short", month: "long", day: "numeric", year: "numeric" }); } catch(e) { return v; }}} />
+                            <Line type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={2} dot={{ r: 2, fill: "#10b981" }} activeDot={{ r: 4 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="flex h-[200px] items-center justify-center text-[12px] text-zinc-400">No revenue data for this period</div>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+                    <h4 className="mb-3 text-[13px] font-semibold text-zinc-800">Revenue by Source</h4>
+                    {sourceData.length > 0 ? (
+                      <div className="h-[200px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={sourceData} dataKey="amount" nameKey="source" cx="50%" cy="50%" outerRadius={60} label={({ percent }) => `${((percent || 0) * 100).toFixed(0)}%`}>
+                              {sourceData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                            </Pie>
+                            <Tooltip formatter={(value: any) => [fmt(value), "Amount"]} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <div className="flex h-[200px] items-center justify-center text-[12px] text-zinc-400">No data</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Expense Breakdown */}
+              {(supplierData.length > 0 || billCategoryData.length > 0) && (
+                <div>
+                  <h3 className="text-[12px] font-semibold text-zinc-500 uppercase tracking-widest mb-3">Expense Breakdown</h3>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {supplierData.length > 0 && (
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+                        <h4 className="mb-3 text-[13px] font-semibold text-zinc-800">Top Suppliers</h4>
+                        <div className="space-y-2.5">
+                          {supplierData.map((item, i) => (
+                            <div key={item.supplier} className="flex items-center gap-2">
+                              <span className="w-4 text-[10px] font-mono text-zinc-400 text-right shrink-0">{i + 1}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-medium text-zinc-700 truncate">{item.supplier}</span>
+                                  <span className="text-[10px] font-medium text-zinc-500 shrink-0 ml-2">{fmt(item.amount)}</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-zinc-100 mt-1 overflow-hidden">
+                                  <div className="h-full rounded-full bg-orange-400" style={{ width: Math.max(3, (item.amount / supplierData[0].amount) * 100) + "%" }} />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {billCategoryData.length > 0 && (
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+                        <h4 className="mb-3 text-[13px] font-semibold text-zinc-800">Bills by Category</h4>
+                        <div className="h-[200px] w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie data={billCategoryData} dataKey="amount" nameKey="category" cx="50%" cy="50%" outerRadius={60} label={({ percent }) => `${((percent || 0) * 100).toFixed(0)}%`}>
+                                {billCategoryData.map((_, i) => <Cell key={i} fill={COLORS[(i + 3) % COLORS.length]} />)}
+                              </Pie>
+                              <Tooltip formatter={(value: any) => [fmt(value), "Amount"]} />
+                              <Legend fontSize={8} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+                    {billStatusData.length > 0 && (
+                      <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+                        <h4 className="mb-3 text-[13px] font-semibold text-zinc-800">Bills by Status</h4>
+                        <div className="h-[200px] w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie data={billStatusData} dataKey="amount" nameKey="status" cx="50%" cy="50%" outerRadius={60} label={({ percent }) => `${((percent || 0) * 100).toFixed(0)}%`}>
+                                {billStatusData.map((_, i) => <Cell key={i} fill={COLORS[(i + 6) % COLORS.length]} />)}
+                              </Pie>
+                              <Tooltip formatter={(value: any) => [fmt(value), "Amount"]} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Top Items */}
+              <div>
+                <h3 className="text-[12px] font-semibold text-zinc-500 uppercase tracking-widest mb-3">Top Items</h3>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {particularData.length > 0 && (
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+                      <h4 className="mb-3 text-[13px] font-semibold text-zinc-800">Revenue</h4>
+                      <div className="space-y-2.5">
+                        {particularData.map((item, i) => (
+                          <div key={item.product} className="flex items-center gap-2">
+                            <span className="w-4 text-[10px] font-mono text-zinc-400 text-right shrink-0">{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-zinc-700 truncate">{item.product}</span>
+                                <span className="text-[10px] font-medium text-zinc-500 shrink-0 ml-2">{fmt(item.amount)}</span>
+                              </div>
+                              <div className="h-1.5 rounded-full bg-zinc-100 mt-1 overflow-hidden">
+                                <div className="h-full rounded-full bg-emerald-400" style={{ width: Math.max(3, (item.amount / maxRevenue) * 100) + "%" }} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {purParticularData.length > 0 && (
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+                      <h4 className="mb-3 text-[13px] font-semibold text-zinc-800">Purchases</h4>
+                      <div className="space-y-2.5">
+                        {purParticularData.map((item, i) => (
+                          <div key={item.product} className="flex items-center gap-2">
+                            <span className="w-4 text-[10px] font-mono text-zinc-400 text-right shrink-0">{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-zinc-700 truncate">{item.product}</span>
+                                <span className="text-[10px] font-medium text-zinc-500 shrink-0 ml-2">{fmt(item.amount)}</span>
+                              </div>
+                              <div className="h-1.5 rounded-full bg-zinc-100 mt-1 overflow-hidden">
+                                <div className="h-full rounded-full bg-red-400" style={{ width: Math.max(3, (item.amount / maxPur) * 100) + "%" }} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {wasteProductData.length > 0 && (
+                    <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+                      <h4 className="mb-3 text-[13px] font-semibold text-zinc-800">Waste</h4>
+                      <div className="space-y-2.5">
+                        {wasteProductData.map((item, i) => (
+                          <div key={item.product} className="flex items-center gap-2">
+                            <span className="w-4 text-[10px] font-mono text-zinc-400 text-right shrink-0">{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-zinc-700 truncate">{item.product}</span>
+                                <span className="text-[10px] font-medium text-zinc-500 shrink-0 ml-2">{fmt(item.amount)}</span>
+                              </div>
+                              <div className="h-1.5 rounded-full bg-zinc-100 mt-1 overflow-hidden">
+                                <div className="h-full rounded-full bg-purple-400" style={{ width: Math.max(3, (item.amount / maxWaste) * 100) + "%" }} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          );
+        })()}
+
 
         {/* Purchases Tab */}
         {financeTab === "purchases" && (

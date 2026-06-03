@@ -77,19 +77,25 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
       roles: Array.from(selectedRoles),
     }));
 
-    const tasks: ProductionTask[] = [];
+    const tasksMap = new Map<string, { product: string; role: "baker" | "pastry" | "deco" | "kitchen"; target: number; itemIdx: number }>();
     items.forEach((item, itemIdx) => {
-      [...selectedRoles].forEach((role, roleIdx) => {
-        tasks.push({
-          id: `PRD-${ts}-${itemIdx}-${roleIdx}`,
-          product: item.product,
-          target: item.qty,
-          completed: 0,
-          assignedTo: role as "baker" | "pastry" | "deco" | "kitchen",
-          status: "pending" as const,
-        });
+      [...selectedRoles].forEach((role) => {
+        const key = `${item.product}|${role}`;
+        if (tasksMap.has(key)) {
+          tasksMap.get(key)!.target += item.qty;
+        } else {
+          tasksMap.set(key, { product: item.product, role: role, target: item.qty, itemIdx });
+        }
       });
     });
+    const tasks: ProductionTask[] = [...tasksMap.entries()].map(([key, val], idx) => ({
+      id: `PRD-${ts}-${val.itemIdx}-${idx}`,
+      product: val.product,
+      target: val.target,
+      completed: 0,
+      assignedTo: val.role,
+      status: "pending" as const,
+    }));
 
     onSave(items, tasks);
     };

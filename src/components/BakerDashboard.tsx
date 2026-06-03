@@ -14,6 +14,7 @@ type Props = {
   freezerItems?: FreezerItem[];
   onUpdateFreezer?: (cb: FreezerItem[] | ((prev: FreezerItem[]) => FreezerItem[])) => void;
   freezerHistory?: FreezerHistory[];
+  inventory?: InventoryItem[];
 };
 
 const steps = [
@@ -22,7 +23,7 @@ const steps = [
   { id: "freezer", label: "Store to Freezer" },
 ];
 
-export default function BakerDashboard({ production, dosItems, onCompleteTask, activeTab, productCatalog, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [] }: Props) {
+export default function BakerDashboard({ production, dosItems, onCompleteTask, activeTab, productCatalog, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], inventory = [] }: Props) {
   const [step, setStep] = useState(0);
   const [ingredientReqs, setIngredientReqs] = useState<BakerIngredientRequest[]>([]);
   const [sent, setSent] = useState(false);
@@ -41,7 +42,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const [newBatch, setNewBatch] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [freezerSearch, setFreezerSearch] = useState("");
-  const [freezerTab, setFreezerTab] = useState<"products" | "history">("products");
+  const [freezerTab, setFreezerTab] = useState<"baked-products" | "my-inventory" | "deco-cake-freezer">("baked-products");
 
   useEffect(() => {
     db.fetchBakerIngredientRequests().then(setIngredientReqs).catch(() => {});
@@ -90,9 +91,12 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
 
   /* ── Freezer Tab ── */
   if (activeTab === "freezer") {
-    const myFreezer = freezerItems.filter(i => i.producedBy === "baker");
-    const stored = myFreezer.filter(i => i.status === "stored");
-    const filtered = myFreezer.filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()));
+    const bakerItems = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored");
+    const bakerAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"));
+    const decoItems = freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored");
+
+    const tabItems = freezerTab === "baked-products" ? bakerItems : freezerTab === "my-inventory" ? bakerAccessInventory : decoItems;
+    const filtered = tabItems.filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()));
 
     const handleAdd = () => {
       if (!newProduct.trim() || !newQty) return;
@@ -113,22 +117,25 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       setNewProduct(""); setNewQty(""); setNewBatch(""); setNewNotes("");
     };
 
+    const canEdit = (item: FreezerItem) => item.producedBy === "baker";
+
     return (
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <div><h1 className="text-[24px] font-semibold">Freezer — Finished Products</h1><p className="mt-1 text-[13px] text-zinc-600">Track baked products ready for dispatch.</p></div>
+          <div><h1 className="text-[24px] font-semibold">Freezer</h1><p className="mt-1 text-[13px] text-zinc-600">Browse all freezer stocks by category.</p></div>
           <button onClick={() => setShowAddFreezer(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Product</button>
         </div>
 
         <div className="flex gap-1.5 rounded-xl bg-zinc-100 p-1">
-          <button onClick={() => setFreezerTab("products")} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerTab === "products" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>Products</button>
-          <button onClick={() => setFreezerTab("history")} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerTab === "history" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>History</button>
+          <button onClick={() => setFreezerTab("baked-products")} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerTab === "baked-products" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>Baked Products</button>
+          <button onClick={() => setFreezerTab("my-inventory")} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerTab === "my-inventory" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>My Inventory</button>
+          <button onClick={() => setFreezerTab("deco-cake-freezer")} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerTab === "deco-cake-freezer" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>Deco Cake Freezer</button>
         </div>
 
-        {freezerTab === "products" ? (<>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Products</div><div className="text-[24px] font-semibold mt-1">{stored.length}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Qty</div><div className="text-[24px] font-semibold mt-1">{myFreezer.reduce((s, i) => s + i.qty, 0)} pcs</div></div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Baked Products</div><div className="text-[24px] font-semibold mt-1">{bakerItems.length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">My Inventory</div><div className="text-[24px] font-semibold mt-1">{bakerAccessInventory.length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Deco Cakes</div><div className="text-[24px] font-semibold mt-1">{decoItems.length}</div></div>
         </div>
 
         <div className="relative max-w-[280px]">
@@ -143,54 +150,55 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                   <th className="px-5 py-3">Product</th>
                   <th className="px-5 py-3 text-right">Qty</th>
-                  <th className="px-5 py-3">Batch</th>
-                  <th className="px-5 py-3">Date</th>
-                  <th className="px-5 py-3 text-center">Status</th>
+                  {freezerTab !== "my-inventory" && <th className="px-5 py-3">Batch</th>}
+                  <th className="px-5 py-3">{freezerTab === "my-inventory" ? "Category" : "Date"}</th>
+                  <th className="px-5 py-3">Section</th>
                   <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-50">
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No products in freezer.</td></tr>
-                ) : filtered.map(item => (
-                  <tr key={item.id} className="hover:bg-zinc-50/50 transition-colors">
-                    <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{item.productName}</div>{item.notes && <div className="text-[11px] text-zinc-400 mt-0.5">{item.notes}</div>}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty} {item.unit}</td>
-                    <td className="px-5 py-3.5 text-[12px] text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.batchRef || "—"}</td>
-                    <td className="px-5 py-3.5 text-[12px] text-zinc-500">{item.dateProduced}</td>
-                    <td className="px-5 py-3.5 text-center"><span className="text-[11px] text-emerald-600 font-medium">✓ In Stock</span></td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button onClick={() => { setEditingFreezerItem(item); setShowEditFreezer(true); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50">Edit</button>
-                        <button onClick={() => { if (confirm(`Delete ${item.productName}?`)) { const updated = freezerItems.filter(f => f.id !== item.id); onUpdateFreezer?.(updated); db.deleteFreezerItem(item.id).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                  <tr><td colSpan={freezerTab === "my-inventory" ? 5 : 6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No items in this section.</td></tr>
+                ) : filtered.map(item => {
+                  if (freezerTab === "my-inventory") {
+                    const inv = item as unknown as InventoryItem;
+                    return (
+                      <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
+                        <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{inv.name}</div></td>
+                        <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{inv.onHand} {inv.unit}</td>
+                        <td className="px-5 py-3.5 text-[12px] text-zinc-500">{inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
+                        <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.group}</span></td>
+                        <td className="px-5 py-3.5 text-right">
+                          <span className="text-[11px] text-zinc-400">View only</span>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  const frz = item as FreezerItem;
+                  return (
+                    <tr key={frz.id} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{frz.productName}</div>{frz.notes && <div className="text-[11px] text-zinc-400 mt-0.5">{frz.notes}</div>}</td>
+                      <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{frz.qty} {frz.unit}</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{frz.batchRef || "—"}</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{frz.dateProduced}</td>
+                      <td className="px-5 py-3.5"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${frz.producedBy === "baker" ? "bg-amber-50 text-amber-700" : frz.producedBy === "deco" ? "bg-rose-50 text-rose-700" : "bg-zinc-100 text-zinc-600"}`}>{frz.producedBy === "baker" ? "Baker" : frz.producedBy === "deco" ? "Deco" : frz.producedBy}</span></td>
+                      <td className="px-5 py-3.5 text-right">
+                        {canEdit(frz) ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button onClick={() => { setEditingFreezerItem(frz); setShowEditFreezer(true); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50">Edit</button>
+                            <button onClick={() => { if (confirm(`Delete ${frz.productName}?`)) { const updated = freezerItems.filter(f => f.id !== frz.id); onUpdateFreezer?.(updated); db.deleteFreezerItem(frz.id).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del</button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-zinc-400">View only</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
-        </>) : (
-        <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-          <h2 className="text-[16px] font-semibold mb-3">Dispatch History</h2>
-          {freezerHistory.filter(h => h.producedBy === "baker").length === 0 ? (
-            <p className="text-[13px] text-zinc-400 text-center py-6">No history yet.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {freezerHistory.filter(h => h.producedBy === "baker").map(h => (
-                <div key={h.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 bg-zinc-50/60 px-4 py-3">
-                  <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-medium">{h.action}</span>
-                  <span className="text-[13px] font-medium text-zinc-900">{h.productName}</span>
-                  <span className="text-[12px] text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{h.qtyChanged} pcs</span>
-                  <span className="text-[11px] text-zinc-400">{h.reference}</span>
-                  <span className="ml-auto text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{h.timestamp}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        )}
 
         {showAddFreezer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddFreezer(false)}>

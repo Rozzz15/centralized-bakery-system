@@ -909,16 +909,21 @@ return (
   /* ── Freezer Tab ── */
   if (activeTab === "freezer") {
     const myFreezer = freezerItems.filter(i => i.producedBy === "deco");
+    const decoOnlyInventory = inventory.filter(i => i.accessRoles?.includes("deco"));
     
     // Categorization logic
     const tabs: ("Display Cakes" | "Production Recipe" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "My Inventory"];
     const getFilteredItems = () => {
-        if (freezerTab === "Display Cakes") return myFreezer.filter(i => i.notes?.toLowerCase().includes("cake") || i.productName.toLowerCase().includes("cake"));
+        if (freezerTab === "Display Cakes") return myFreezer;
         if (freezerTab === "Production Recipe") return myFreezer.filter(i => i.batchRef !== "");
-        return myFreezer; // My Inventory
+        return decoOnlyInventory as unknown as FreezerItem[]; // My Inventory — cast to share table type
     };
     
-    const filtered = getFilteredItems().filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()));
+    const isInventoryTab = freezerTab === "My Inventory";
+    const filtered = (isInventoryTab
+      ? (getFilteredItems() as unknown as InventoryItem[]).filter(i => !freezerSearch || i.name.toLowerCase().includes(freezerSearch.toLowerCase()))
+      : getFilteredItems().filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()))
+    );
 
     return (
       <div className="space-y-5">
@@ -938,47 +943,83 @@ return (
 
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">{freezerTab}</div><div className="text-[24px] font-semibold mt-1">{filtered.length}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Qty</div><div className="text-[24px] font-semibold mt-1">{filtered.reduce((s, i) => s + i.qty, 0)} pcs</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">{isInventoryTab ? "Total Stock" : "Total Qty"}</div>
+            <div className="text-[24px] font-semibold mt-1">
+              {isInventoryTab
+                ? `${(filtered as unknown as InventoryItem[]).reduce((s, i) => s + i.onHand, 0)} units`
+                : `${(filtered as FreezerItem[]).reduce((s, i) => s + i.qty, 0)} pcs`}
+            </div>
+          </div>
         </div>
 
         <div className="relative max-w-[280px]">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
-          <input value={freezerSearch} onChange={e => setFreezerSearch(e.target.value)} placeholder="Search products..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+          <input value={freezerSearch} onChange={e => setFreezerSearch(e.target.value)} placeholder={isInventoryTab ? "Search inventory..." : "Search products..."} className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
         </div>
 
         <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-zinc-50 border-b border-zinc-100">
-                <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                  <th className="px-5 py-3">Product</th>
-                  <th className="px-5 py-3 text-right">Qty</th>
-                  <th className="px-5 py-3">Batch</th>
-                  <th className="px-5 py-3">Date</th>
-                  <th className="px-5 py-3 text-center">Status</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-50">
-                {filtered.length === 0 ? (
-                  <tr><td colSpan={6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No products in freezer.</td></tr>
-                ) : filtered.map(item => (
-                  <tr key={item.id} className="hover:bg-zinc-50/50 transition-colors">
-                    <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{item.productName}</div>{item.notes && <div className="text-[11px] text-zinc-400 mt-0.5">{item.notes}</div>}</td>
-                    <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty} {item.unit}</td>
-                    <td className="px-5 py-3.5 text-[12px] text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.batchRef || "—"}</td>
-                    <td className="px-5 py-3.5 text-[12px] text-zinc-500">{item.dateProduced}</td>
-                    <td className="px-5 py-3.5 text-center"><span className="text-[11px] text-emerald-600 font-medium">✓ In Stock</span></td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button onClick={() => { setEditingFreezerItem(item); setShowEditFreezer(true); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50">Edit</button>
-                        <button onClick={() => { if (confirm(`Delete ${item.productName}?`)) { const updated = freezerItems.filter(f => f.id !== item.id); onUpdateFreezer?.(updated); db.deleteFreezerItem(item.id).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del</button>
-                      </div>
-                    </td>
+            {isInventoryTab ? (
+              <table className="w-full text-left">
+                <thead className="bg-zinc-50 border-b border-zinc-100">
+                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                    <th className="px-5 py-3">Name</th>
+                    <th className="px-5 py-3">SKU</th>
+                    <th className="px-5 py-3 text-right">On Hand</th>
+                    <th className="px-5 py-3 text-right">Threshold</th>
+                    <th className="px-5 py-3">Unit</th>
+                    <th className="px-5 py-3">Section</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-zinc-50">
+                  {(filtered as unknown as InventoryItem[]).length === 0 ? (
+                    <tr><td colSpan={6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No inventory items with deco-only access.</td></tr>
+                  ) : (filtered as unknown as InventoryItem[]).map(inv => (
+                    <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{inv.name}</div></td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{inv.sku}</td>
+                      <td className="px-5 py-3.5 text-[13px] text-right font-mono" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand}</td>
+                      <td className="px-5 py-3.5 text-[13px] text-right font-mono text-zinc-500">{inv.threshold}</td>
+                      <td className="px-5 py-3.5 text-[13px] text-zinc-500">{inv.unit}</td>
+                      <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.group.replace(/-/g, ' ')}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-left">
+                <thead className="bg-zinc-50 border-b border-zinc-100">
+                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                    <th className="px-5 py-3">Product</th>
+                    <th className="px-5 py-3 text-right">Qty</th>
+                    <th className="px-5 py-3">Batch</th>
+                    <th className="px-5 py-3">Date</th>
+                    <th className="px-5 py-3 text-center">Status</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50">
+                  {(filtered as FreezerItem[]).length === 0 ? (
+                    <tr><td colSpan={6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No products in freezer.</td></tr>
+                  ) : (filtered as FreezerItem[]).map(item => (
+                    <tr key={item.id} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{item.productName}</div>{item.notes && <div className="text-[11px] text-zinc-400 mt-0.5">{item.notes}</div>}</td>
+                      <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty} {item.unit}</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.batchRef || "—"}</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{item.dateProduced}</td>
+                      <td className="px-5 py-3.5 text-center"><span className="text-[11px] text-emerald-600 font-medium">✓ In Stock</span></td>
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button onClick={() => { setEditingFreezerItem(item); setShowEditFreezer(true); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50">Edit</button>
+                          <button onClick={() => { if (confirm(`Delete ${item.productName}?`)) { const updated = freezerItems.filter(f => f.id !== item.id); onUpdateFreezer?.(updated); db.deleteFreezerItem(item.id).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 

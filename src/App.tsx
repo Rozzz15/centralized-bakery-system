@@ -164,7 +164,8 @@ async function seedIfEmpty() {
   // Finance seed data
   const existingPurchases = await db.fetchPurchases();
   if (existingPurchases.length === 0) {
-    //     const now = new Date().toISOString();
+    const [existingBills, existingRevenue, existingWaste] = await Promise.all([db.fetchBillsAndDues(), db.fetchRevenue(), db.fetchWasteLog()]);
+    // const now = new Date().toISOString();
     const demoPurchases = [
       { id: `FIN-P-${Date.now()}-1`, supplierName: "Golden Mill", modeOfPayment: "check" as const, dateDelivered: "2026-05-25", particular: "Bread Flour 500kg", amount: 24000, dueDate: "2026-06-25", releasedDate: "2026-05-25", paymentStatus: "paid" as const, remarks: "Regular flour order" },
       { id: `FIN-P-${Date.now()}-2`, supplierName: "DairyCo", modeOfPayment: "cash" as const, dateDelivered: "2026-05-26", particular: "Fresh Milk 200L + Butter 50kg", amount: 38000, dueDate: "2026-06-10", releasedDate: "", paymentStatus: "unpaid" as const, remarks: "Weekly dairy supply" },
@@ -193,12 +194,12 @@ async function seedIfEmpty() {
       { id: `FIN-W-${Date.now()}-3`, product: "Loaf Bread", qtyRejected: 5, unitCost: 48, totalCost: 240, reason: "Stale / not sold within 24hrs", source: "branch_return", referenceId: "BR1-RET-0530", date: "2026-05-30" },
       { id: `FIN-W-${Date.now()}-4`, product: "Ensaymada", qtyRejected: 8, unitCost: 35, totalCost: 280, reason: "Decoration fell off during transport", source: "kitchen_qc", referenceId: "QC-0530-01", date: "2026-05-30" },
     ];
-    await Promise.all([
-      db.upsertPurchases(demoPurchases),
-      db.upsertBillsAndDues(demoBills),
-      db.upsertRevenue(demoRevenue),
-      db.upsertWasteLog(demoWaste),
-    ]);
+    const seedPromises: Promise<void>[] = [];
+    if (existingPurchases.length === 0) seedPromises.push(db.upsertPurchases(demoPurchases));
+    if (existingBills.length === 0) seedPromises.push(db.upsertBillsAndDues(demoBills));
+    if (existingRevenue.length === 0) seedPromises.push(db.upsertRevenue(demoRevenue));
+    if (existingWaste.length === 0) seedPromises.push(db.upsertWasteLog(demoWaste));
+    if (seedPromises.length > 0) await Promise.all(seedPromises);
   }
   const existing = await db.fetchAllInventory();
   if (existing.length > 0) return;
@@ -323,10 +324,32 @@ export default function App() {
       if (freezer.length > 0) setFreezerItems(freezer);
       else setFreezerItems(freezer);
       if (fHistory.length > 0) setFreezerHistory(fHistory);
-      if (purch.length > 0) setPurchases(purch);
-      if (bills.length > 0) setBillsAndDues(bills);
-      if (rev.length > 0) setRevenue(rev);
-      if (waste.length > 0) setWasteLog(waste);
+      if (purch.length > 0) {
+        const seen = new Set<string>();
+        setPurchases(purch.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
+      } else { setPurchases(purch); }
+      if (bills.length > 0) {
+        const seen = new Set<string>();
+        setBillsAndDues(bills.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
+      } else { setBillsAndDues(bills); }
+      if (rev.length > 0) {
+        const seen = new Set<string>();
+        const deduped = rev.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
+        const refMap = new Map<string, typeof deduped[0]>();
+        for (const r of deduped) {
+          if (r.referenceId) {
+            const existing = refMap.get(r.referenceId);
+            if (!existing || (r.createdAt || "") > (existing.createdAt || "") || (r.amount > existing.amount)) {
+              refMap.set(r.referenceId, r);
+            }
+          }
+        }
+        setRevenue(deduped.filter(r => !r.referenceId || refMap.get(r.referenceId) === r));
+      } else { setRevenue(rev); }
+      if (waste.length > 0) {
+        const seen = new Set<string>();
+        setWasteLog(waste.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
+      } else { setWasteLog(waste); }
       return dos;
     } catch (err) {
       console.error("Failed to load data:", err);
@@ -355,7 +378,9 @@ export default function App() {
           const scheduled = loadedDOS.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
           if (scheduled.length > 0) {
             const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
-            const tasks: ProductionTask[] = updated.map((item, idx) => ({ id: `PRD-${Date.now()}-${idx}`, product: item.product, target: item.qty, completed: 0, assignedTo: "baker" as const, status: "in-progress" as const }));
+            const groupedMap = new Map<string, number>();
+            updated.forEach(item => groupedMap.set(item.product, (groupedMap.get(item.product) || 0) + item.qty));
+            const tasks: ProductionTask[] = [...groupedMap.entries()].map(([product, total], idx) => ({ id: `PRD-${Date.now()}-${idx}`, product, target: total, completed: 0, assignedTo: "baker" as const, status: "in-progress" as const }));
             await db.upsertDOS(updated);
             await db.upsertProduction(tasks);
             setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending", scheduledDate: undefined } : i));
@@ -419,10 +444,12 @@ export default function App() {
         const scheduled = prev.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
         if (scheduled.length === 0) return prev;
         const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
-        const tasks: ProductionTask[] = updated.map((item, idx) => ({
+        const groupMap = new Map<string, number>();
+        updated.forEach(item => groupMap.set(item.product, (groupMap.get(item.product) || 0) + item.qty));
+        const tasks: ProductionTask[] = [...groupMap.entries()].map(([product, total], idx) => ({
           id: `PRD-${Date.now()}-${idx}`,
-          product: item.product,
-          target: item.qty,
+          product,
+          target: total,
           completed: 0,
           assignedTo: "baker" as const,
           status: "in-progress" as const,
@@ -892,7 +919,7 @@ export default function App() {
               />
             )}
             {role === "baker" && ["dashboard", "freezer"].includes(activeTab) && (
-              <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
+              <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} />
             )}
             {role === "deco" && ["dashboard", "free-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer"].includes(activeTab) && (
               <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
