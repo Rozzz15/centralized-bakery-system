@@ -125,15 +125,29 @@ export default function AdminDashboard({
   const [newDeliveryBranch, setNewDeliveryBranch] = useState("Cakes N Styles Gensan");
   const [newDeliveryCustom, setNewDeliveryCustom] = useState("");
   const [newDeliveryDate, setNewDeliveryDate] = useState(new Date().toISOString().slice(0, 10));
-  const [newDeliveryItems, setNewDeliveryItems] = useState<{ product: string; qty: number }[]>([{ product: "", qty: 1 }]);
+  const [newDeliveryItems, setNewDeliveryItems] = useState<{ product: string; qty: number; price?: number }[]>([]);
   const [newDeliveryEta, setNewDeliveryEta] = useState("");
   const [expandedProducers, setExpandedProducers] = useState<Set<string>>(new Set());
   const [deliverySearch, setDeliverySearch] = useState<Record<string, string>>({});
   const [newDeliveryAddress, setNewDeliveryAddress] = useState("");
   const [newDeliveryContact, setNewDeliveryContact] = useState("");
   const [newDeliveryRider, setNewDeliveryRider] = useState("");
-  const [newDeliveryPayment, setNewDeliveryPayment] = useState<"unpaid" | "paid" | "cod">("unpaid");
+  const [newDeliveryPayment, setNewDeliveryPayment] = useState<"unpaid" | "paid" | "half">("unpaid");
+  const [newDeliveryMode, setNewDeliveryMode] = useState<"cash" | "check" | "online" | "bank">("cash");
+  const [newDeliveryAmount, setNewDeliveryAmount] = useState("");
   const [newDeliveryNotes, setNewDeliveryNotes] = useState("");
+  const [showDeliveryDetail, setShowDeliveryDetail] = useState(false);
+  const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
+
+  // Recalc item prices when destination changes
+  useEffect(() => {
+    const useWholesale = newDeliveryBranch === "__custom__";
+    setNewDeliveryItems(prev => prev.map(item => {
+      const pricing = productPricing.find(p => p.productName === item.product);
+      const defaultPrice = useWholesale ? (pricing?.wholesalePrice ?? 0) : (pricing?.sellingPrice ?? 0);
+      return { ...item, price: defaultPrice };
+    }));
+  }, [newDeliveryBranch, productPricing]);
 
   // Helper: filter DOS items created today (by timestamp in ID)
   const getTodayDOS = () => {
@@ -165,6 +179,7 @@ export default function AdminDashboard({
   const [expandedProdGroups, setExpandedProdGroups] = useState<Set<string>>(new Set());
   const toggleProdGroup = (date: string) => setExpandedProdGroups(prev => { const n = new Set(prev); if (n.has(date)) n.delete(date); else n.add(date); return n; });
   const [recipeSearch, setRecipeSearch] = useState("");
+  const [activeProductSubTab, setActiveProductSubTab] = useState("All");
 
   // Toasts
   type ToastItem = { name: string; detail: string };
@@ -216,6 +231,11 @@ export default function AdminDashboard({
   if (activeTab === "products") {
     const searchTerm = invSearch.toLowerCase();
     const filteredProducts = productCatalog.filter(p => {
+      const isCategoryMatch = activeProductSubTab === "All" || activeProductSubTab === "Products" ||
+        (activeProductSubTab === "Bakery" && recipes.some(r => r.productName === p)) ||
+        (activeProductSubTab === "Other" && !recipes.some(r => r.productName === p));
+
+      if (!isCategoryMatch) return false;
       if (!invSearch) return true;
       if (p.toLowerCase().includes(searchTerm)) return true;
       const recipe = recipes.find(r => r.productName === p);
@@ -241,13 +261,19 @@ export default function AdminDashboard({
           <button onClick={() => setShowAddProduct(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Product</button>
         </div>
 
-        <div className="relative max-w-xs">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
-          <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search products & recipes..." className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
+        <div className="flex items-center gap-2 border-b border-zinc-200 pb-1">
+          {["Products", "Recipes"].map(tab => (
+            <button key={tab} onClick={() => setActiveProductSubTab(tab)} className={`px-3 py-1.5 text-[13px] font-medium transition-colors ${activeProductSubTab === tab ? "text-zinc-900 border-b-2 border-zinc-900" : "text-zinc-500 hover:text-zinc-900"}`}>{tab}</button>
+          ))}
         </div>
 
-        {/* Products Table */}
-        <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
+        <div className="relative max-w-xs">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+          <input type="text" value={activeProductSubTab === "Recipes" ? recipeSearch : invSearch} onChange={e => activeProductSubTab === "Recipes" ? setRecipeSearch(e.target.value) : setInvSearch(e.target.value)} placeholder={`Search ${activeProductSubTab.toLowerCase()}...`} className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
+        </div>
+
+        {activeProductSubTab === "Products" && (
+          <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
@@ -262,14 +288,6 @@ export default function AdminDashboard({
                         <div className="font-medium text-zinc-900">{product}</div>
                       </td>
                       <td className="px-4 py-3">
-                        {recipe && recipe.ingredients.length > 0 && (
-                          <button
-                            onClick={() => { setRecipeProduct(product); setShowRecipe(true); }}
-                            className="text-[12px] font-medium text-blue-600 hover:text-blue-800 transition-all text-left"
-                          >
-                            View Ingredients
-                          </button>
-                        )}
                         {recipe?.linkedProduct && recipe.linkedProduct.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {recipe.linkedProduct.map(lp => (
@@ -310,167 +328,144 @@ export default function AdminDashboard({
             </div>
           )}
         </div>
+        )}
 
-        {/* Recipes Section */}
-        <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
-          <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3 flex-wrap">
-            <h2 className="text-[16px] font-semibold shrink-0">Recipes <span className="text-[13px] font-normal text-zinc-400">({recipes.length})</span></h2>
-            <div className="relative flex-1 max-w-xs min-w-[160px]">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
-              <input type="text" value={recipeSearch} onChange={e => setRecipeSearch(e.target.value)} placeholder="Search recipes..." className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
-            </div>
-            <button onClick={() => { setRecipeProduct(""); setShowRecipe(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 shrink-0">+ Add Recipe</button>
-          </div>
-          {recipes.length === 0 ? (
-            <div className="px-5 pb-5">
-              <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center">
-                <p className="text-[13px] text-zinc-500">No recipes yet. Select a product above to add ingredients.</p>
-              </div>
-            </div>
-          ) : (() => {
-            const filteredRecipes = !recipeSearch ? recipes : recipes.filter(r =>
-              r.productName.toLowerCase().includes(recipeSearch.toLowerCase())
-            );
-            return (
-            <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                  <tr><th className="px-4 py-3">Recipe Name</th><th className="px-4 py-3">Items</th><th className="px-4 py-3">Linked Product</th><th className="px-4 py-3">Notes</th><th className="px-4 py-3 text-right">Cost</th><th className="px-4 py-3 w-32" /></tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 text-[13px]">
-                  {filteredRecipes.map(recipe => {
-                    const cost = computeRecipeCost(recipe);
-                    return (
-                      <tr key={recipe.productName} className="hover:bg-zinc-50/60">
-                        <td className="px-4 py-3"><div className="font-medium text-zinc-900">{recipe.productName}</div></td>
-                        <td className="px-4 py-3 text-[12px] text-zinc-600">{recipe.ingredients.length} ingredient{recipe.ingredients.length !== 1 ? "s" : ""}</td>
-                        <td className="px-4 py-3">
-                          {(recipe.linkedProduct?.length ?? 0) > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {(recipe.linkedProduct ?? []).map(lp => (
-                                <span key={lp} className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700">{lp}</span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">{recipe.productName}</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-[12px] text-zinc-500">{recipe.notes || "—"}</td>
-                        <td className="px-4 py-3 text-right text-[12px] font-medium text-zinc-700" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                          ₱{cost.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center gap-1 justify-end">
-                            <button onClick={() => { setRecipeProduct(recipe.productName); setShowRecipe(true); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
-                            <button onClick={() => { if (confirm(`Delete recipe "${recipe.productName}"?`)) { onUpdateRecipes(prev => prev.filter(r => r.productName !== recipe.productName)); db.deleteRecipe(recipe.productName).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {filteredRecipes.length === 0 && recipeSearch && (
-              <div className="px-5 pb-5">
-                <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center">
-                  <p className="text-[13px] text-zinc-400">No recipes match "{recipeSearch}".</p>
+          {activeProductSubTab === "Recipes" && (
+            <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
+              {recipes.length === 0 ? (
+                <div className="px-5 pb-5">
+                  <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center">
+                    <p className="text-[13px] text-zinc-500">No recipes yet. Select a product above to add ingredients.</p>
+                  </div>
                 </div>
-              </div>
-            )}
-            </>
-          );
-            })()}
-        </div>
+              ) : (() => {
+                const filteredRecipes = !recipeSearch ? recipes : recipes.filter(r =>
+                  r.productName.toLowerCase().includes(recipeSearch.toLowerCase())
+                );
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[13px]">
+                      <thead className="bg-zinc-50/50 text-zinc-500">
+                        <tr>
+                          <th className="px-4 py-3">Recipe</th>
+                          <th className="px-4 py-3">Items</th>
+                          <th className="px-4 py-3">Linked Product</th>
+                          <th className="px-4 py-3">Notes</th>
+                          <th className="px-4 py-3 text-right">Cost</th>
+                          <th className="px-4 py-3 w-32" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-100">
+                        {filteredRecipes.map(recipe => (
+                          <tr key={recipe.productName} className="hover:bg-zinc-50/60">
+                            <td className="px-4 py-3 font-medium text-zinc-900">{recipe.productName}</td>
+                            <td className="px-4 py-3 text-zinc-600">{recipe.ingredients.length} items</td>
+                            <td className="px-4 py-3 text-zinc-600">{recipe.linkedProduct || "-"}</td>
+                            <td className="px-4 py-3 text-zinc-600">{recipe.notes || "-"}</td>
+                            <td className="px-4 py-3 text-right font-medium text-zinc-900">₱{computeRecipeCost(recipe).toFixed(2)}</td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex items-center gap-1 justify-end">
+                                <button onClick={() => { setRecipeProduct(recipe.productName); setShowRecipe(true); }} className="text-zinc-500 hover:text-zinc-900">Edit</button>
+                                <button onClick={() => { if (confirm(`Delete recipe for "${recipe.productName}"?`)) { onUpdateRecipes(prev => prev.filter(r => r.productName !== recipe.productName)); db.deleteRecipe(recipe.productName).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
-        {/* Add Product Modal */}
-        {showAddProduct && (
-          <AddProductWithRecipeModal
-            inventory={inventory}
-            recipes={recipes}
-            onSave={(name, packagingMaterials, decorationSupplies, linkedProduct) => {
-              onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]);
-              db.addToCatalog(name).catch(console.error);
-              const recipe: ProductRecipe = { productId: name, productName: name, ingredients: [], packagingMaterials, decorationSupplies, notes: "", linkedProduct };
-              onUpdateRecipes(prev => {
-                const idx = prev.findIndex(p => p.productId === recipe.productId);
-                if (idx >= 0) { const next = [...prev]; next[idx] = recipe; return next; }
-                return [...prev, recipe];
-              });
-              db.upsertRecipe(recipe).catch(console.error);
-              setShowAddProduct(false);
-            }}
-            onClose={() => setShowAddProduct(false)}
-          />
-        )}
-
-        {/* Recipe Modal */}
-        {showRecipe && recipeProduct !== null && (
-          <RecipeModal
-            product={recipeProduct}
-            recipes={recipes}
-            inventory={inventory}
-            onSave={(r) => {
-              const originalKey = recipeProduct || r.productName;
-              onUpdateRecipes(prev => {
-                const idx = prev.findIndex(p => p.productName === originalKey);
-                if (idx >= 0) { const next = [...prev]; next[idx] = r; return next; }
-                return [...prev, r];
-              });
-              db.upsertRecipe(r).catch(console.error);
-              setShowRecipe(false);
-              setRecipeProduct(null);
-            }}
-            onClose={() => { setShowRecipe(false); setRecipeProduct(null); }}
-          />
-        )}
-
-        {/* Edit Product Modal */}
-        {editingProduct !== null && (
-          <EditProductModal
-            productName={editingProduct}
-            recipes={recipes}
-            inventory={inventory}
-            onSave={(originalName, newName, packagingMaterials, decorationSupplies, linkedProduct) => {
-              if (originalName !== newName) {
-                onUpdateProductCatalog(prev => {
-                  const next = prev.filter(p => p !== originalName);
-                  return next.includes(newName) ? next : [...next, newName];
+          {/* Add Product Modal */}
+          {showAddProduct && (
+            <AddProductWithRecipeModal
+              inventory={inventory}
+              recipes={recipes}
+              onSave={(name, packagingMaterials, decorationSupplies, linkedProduct) => {
+                onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]);
+                db.addToCatalog(name).catch(console.error);
+                const recipe: ProductRecipe = { productId: name, productName: name, ingredients: [], packagingMaterials, decorationSupplies, notes: "", linkedProduct };
+                onUpdateRecipes(prev => {
+                  const idx = prev.findIndex(p => p.productId === recipe.productId);
+                  if (idx >= 0) { const next = [...prev]; next[idx] = recipe; return next; }
+                  return [...prev, recipe];
                 });
-                db.removeFromCatalog(originalName).catch(console.error);
-                db.addToCatalog(newName).catch(console.error);
-              }
-              const recipe: ProductRecipe = {
-                productId: newName,
-                productName: newName,
-                ingredients: recipes.find(r => r.productName === originalName)?.ingredients || [],
-                packagingMaterials,
-                decorationSupplies,
-                notes: recipes.find(r => r.productName === originalName)?.notes || "",
-                linkedProduct,
-              };
-              onUpdateRecipes(prev => {
-                const idx = prev.findIndex(p => p.productName === originalName);
-                if (idx >= 0) {
-                  const next = [...prev];
-                  next[idx] = recipe;
-                  return next;
-                }
-                return [...prev, recipe];
-              });
-              db.upsertRecipe(recipe).catch(console.error);
-              setEditingProduct(null);
-              setRenamingProduct("");
-            }}
-            onClose={() => { setEditingProduct(null); setRenamingProduct(""); }}
-          />
-        )}
-      </div>
-    );
-  }
+                db.upsertRecipe(recipe).catch(console.error);
+                setShowAddProduct(false);
+              }}
+              onClose={() => setShowAddProduct(false)}
+            />
+          )}
 
-  /* ── Stockroom Tab ── */
+          {/* Recipe Modal */}
+          {showRecipe && recipeProduct !== null && (
+            <RecipeModal
+              product={recipeProduct}
+              recipes={recipes}
+              inventory={inventory}
+              onSave={(r) => {
+                const originalKey = recipeProduct || r.productName;
+                onUpdateRecipes(prev => {
+                  const idx = prev.findIndex(p => p.productName === originalKey);
+                  if (idx >= 0) { const next = [...prev]; next[idx] = r; return next; }
+                  return [...prev, r];
+                });
+                db.upsertRecipe(r).catch(console.error);
+                setShowRecipe(false);
+                setRecipeProduct(null);
+              }}
+              onClose={() => { setShowRecipe(false); setRecipeProduct(null); }}
+            />
+          )}
+
+          {/* Edit Product Modal */}
+          {editingProduct !== null && (
+            <EditProductModal
+              productName={editingProduct}
+              recipes={recipes}
+              inventory={inventory}
+              onSave={(originalName, newName, packagingMaterials, decorationSupplies, linkedProduct) => {
+                if (originalName !== newName) {
+                  onUpdateProductCatalog(prev => {
+                    const next = prev.filter(p => p !== originalName);
+                    return next.includes(newName) ? next : [...next, newName];
+                  });
+                  db.removeFromCatalog(originalName).catch(console.error);
+                  db.addToCatalog(newName).catch(console.error);
+                }
+                const recipe: ProductRecipe = {
+                  productId: newName,
+                  productName: newName,
+                  ingredients: recipes.find(r => r.productName === originalName)?.ingredients || [],
+                  packagingMaterials,
+                  decorationSupplies,
+                  notes: recipes.find(r => r.productName === originalName)?.notes || "",
+                  linkedProduct,
+                };
+                onUpdateRecipes(prev => {
+                  const idx = prev.findIndex(p => p.productName === originalName);
+                  if (idx >= 0) {
+                    const next = [...prev];
+                    next[idx] = recipe;
+                    return next;
+                  }
+                  return [...prev, recipe];
+                });
+                db.upsertRecipe(recipe).catch(console.error);
+                setEditingProduct(null);
+                setRenamingProduct("");
+              }}
+              onClose={() => { setEditingProduct(null); setRenamingProduct(""); }}
+            />
+          )}
+        </div>
+      );
+    }
+
+    /* ── Stockroom Tab ── */
   if (activeTab === "warehouse") {
     const now = new Date();
     const todayStr = now.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
@@ -1216,7 +1211,7 @@ export default function AdminDashboard({
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <div><h1 className="text-[24px] font-semibold">Delivery Control</h1><p className="mt-1 text-[13px] text-zinc-600">Validate Kitchen reports and post inventory to branches.</p></div>
-          <button onClick={() => { setNewDeliveryBranch("Cakes N Styles Gensan"); setNewDeliveryCustom(""); setNewDeliveryItems([{ product: "", qty: 1 }]); setNewDeliveryEta(""); setNewDeliveryAddress(""); setNewDeliveryContact(""); setNewDeliveryRider(""); setNewDeliveryPayment("unpaid"); setNewDeliveryNotes(""); setShowAddDelivery(true); db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Delivery</button>
+          <button onClick={() => { setNewDeliveryBranch("Cakes N Styles Gensan"); setNewDeliveryCustom(""); setNewDeliveryItems([]); setNewDeliveryEta(""); setNewDeliveryAddress(""); setNewDeliveryContact(""); setNewDeliveryRider(""); setNewDeliveryPayment("unpaid"); setNewDeliveryMode("cash"); setNewDeliveryAmount(""); setNewDeliveryNotes(""); setShowAddDelivery(true); db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Delivery</button>
         </div>
 
         {/* Stats */}
@@ -1227,12 +1222,13 @@ export default function AdminDashboard({
           <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Branch Posted</div><div className="text-[24px] font-semibold mt-1 text-emerald-600">{validations.filter(v => v.status === "posted").length}</div></div>
         </div>
 
-        {/* Delivery Cards */}
+{/* Delivery Cards */}
         <div className="grid gap-4 sm:grid-cols-2">
           {deliveries.length === 0 ? (
             <div className="sm:col-span-2 text-center py-12 rounded-[24px] border border-zinc-800 bg-zinc-900"><p className="text-[14px] text-zinc-500">No deliveries yet.</p></div>
           ) : (
             deliveries.map(d => {
+
               const val = validations.find(v => v.reportId === d.id);
               const statusPill = d.status === "delivered"
                 ? "bg-emerald-950 text-emerald-400 border-emerald-900/50"
@@ -1248,8 +1244,22 @@ export default function AdminDashboard({
                 return `Date: ${new Date(Number(ts)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
               })();
 
-              return (
-                <div key={d.id} className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm hover:border-zinc-700 transition-colors">
+return (
+                <div
+                  key={d.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`View delivery ${d.id}`}
+                  onClick={() => { setSelectedDelivery(d); setShowDeliveryDetail(true); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedDelivery(d);
+                      setShowDeliveryDetail(true);
+                    }
+                  }}
+                  className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm hover:border-zinc-700 transition-colors cursor-pointer"
+                >
                   {/* Header */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1419,11 +1429,24 @@ export default function AdminDashboard({
                     <input value={newDeliveryRider} onChange={e => setNewDeliveryRider(e.target.value)} placeholder="Rider name" className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400" />
                   </div>
                   <div>
+                    <label className="text-[11px] font-medium text-zinc-500 mb-1 block">Amount (₱)</label>
+                    <input type="number" min={0} step="0.01" value={newDeliveryAmount} onChange={e => setNewDeliveryAmount(e.target.value)} placeholder="0.00" className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400" />
+                  </div>
+                  <div>
                     <label className="text-[11px] font-medium text-zinc-500 mb-1 block">Payment Status</label>
                     <select value={newDeliveryPayment} onChange={e => setNewDeliveryPayment(e.target.value as typeof newDeliveryPayment)} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400">
                       <option value="unpaid">Unpaid</option>
                       <option value="paid">Paid</option>
-                      <option value="cod">Cash on Delivery</option>
+                      <option value="half">Half</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-zinc-500 mb-1 block">Mode of Payment</label>
+                    <select value={newDeliveryMode} onChange={e => setNewDeliveryMode(e.target.value as typeof newDeliveryMode)} className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400">
+                      <option value="cash">Cash</option>
+                      <option value="check">Check</option>
+                      <option value="online">Online</option>
+                      <option value="bank">Bank Transfer</option>
                     </select>
                   </div>
                 </div>
@@ -1484,7 +1507,9 @@ export default function AdminDashboard({
                                 if (isSelected) {
                                   setNewDeliveryItems(prev => prev.filter(i => i.product !== item.productName));
                                 } else {
-                                  setNewDeliveryItems(prev => [...prev.filter(i => i.product.trim()), { product: item.productName, qty: Math.min(item.qty, 10) }]);
+                                  const pricing = productPricing.find(p => p.productName === item.productName);
+                                  const defaultPrice = newDeliveryBranch === "__custom__" ? (pricing?.wholesalePrice ?? 0) : (pricing?.sellingPrice ?? 0);
+                                  setNewDeliveryItems(prev => [...prev.filter(i => i.product.trim()), { product: item.productName, qty: Math.min(item.qty, 10), price: defaultPrice }]);
                                 }
                               }}>
                                 <span className={`text-[12px] font-medium ${isSelected ? "text-white" : "text-zinc-900"}`}>{item.productName}</span>
@@ -1500,20 +1525,42 @@ export default function AdminDashboard({
               </div>
 
               {/* 6. Selected Items */}
-              {newDeliveryItems.filter(i => i.product.trim()).length > 0 && (
-                <div className="mb-4">
-                  <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5">Selected Items ({newDeliveryItems.filter(i => i.product.trim()).length})</div>
-                  <div className="space-y-1.5 max-h-[120px] overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50/50 p-2">
-                    {newDeliveryItems.filter(i => i.product.trim()).map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2 rounded-lg border border-zinc-100 bg-white px-3 py-2">
-                        <span className="text-[13px] font-medium text-zinc-900 flex-1">{item.product}</span>
-                        <input type="number" min={1} value={item.qty} onChange={e => { const updated = [...newDeliveryItems]; const ri = updated.findIndex(i => i.product === item.product); if (ri >= 0) updated[ri] = { ...updated[ri], qty: parseInt(e.target.value) || 1 }; setNewDeliveryItems(updated); }} className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-[12px] text-center focus:outline-none focus:border-zinc-400 bg-white" />
-                        <button onClick={() => setNewDeliveryItems(prev => prev.filter(i => i.product !== item.product))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
-                      </div>
-                    ))}
+              {(() => {
+                const selected = newDeliveryItems.filter(i => i.product.trim());
+                const grandTotal = selected.reduce((sum, item) => sum + (item.price ?? 0) * item.qty, 0);
+                if (grandTotal > 0 && newDeliveryAmount !== grandTotal.toFixed(2)) {
+                  queueMicrotask(() => setNewDeliveryAmount(grandTotal.toFixed(2)));
+                }
+                return selected.length > 0 ? (
+                  <div className="mb-4">
+                    <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5">Selected Items ({selected.length})</div>
+                    <div className="space-y-1.5 max-h-[240px] overflow-y-auto rounded-xl border border-zinc-200 bg-zinc-50/50 p-2">
+                      {selected.map((item, idx) => {
+                        const lineTotal = (item.price ?? 0) * item.qty;
+                        return (
+                          <div key={idx} className="flex items-center gap-2 rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[13px] font-medium text-zinc-900 truncate">{item.product}</div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[9px] text-zinc-400">₱</span>
+                              <input type="number" min={0} step="0.01" value={item.price ?? 0} onChange={e => { const updated = [...newDeliveryItems]; const ri = updated.findIndex(i => i.product === item.product); if (ri >= 0) updated[ri] = { ...updated[ri], price: parseFloat(e.target.value) || 0 }; setNewDeliveryItems(updated); }} className="w-20 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-center focus:outline-none focus:border-zinc-400 bg-white" />
+                              <span className="text-[10px] text-zinc-400">×</span>
+                              <input type="number" min={1} value={item.qty} onChange={e => { const updated = [...newDeliveryItems]; const ri = updated.findIndex(i => i.product === item.product); if (ri >= 0) updated[ri] = { ...updated[ri], qty: parseInt(e.target.value) || 1 }; setNewDeliveryItems(updated); }} className="w-14 rounded-lg border border-zinc-200 px-2 py-1 text-[12px] text-center focus:outline-none focus:border-zinc-400 bg-white" />
+                              <span className="text-[10px] text-zinc-500 font-mono w-14 text-right">₱{lineTotal.toFixed(2)}</span>
+                            </div>
+                            <button onClick={() => setNewDeliveryItems(prev => prev.filter(i => i.product !== item.product))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center justify-between mt-2 px-1">
+                      <span className="text-[11px] text-zinc-500">{newDeliveryBranch === "__custom__" ? "Wholesale" : "Selling"} pricing</span>
+                      <span className="text-[15px] font-bold text-zinc-900">₱{grandTotal.toFixed(2)}</span>
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : null;
+              })()}
 
               {/* Actions */}
               <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100">
@@ -1536,6 +1583,8 @@ export default function AdminDashboard({
                     status: "preparing",
                     eta: newDeliveryEta || new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", hour12: true }),
                     paymentStatus: newDeliveryPayment,
+                    modeOfPayment: newDeliveryMode,
+                    totalAmount: newDeliveryAmount ? parseFloat(newDeliveryAmount) : 0,
                     notes: newDeliveryNotes.trim(),
                     date: newDeliveryDate,
                   };
@@ -1571,6 +1620,177 @@ export default function AdminDashboard({
                   onAddAuditLog?.("DELIVERY_ADDED", `${newDelivery.id} — ${destination} (${validItems.length} items)`);
                   setShowAddDelivery(false);
                 }} className="rounded-xl bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">Create Delivery</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delivery Detail Modal */}
+        {showDeliveryDetail && selectedDelivery && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowDeliveryDetail(false)}>
+            <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-[18px] font-semibold">Delivery Details</h2>
+                <button onClick={() => setShowDeliveryDetail(false)} className="rounded-full p-1 hover:bg-zinc-100 transition-colors">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 5l10 10M15 5l-10 10"/></svg>
+                </button>
+              </div>
+
+              {/* ID & Status */}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <div className="text-[11px] text-zinc-500 uppercase tracking-wider font-medium">Delivery ID</div>
+                  <div className="text-[14px] font-mono text-zinc-800 mt-0.5">{selectedDelivery.id}</div>
+                </div>
+                <span className={`rounded-full border px-3 py-1 text-[11px] font-medium ${selectedDelivery.status === "delivered" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : selectedDelivery.status === "in-transit" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-sky-50 text-sky-700 border-sky-200"}`}>
+                  {selectedDelivery.status}
+                </span>
+              </div>
+
+              {/* Branch & Dates */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Branch</div>
+                  <div className="text-[13px] font-medium text-zinc-800 mt-0.5">{selectedDelivery.branch}</div>
+                </div>
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Delivery Date</div>
+                  <div className="text-[13px] font-medium text-zinc-800 mt-0.5">{selectedDelivery.date || "—"}</div>
+                </div>
+              </div>
+
+              {/* Contact Info */}
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 mb-4">
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium mb-2">Contact Information</div>
+                <div className="space-y-2 text-[13px]">
+                  <div className="flex justify-between"><span className="text-zinc-500">Address</span><span className="text-zinc-800 text-right ml-4">{selectedDelivery.address || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-500">Contact</span><span className="text-zinc-800">{selectedDelivery.contactNumber || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-500">Rider</span><span className="text-zinc-800">{selectedDelivery.assignedRider || "—"}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-500">ETA</span><span className="text-zinc-800">{selectedDelivery.eta || "—"}</span></div>
+                </div>
+              </div>
+
+              {/* Payment Info */}
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 mb-4">
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium mb-2">Payment</div>
+                <div className="space-y-3 text-[13px]">
+                  <div className="flex items-center gap-3">
+                    <span className="text-zinc-500 w-20 shrink-0">Amount</span>
+                    <input type="number" min={0} step="0.01" value={selectedDelivery.totalAmount ?? 0} onChange={e => setSelectedDelivery({ ...selectedDelivery, totalAmount: parseFloat(e.target.value) || 0 })} className="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-zinc-500 w-20 shrink-0">Status</span>
+                    <select value={selectedDelivery.paymentStatus} onChange={e => setSelectedDelivery({ ...selectedDelivery, paymentStatus: e.target.value as "unpaid" | "paid" | "half" })} className="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[13px] focus:outline-none focus:border-zinc-400">
+                      <option value="unpaid">Unpaid</option>
+                      <option value="paid">Paid</option>
+                      <option value="half">Half</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-zinc-500 w-20 shrink-0">Mode</span>
+                    <select value={selectedDelivery.modeOfPayment || "cash"} onChange={e => setSelectedDelivery({ ...selectedDelivery, modeOfPayment: e.target.value as "cash" | "check" | "online" | "bank" })} className="flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[13px] focus:outline-none focus:border-zinc-400">
+                      <option value="cash">Cash</option>
+                      <option value="check">Check</option>
+                      <option value="online">Online</option>
+                      <option value="bank">Bank Transfer</option>
+                    </select>
+                  </div>
+                  <button onClick={async () => {
+                    const updated = deliveries.map(d => d.id === selectedDelivery.id ? selectedDelivery : d);
+                    onUpdateDeliveries?.(updated);
+                    await db.upsertDeliveries(updated).catch(console.error);
+                    const total = selectedDelivery.totalAmount || 0;
+                    const revenueAmount = selectedDelivery.paymentStatus === "paid" ? total : selectedDelivery.paymentStatus === "half" ? total / 2 : 0;
+                    const existing = revenue.find(r => r.referenceId === selectedDelivery.id);
+                    if (revenueAmount > 0) {
+                      const revenueEntry: Revenue = existing ? {
+                        ...existing,
+                        amount: revenueAmount,
+                        modeOfPayment: selectedDelivery.modeOfPayment || "cash",
+                        date: new Date().toLocaleDateString("en-CA"),
+                        remarks: `Payment ${selectedDelivery.paymentStatus} from delivery`,
+                      } : {
+                        id: `REV-${Date.now()}`,
+                        source: "Delivery",
+                        particular: `${selectedDelivery.id} — ${selectedDelivery.branch}`,
+                        branch: selectedDelivery.branch,
+                        amount: revenueAmount,
+                        date: new Date().toLocaleDateString("en-CA"),
+                        modeOfPayment: selectedDelivery.modeOfPayment || "cash",
+                        referenceId: selectedDelivery.id,
+                        remarks: `Payment ${selectedDelivery.paymentStatus} from delivery`,
+                      };
+                      onUpdateRevenue(prev => existing ? prev.map(r => r.id === existing.id ? revenueEntry : r) : [...prev, revenueEntry]);
+                      await db.upsertRevenue(existing ? [revenueEntry as Revenue] : [revenueEntry]).catch(console.error);
+                    } else if (existing) {
+                      onUpdateRevenue(prev => prev.filter(r => r.id !== existing.id));
+                      await db.deleteRevenue(existing.id).catch(console.error);
+                    }
+                    onAddAuditLog?.("DELIVERY_PAYMENT_UPDATED", `${selectedDelivery.id} — ${selectedDelivery.paymentStatus} — ₱${revenueAmount}`);
+                  }} className="w-full rounded-lg bg-zinc-900 py-1.5 text-[12px] font-medium text-white hover:bg-zinc-800 transition-colors">
+                    Save Payment
+                  </button>
+                </div>
+              </div>
+
+              {/* Items */}
+              <div className="rounded-xl border border-zinc-200 p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">Items</div>
+                  <div className="text-[11px] text-zinc-400 font-mono">{selectedDelivery.items.length} line{selectedDelivery.items.length !== 1 ? "s" : ""}</div>
+                </div>
+                <div className="space-y-1.5">
+                  {selectedDelivery.items.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between text-[13px] py-1 border-b border-zinc-100 last:border-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-800">{item.product}</span>
+                        {item.source && (
+                          <span className="rounded-full px-2 py-0.5 text-[9px] font-medium text-white bg-zinc-600">{item.source}</span>
+                        )}
+                      </div>
+                      <span className="text-zinc-500 font-mono">{item.qty} pcs</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              {selectedDelivery.notes && (
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 mb-4">
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium mb-1">Notes</div>
+                  <p className="text-[13px] text-zinc-700">{selectedDelivery.notes}</p>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex flex-col items-center gap-2 pt-2">
+                <div className="flex items-center gap-2">
+                  {selectedDelivery.status === "preparing" && (
+                    <button onClick={async () => {
+                      const updated = deliveries.map(d => d.id === selectedDelivery.id ? { ...d, status: "in-transit" as const } : d);
+                      onUpdateDeliveries?.(updated);
+                      await db.upsertDeliveries(updated).catch(console.error);
+                      onAddAuditLog?.("DELIVERY_IN_TRANSIT", `${selectedDelivery.id} — ${selectedDelivery.branch}`);
+                      setSelectedDelivery({ ...selectedDelivery, status: "in-transit" });
+                    }} className="rounded-xl bg-amber-500 px-4 py-2 text-[13px] font-medium text-white hover:bg-amber-600 transition-colors">
+                      Mark In Transit
+                    </button>
+                  )}
+                  {selectedDelivery.status === "in-transit" && (
+                    <button onClick={async () => {
+                      const updated = deliveries.map(d => d.id === selectedDelivery.id ? { ...d, status: "delivered" as const } : d);
+                      onUpdateDeliveries?.(updated);
+                      await db.upsertDeliveries(updated).catch(console.error);
+                      onAddAuditLog?.("DELIVERY_DELIVERED", `${selectedDelivery.id} — ${selectedDelivery.branch}`);
+                      setSelectedDelivery({ ...selectedDelivery, status: "delivered" });
+                    }} className="rounded-xl bg-emerald-500 px-4 py-2 text-[13px] font-medium text-white hover:bg-emerald-600 transition-colors">
+                      Mark Delivered
+                    </button>
+                  )}
+                </div>
+                <button onClick={() => setShowDeliveryDetail(false)} className="rounded-xl border border-zinc-200 px-6 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-colors">
+                  Close
+                </button>
               </div>
             </div>
           </div>
@@ -2222,8 +2442,8 @@ export default function AdminDashboard({
     rows.push([]);
 
     rows.push(["=== DOS ITEMS ===", "", "", ""]);
-    rows.push(["ID", "Product", "Qty", "Priority", "Status"]);
-    dosItems.forEach(d => rows.push([d.id, d.product, String(d.qty), , d.priority, d.status]));
+rows.push(["ID", "Product", "Qty", "Priority", "Status"]);
+dosItems.forEach(d => rows.push([d.id, d.product, String(d.qty), d.priority, d.status]));
     rows.push([]);
 
     rows.push(["=== PRODUCTION ===", "", "", ""]);

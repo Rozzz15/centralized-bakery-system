@@ -740,11 +740,6 @@ return (
         )}
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
           <div className="text-[12px] text-zinc-400">Step {currentStepIdx + 1} of {workflowSteps.length}</div>
-          {nextStep && (
-            <button onClick={() => setActiveTab(nextStep.id)} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
-              Next: {nextStep.label} →
-            </button>
-          )}
         </div>
       </div>
     );
