@@ -84,6 +84,9 @@ export default function AdminDashboard({
   const toggleDOSHistory = (id: string) => setExpandedDOS(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [expandedSched, setExpandedSched] = useState<Set<string>>(new Set());
   const toggleSched = (date: string) => setExpandedSched(prev => { const n = new Set(prev); if (n.has(date)) n.delete(date); else n.add(date); return n; });
+  const [expandedProdGroups, setExpandedProdGroups] = useState<Set<string>>(new Set());
+  const toggleProdGroup = (date: string) => setExpandedProdGroups(prev => { const n = new Set(prev); if (n.has(date)) n.delete(date); else n.add(date); return n; });
+  const [showAllProdHistory, setShowAllProdHistory] = useState(false);
   const [historyDateFilter, setHistoryDateFilter] = useState("");
   const [editingDOS, setEditingDOS] = useState<DOSItem | null>(null);
   const [scheduledAddDate, setScheduledAddDate] = useState<string | null>(null);
@@ -168,18 +171,21 @@ export default function AdminDashboard({
   const [editingPricing, setEditingPricing] = useState<ProductPricing | null>(null);
   const [showPricingModal, setShowPricingModal] = useState(false);
 
-  // Products
+// Products
   const [showRecipe, setShowRecipe] = useState(false);
   const [recipeProduct, setRecipeProduct] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<string | null>(null);
   const [renamingProduct, setRenamingProduct] = useState("");
-
-  const [showAllProdHistory, setShowAllProdHistory] = useState(false);
-  const [showAllDOSHistory, setShowAllDOSHistory] = useState(false);
-  const [expandedProdGroups, setExpandedProdGroups] = useState<Set<string>>(new Set());
-  const toggleProdGroup = (date: string) => setExpandedProdGroups(prev => { const n = new Set(prev); if (n.has(date)) n.delete(date); else n.add(date); return n; });
+  const [activeProductSubTab, setActiveProductSubTab] = useState("Products");
   const [recipeSearch, setRecipeSearch] = useState("");
-  const [activeProductSubTab, setActiveProductSubTab] = useState("All");
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [renamingCategory, setRenamingCategory] = useState("");
+const [productCategoryMap, setProductCategoryMap] = useState<Record<string, string>>({});
+  const [productSort, setProductSort] = useState<"a-z" | "z-a" | "category">("a-z");
+  const categoriesLoaded = useRef(false);
 
   // Toasts
   type ToastItem = { name: string; detail: string };
@@ -230,6 +236,11 @@ export default function AdminDashboard({
   /* ── Products Tab ── */
   if (activeTab === "products") {
     const searchTerm = invSearch.toLowerCase();
+    if (!categoriesLoaded.current) {
+      categoriesLoaded.current = true;
+      db.fetchCategories().then(setCategories).catch(() => {});
+      db.fetchProductCategories().then(setProductCategoryMap).catch(() => {});
+    }
     const filteredProducts = productCatalog.filter(p => {
       const isCategoryMatch = activeProductSubTab === "All" || activeProductSubTab === "Products" ||
         (activeProductSubTab === "Bakery" && recipes.some(r => r.productName === p)) ||
@@ -258,7 +269,10 @@ export default function AdminDashboard({
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <h1 className="text-[24px] font-semibold">Products</h1>
-          <button onClick={() => setShowAddProduct(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Product</button>
+          <div className="flex items-center gap-2">
+            <button onClick={async () => { setNewCategoryName(""); setEditingCategory(null); setRenamingCategory(""); const cats = await db.fetchCategories().catch(() => []); setCategories(cats); const map = await db.fetchProductCategories().catch(() => ({})); setProductCategoryMap(map); setShowCategoryManager(true); }} className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 shadow-sm">Manage Category</button>
+            <button onClick={() => setShowAddProduct(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Product</button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 border-b border-zinc-200 pb-1">
@@ -267,9 +281,18 @@ export default function AdminDashboard({
           ))}
         </div>
 
-        <div className="relative max-w-xs">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
-          <input type="text" value={activeProductSubTab === "Recipes" ? recipeSearch : invSearch} onChange={e => activeProductSubTab === "Recipes" ? setRecipeSearch(e.target.value) : setInvSearch(e.target.value)} placeholder={`Search ${activeProductSubTab.toLowerCase()}...`} className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
+        <div className="flex items-center gap-3">
+          <div className="relative max-w-xs flex-1">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+            <input type="text" value={activeProductSubTab === "Recipes" ? recipeSearch : invSearch} onChange={e => activeProductSubTab === "Recipes" ? setRecipeSearch(e.target.value) : setInvSearch(e.target.value)} placeholder={`Search ${activeProductSubTab.toLowerCase()}...`} className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
+          </div>
+          {activeProductSubTab === "Products" && (
+            <select value={productSort} onChange={e => setProductSort(e.target.value as typeof productSort)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400">
+              <option value="a-z">A-Z</option>
+              <option value="z-a">Z-A</option>
+              <option value="category">Category</option>
+            </select>
+          )}
         </div>
 
         {activeProductSubTab === "Products" && (
@@ -277,15 +300,28 @@ export default function AdminDashboard({
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Recipe</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-32" /></tr>
+                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Categories</th><th className="px-4 py-3">Recipe</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-36" /></tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 text-[13px]">
-                {filteredProducts.map(product => {
+                {[...filteredProducts].sort((a, b) => {
+                    if (productSort === "a-z") return a.localeCompare(b);
+                    if (productSort === "z-a") return b.localeCompare(a);
+                    const catA = productCategoryMap[a] || "";
+                    const catB = productCategoryMap[b] || "";
+                    return catA.localeCompare(catB) || a.localeCompare(b);
+                  }).map(product => {
                   const recipe = recipes.find(r => r.productName === product);
                   return (
                     <tr key={product} className="hover:bg-zinc-50/60">
                       <td className="px-4 py-3">
                         <div className="font-medium text-zinc-900">{product}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {productCategoryMap[product] ? (
+                          <span className="inline-block rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{productCategoryMap[product]}</span>
+                        ) : (
+                          <span className="text-[12px] text-zinc-400 italic">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {recipe?.linkedProduct && recipe.linkedProduct.length > 0 && (
@@ -312,7 +348,7 @@ export default function AdminDashboard({
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center gap-1 justify-end">
-                          <button onClick={() => { setEditingProduct(product); setRenamingProduct(product); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
+                          <button onClick={() => { setEditingProduct(product); setRenamingProduct(product); setCategories(prev => prev); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
                           <button onClick={() => { if (confirm(`Delete "${product}"?`)) { onUpdateProductCatalog(prev => prev.filter(p => p !== product)); db.removeFromCatalog(product).catch(console.error); const existingRecipe = recipes.find(r => r.productName === product); if (existingRecipe) { onUpdateRecipes(prev => prev.filter(r => r.productName !== product)); db.deleteRecipe(product).catch(console.error); } } }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
                         </div>
                       </td>
@@ -423,43 +459,128 @@ export default function AdminDashboard({
 
           {/* Edit Product Modal */}
           {editingProduct !== null && (
-            <EditProductModal
-              productName={editingProduct}
-              recipes={recipes}
-              inventory={inventory}
-              onSave={(originalName, newName, packagingMaterials, decorationSupplies, linkedProduct) => {
-                if (originalName !== newName) {
-                  onUpdateProductCatalog(prev => {
-                    const next = prev.filter(p => p !== originalName);
-                    return next.includes(newName) ? next : [...next, newName];
-                  });
-                  db.removeFromCatalog(originalName).catch(console.error);
-                  db.addToCatalog(newName).catch(console.error);
-                }
-                const recipe: ProductRecipe = {
-                  productId: newName,
-                  productName: newName,
-                  ingredients: recipes.find(r => r.productName === originalName)?.ingredients || [],
-                  packagingMaterials,
-                  decorationSupplies,
-                  notes: recipes.find(r => r.productName === originalName)?.notes || "",
-                  linkedProduct,
-                };
-                onUpdateRecipes(prev => {
-                  const idx = prev.findIndex(p => p.productName === originalName);
-                  if (idx >= 0) {
-                    const next = [...prev];
-                    next[idx] = recipe;
-                    return next;
-                  }
-                  return [...prev, recipe];
+<EditProductModal
+            productName={editingProduct}
+            recipes={recipes}
+            inventory={inventory}
+            categories={categories}
+            initialCategory={productCategoryMap[editingProduct] || ""}
+            onSave={async (originalName, newName, packagingMaterials, decorationSupplies, linkedProduct, category) => {
+              if (originalName !== newName) {
+                onUpdateProductCatalog(prev => {
+                  const next = prev.filter(p => p !== originalName);
+                  return next.includes(newName) ? next : [...next, newName];
                 });
-                db.upsertRecipe(recipe).catch(console.error);
-                setEditingProduct(null);
-                setRenamingProduct("");
-              }}
-              onClose={() => { setEditingProduct(null); setRenamingProduct(""); }}
-            />
+                db.removeFromCatalog(originalName).catch(console.error);
+                db.addToCatalog(newName).catch(console.error);
+              }
+              const recipe: ProductRecipe = {
+                productId: newName,
+                productName: newName,
+                ingredients: recipes.find(r => r.productName === originalName)?.ingredients || [],
+                packagingMaterials,
+                decorationSupplies,
+                notes: recipes.find(r => r.productName === originalName)?.notes || "",
+                linkedProduct,
+              };
+              onUpdateRecipes(prev => {
+                const idx = prev.findIndex(p => p.productName === originalName);
+                if (idx >= 0) {
+                  const next = [...prev];
+                  next[idx] = recipe;
+                  return next;
+                }
+                return [...prev, recipe];
+              });
+              db.upsertRecipe(recipe).catch(console.error);
+              await db.saveProductCategory(newName, category || null).catch(console.error);
+              setProductCategoryMap(prev => ({ ...prev, [newName]: category || "" }));
+              setEditingProduct(null);
+              setRenamingProduct("");
+            }}
+            onClose={() => { setEditingProduct(null); setRenamingProduct(""); }}
+          />
+          )}
+
+          {/* Category Manager Modal */}
+          {showCategoryManager && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCategoryManager(false)}>
+              <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-[18px] font-semibold">Manage Categories</h2>
+                  <button onClick={() => setShowCategoryManager(false)} className="rounded-full p-1 hover:bg-zinc-100 transition-colors">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 5l10 10M15 5l-10 10"/></svg>
+                  </button>
+                </div>
+
+                {/* Add new category */}
+                <div className="flex items-center gap-2 mb-4">
+                  <input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="New category name..." className="flex-1 rounded-xl border border-zinc-200 px-3 py-2 text-[13px] focus:outline-none focus:border-zinc-400" />
+                  <button onClick={async () => {
+                    const name = newCategoryName.trim();
+                    if (!name || categories.includes(name)) return;
+                    await db.addCategory(name).catch(() => {});
+                    setCategories(prev => [...prev, name]);
+                    setNewCategoryName("");
+                  }} className="rounded-xl bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">Add</button>
+                </div>
+
+                {/* Category list */}
+                {categories.length === 0 ? (
+                  <p className="text-[13px] text-zinc-400 text-center py-8">No categories yet.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {categories.map(cat => (
+                      <div key={cat} className="flex items-center gap-2 rounded-xl border border-zinc-200 px-3 py-2">
+                        {editingCategory === cat ? (
+                          <input value={renamingCategory} onChange={e => setRenamingCategory(e.target.value)} autoFocus className="flex-1 rounded-lg border border-zinc-200 px-2 py-1 text-[13px] focus:outline-none focus:border-zinc-400" />
+                        ) : (
+                          <span className="flex-1 text-[13px] text-zinc-800">{cat}</span>
+                        )}
+                        <div className="flex items-center gap-1">
+                          {editingCategory === cat ? (
+                            <>
+                              <button onClick={async () => {
+                                const newName = renamingCategory.trim();
+                                if (!newName || newName === cat) { setEditingCategory(null); return; }
+                                await db.renameCategory(cat, newName).catch(console.error);
+                                setCategories(prev => prev.map(c => c === cat ? newName : c));
+                                setProductCategoryMap(prev => {
+                                  const next = { ...prev };
+                                  for (const key of Object.keys(next)) {
+                                    if (next[key] === cat) next[key] = newName;
+                                  }
+                                  return next;
+                                });
+                                setEditingCategory(null);
+                              }} className="text-[11px] font-medium text-emerald-600 hover:text-emerald-800">Save</button>
+                              <button onClick={() => setEditingCategory(null)} className="text-[11px] text-zinc-400 hover:text-zinc-600">Cancel</button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => { setEditingCategory(cat); setRenamingCategory(cat); }} className="text-[11px] text-zinc-500 hover:text-zinc-900">Rename</button>
+                              <button onClick={async () => {
+                                if (confirm(`Delete category "${cat}"? Products in this category will be uncategorized.`)) {
+                                  await db.removeCategory(cat).catch(console.error);
+                                  setCategories(prev => prev.filter(c => c !== cat));
+                                  setProductCategoryMap(prev => {
+                                    const next = { ...prev };
+                                    for (const key of Object.keys(next)) {
+                                      if (next[key] === cat) delete next[key];
+                                    }
+                                    return next;
+                                  });
+                                }
+                              }} className="text-[11px] text-red-500 hover:text-red-700">Delete</button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
       );
@@ -1037,16 +1158,17 @@ export default function AdminDashboard({
 
   /* ── Production Tab (Enhanced) ── */
   if (activeTab === "production") {
-    const todayProducts = new Set(todayDOS.map(d => d.product));
-    const todayTasks = production.filter(t => todayProducts.has(t.product));
+    const todayDate = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    const todayTasks = production.filter(t => {
+      const ts = t.id.match(/PRD-(\d+)/)?.[1];
+      if (!ts) return false;
+      const taskDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+      return taskDate === todayDate;
+    });
     const bakerTasks = todayTasks.filter(t => t.assignedTo === "baker");
     const pastryTasks = todayTasks.filter(t => t.assignedTo === "pastry");
     const decoTasks = todayTasks.filter(t => t.assignedTo === "deco");
     const kitchenTasks = todayTasks.filter(t => t.assignedTo === "kitchen");
-    const pendingBaker = todayTasks.filter(t => t.assignedTo === "baker" && t.status === "pending");
-    const pendingPastry = todayTasks.filter(t => t.assignedTo === "pastry" && t.status === "pending");
-    const pendingDeco = todayTasks.filter(t => t.assignedTo === "deco" && t.status === "pending");
-
     return (
       <div className="space-y-5">
         <div className="flex items-center gap-3"><div><h1 className="text-[24px] font-semibold">Production Control</h1><p className="mt-1 text-[13px] text-zinc-600">Track all tasks across Baker, Pastry, Deco, and Kitchen.</p></div><div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /><span className="text-[11px] font-medium text-emerald-700">Live</span></div></div>
@@ -1097,29 +1219,6 @@ export default function AdminDashboard({
           })}
         </div>
 
-        {/* Pending Authorization */}
-        {(pendingBaker.length > 0 || pendingDeco.length > 0) && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/60 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-amber-200/60">
-              <h2 className="text-[13px] font-semibold text-amber-900">Pending Authorization</h2>
-              <p className="text-[11px] text-amber-700">{pendingBaker.length + pendingDeco.length} tasks waiting to start</p>
-            </div>
-            <div className="divide-y divide-amber-100/60">
-              {[...pendingBaker, ...pendingDeco].map(task => (
-                <div key={task.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-white/60 transition-all">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[13px] font-medium text-zinc-900 truncate">{task.product}</span>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-medium text-white ${task.assignedTo === "baker" ? "bg-stone-500" : "bg-rose-500"}`}>{task.assignedTo === "baker" ? "Baker" : "Deco"}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-[11px] text-zinc-500 font-mono">{task.target} pcs</span>
-                    <button onClick={() => onUpdateProduction(task.id, { status: "in-progress" })} className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-zinc-800">Authorize</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
         {/* Production History */}
         {(() => {
           const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];

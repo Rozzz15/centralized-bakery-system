@@ -245,7 +245,7 @@ export async function fetchCategories(): Promise<string[]> {
 
 export async function addCategory(name: string) {
   const { error } = await supabase.from("product_categories").insert({ name }).maybeSingle();
-  if (error && !error.message.includes("duplicate")) throw error;
+  if (error && (error as any)?.code !== "23505") throw error;
 }
 
 export async function removeCategory(name: string) {
@@ -322,13 +322,12 @@ export async function fetchRecipes(): Promise<ProductRecipe[]> {
 }
 export async function upsertRecipe(recipe: ProductRecipe) {
   const { error } = await supabase.from("recipes").upsert({
-    id: recipe.id,
     name: recipe.productName,
     ingredients: recipe.ingredients,
     packaging_materials: recipe.packagingMaterials ?? [],
     decoration_supplies: recipe.decorationSupplies ?? [],
     notes: recipe.notes ?? "",
-  }, { onConflict: "id" });
+  }, { onConflict: "name" });
   if (error) {
     console.error("recipe upsert failed:", error);
     return;
