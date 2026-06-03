@@ -65,7 +65,6 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   ],
   pastry: [
     { id: "dashboard", label: "My Tasks", icon: "◼" },
-    { id: "recipes", label: "Recipes", icon: "◈" },
     { id: "queue", label: "Production Queue", icon: "⬢" },
     { id: "freezer", label: "Freezer", icon: "◇" },
   ],
@@ -378,9 +377,23 @@ export default function App() {
           const scheduled = loadedDOS.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
           if (scheduled.length > 0) {
             const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
-            const groupedMap = new Map<string, number>();
-            updated.forEach(item => groupedMap.set(item.product, (groupedMap.get(item.product) || 0) + item.qty));
-            const tasks: ProductionTask[] = [...groupedMap.entries()].map(([product, total], idx) => ({ id: `PRD-${Date.now()}-${idx}`, product, target: total, completed: 0, assignedTo: "baker" as const, status: "in-progress" as const }));
+            const taskMap = new Map<string, { product: string; role: string; total: number }>();
+            updated.forEach(item => {
+              const itemRoles = (item.roles ?? []).length > 0 ? item.roles! : ["baker"];
+              itemRoles.forEach(role => {
+                const key = `${item.product}-${role}`;
+                if (!taskMap.has(key)) taskMap.set(key, { product: item.product, role, total: 0 });
+                taskMap.get(key)!.total += item.qty;
+              });
+            });
+            const tasks: ProductionTask[] = [...taskMap.values()].map((entry, idx) => ({
+              id: `PRD-${Date.now()}-${idx}`,
+              product: entry.product,
+              target: entry.total,
+              completed: 0,
+              assignedTo: entry.role as "baker" | "deco" | "pastry" | "kitchen",
+              status: "in-progress" as const,
+            }));
             await db.upsertDOS(updated);
             await db.upsertProduction(tasks);
             setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending", scheduledDate: undefined } : i));
@@ -444,14 +457,21 @@ export default function App() {
         const scheduled = prev.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
         if (scheduled.length === 0) return prev;
         const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
-        const groupMap = new Map<string, number>();
-        updated.forEach(item => groupMap.set(item.product, (groupMap.get(item.product) || 0) + item.qty));
-        const tasks: ProductionTask[] = [...groupMap.entries()].map(([product, total], idx) => ({
+        const taskMap = new Map<string, { product: string; role: string; total: number }>();
+        updated.forEach(item => {
+          const itemRoles = (item.roles ?? []).length > 0 ? item.roles! : ["baker"];
+          itemRoles.forEach(role => {
+            const key = `${item.product}-${role}`;
+            if (!taskMap.has(key)) taskMap.set(key, { product: item.product, role, total: 0 });
+            taskMap.get(key)!.total += item.qty;
+          });
+        });
+        const tasks: ProductionTask[] = [...taskMap.values()].map((entry, idx) => ({
           id: `PRD-${Date.now()}-${idx}`,
-          product,
-          target: total,
+          product: entry.product,
+          target: entry.total,
           completed: 0,
-          assignedTo: "baker" as const,
+          assignedTo: entry.role as "baker" | "deco" | "pastry" | "kitchen",
           status: "in-progress" as const,
         }));
         db.upsertDOS(updated).catch(console.error);
@@ -571,7 +591,20 @@ export default function App() {
     const scheduled = loadedDOS.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
     if (scheduled.length > 0) {
       const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
-      const tasks: ProductionTask[] = updated.map((item, idx) => ({ id: `PRD-${Date.now()}-${idx}`, product: item.product, target: item.qty, completed: 0, assignedTo: "baker" as const, status: "in-progress" as const }));
+      const tasks: ProductionTask[] = [];
+      updated.forEach((item, idx) => {
+        const itemRoles = (item.roles ?? []).length > 0 ? item.roles! : ["baker"];
+        itemRoles.forEach((role, ri) => {
+          tasks.push({
+            id: `PRD-${Date.now()}-${idx}-${ri}`,
+            product: item.product,
+            target: item.qty,
+            completed: 0,
+            assignedTo: role as "baker" | "deco" | "pastry" | "kitchen",
+            status: "in-progress" as const,
+          });
+        });
+      });
       await db.upsertDOS(updated);
       await db.upsertProduction(tasks);
       setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending", scheduledDate: undefined } : i));
@@ -936,7 +969,7 @@ export default function App() {
                 onSubmitSales={handleSalesSubmit}
               />
             )}
-            {role === "pastry" && ["dashboard", "recipes", "queue", "freezer"].includes(activeTab) && (
+            {role === "pastry" && ["dashboard", "queue", "freezer"].includes(activeTab) && (
               <PastryDashboard production={production} dosItems={dosItems} activeTab={activeTab} recipes={recipes} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
             )}
           </div>

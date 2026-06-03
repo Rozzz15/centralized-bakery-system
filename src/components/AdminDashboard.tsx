@@ -116,6 +116,7 @@ export default function AdminDashboard({
   const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "history">("ingredients");
   const [transactions, setTransactions] = useState<StockTransaction[]>([]);
   const [showReceive, setShowReceive] = useState(false);
+  const [ingredientRoleFilter, setIngredientRoleFilter] = useState<"all" | "baker" | "deco" | "pastry">("all");
 
   // Delivery validation
   const [validations, setValidations] = useState<DeliveryValidation[]>([]);
@@ -597,6 +598,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000);
 
     const groupItems = (g: typeof warehouseSection) => inventory.filter(i => g === "history" ? false : i.group === g);
+    const roleFiltered = (items: InventoryItem[]) => warehouseSection !== "ingredients" || ingredientRoleFilter === "all" ? items : items.filter(i => i.accessRoles?.includes(ingredientRoleFilter));
 
     const sidebarItems: { key: typeof warehouseSection; label: string; icon: string }[] = [
       { key: "ingredients", label: "Ingredients", icon: "◇" },
@@ -645,11 +647,28 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           {/* Quick Stats (shown for group views, not history) */}
           {warehouseSection !== "history" && (
             <div className="grid grid-cols-5 gap-3">
-              <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Items</div><div className="text-[24px] font-semibold mt-1">{groupItems(warehouseSection).length}</div></div>
-              <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Low Stock</div><div className="text-[24px] font-semibold mt-1 text-red-600">{lowStock.filter(i => i.group === warehouseSection).length}</div></button>
-              <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">No Stock</div><div className="text-[24px] font-semibold mt-1 text-zinc-800">{noStock.filter(i => i.group === warehouseSection).length}</div></button>
-              <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-purple-300 hover:bg-purple-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expired</div><div className="text-[24px] font-semibold mt-1 text-purple-600">{expired.filter(i => i.group === warehouseSection).length}</div></button>
-              <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expiring ≤30 Days</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{expiring.filter(i => i.group === warehouseSection).length}</div></button>
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Items</div><div className="text-[24px] font-semibold mt-1">{roleFiltered(groupItems(warehouseSection)).length}</div></div>
+              <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Low Stock</div><div className="text-[24px] font-semibold mt-1 text-red-600">{roleFiltered(lowStock.filter(i => i.group === warehouseSection)).length}</div></button>
+              <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">No Stock</div><div className="text-[24px] font-semibold mt-1 text-zinc-800">{roleFiltered(noStock.filter(i => i.group === warehouseSection)).length}</div></button>
+              <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-purple-300 hover:bg-purple-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expired</div><div className="text-[24px] font-semibold mt-1 text-purple-600">{roleFiltered(expired.filter(i => i.group === warehouseSection)).length}</div></button>
+              <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expiring ≤30 Days</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{roleFiltered(expiring.filter(i => i.group === warehouseSection)).length}</div></button>
+            </div>
+          )}
+
+          {/* Role filter pills for Ingredients */}
+          {warehouseSection === "ingredients" && (
+            <div className="flex items-center gap-1.5 rounded-xl bg-zinc-100 p-1">
+              {[
+                { id: "all" as const, label: "All" },
+                { id: "baker" as const, label: "Baker" },
+                { id: "deco" as const, label: "Deco" },
+                { id: "pastry" as const, label: "Pastry" },
+              ].map(r => (
+                <button key={r.id} onClick={() => setIngredientRoleFilter(r.id)}
+                  className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all ${ingredientRoleFilter === r.id ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
+                  {r.label}
+                </button>
+              ))}
             </div>
           )}
 
@@ -708,7 +727,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 </div>
                 <div className="overflow-x-auto">
                   <div className="min-w-[500px] space-y-2">
-                  {groupItems(warehouseSection).filter(i => !invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase())).map(item => {
+                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || i.accessRoles?.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).map(item => {
                     const pct = Math.min(100, (item.onHand / item.threshold) * 100);
                     const isCritical = item.onHand < item.threshold;
                     const isExpired = item.expiryDate && item.expiryDate < todayStr;
@@ -733,7 +752,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                       </div>
                     );
                   })}
-                  {groupItems(warehouseSection).filter(i => !invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase())).length === 0 && <div className="text-center py-10 text-[14px] text-zinc-400">{invSearch ? "No items match your search." : "No items in this group yet."}</div>}
+                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || i.accessRoles?.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).length === 0 && <div className="text-center py-10 text-[14px] text-zinc-400">{invSearch ? "No items match your search." : "No items in this group yet."}</div>}
                   </div>
                 </div>
               </div>
@@ -869,7 +888,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
 
         {/* Stat View Modal */}
         {statModal && (() => {
-          const items = statModal === "low-stock" ? lowStock.map(i => ({ name: i.name, detail: `${i.onHand}/${i.threshold} ${i.unit}` })) : statModal === "no-stock" ? noStock.map(i => ({ name: i.name, detail: "0 on hand" })) : statModal === "expired" ? expired.map(i => ({ name: i.name, detail: `Expired ${i.expiryDate}` })) : expiring.map(i => ({ name: i.name, detail: `Expires ${i.expiryDate}` }));
+          const filtered = (src: InventoryItem[]) => roleFiltered(src.filter(i => i.group === warehouseSection));
+          const items = statModal === "low-stock" ? filtered(lowStock).map(i => ({ name: i.name, detail: `${i.onHand}/${i.threshold} ${i.unit}` })) : statModal === "no-stock" ? filtered(noStock).map(i => ({ name: i.name, detail: "0 on hand" })) : statModal === "expired" ? filtered(expired).map(i => ({ name: i.name, detail: `Expired ${i.expiryDate}` })) : filtered(expiring).map(i => ({ name: i.name, detail: `Expires ${i.expiryDate}` }));
           const colors = statModal === "low-stock" ? ["red", "red"] as const : statModal === "no-stock" ? ["zinc", "zinc"] as const : statModal === "expired" ? ["purple", "purple"] as const : ["amber", "amber"] as const;
           return (
             <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/40 p-4 backdrop-blur-sm" onClick={() => setStatModal(null)}>

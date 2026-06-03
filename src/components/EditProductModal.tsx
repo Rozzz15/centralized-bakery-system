@@ -7,7 +7,7 @@ type Props = {
   inventory: InventoryItem[];
   categories: string[];
   initialCategory: string;
-  onSave: (originalName: string, newName: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedProduct: string[], category: string) => void;
+  onSave: (originalName: string, newName: string, ingredients: RecipeIngredient[], packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedProduct: string[], category: string) => void;
   onClose: () => void;
 };
 
@@ -17,6 +17,7 @@ export default function EditProductModal({ productName, recipes, inventory, cate
   const [name, setName] = useState(productName);
   const [category, setCategory] = useState(initialCategory);
   const [linkedProduct, setLinkedProduct] = useState<string[]>(existing?.linkedProduct || []);
+  const [ingredientItems, setIngredientItems] = useState<RecipeIngredient[]>(existing?.ingredients || []);
   const [packagingItems, setPackagingItems] = useState<RecipeIngredient[]>(existing?.packagingMaterials || []);
   const [decorationItems, setDecorationItems] = useState<RecipeIngredient[]>(existing?.decorationSupplies || []);
   const [recipeSearch, setRecipeSearch] = useState("");
@@ -24,7 +25,14 @@ export default function EditProductModal({ productName, recipes, inventory, cate
   const [showDecorationPicker, setShowDecorationPicker] = useState(false);
   const [packagingSearch, setPackagingSearch] = useState("");
   const [decorationSearch, setDecorationSearch] = useState("");
+  const [showIngredientPicker, setShowIngredientPicker] = useState(false);
+  const [ingredientSearch, setIngredientSearch] = useState("");
 
+  function addIngredient(inv: InventoryItem) {
+    if (ingredientItems.some(i => i.inventoryId === inv.id)) return;
+    setIngredientItems(prev => [...prev, { inventoryId: inv.id, name: inv.name, qtyPerBatch: 1, unit: inv.unit }]);
+    setShowIngredientPicker(false);
+  }
   function addPackaging(inv: InventoryItem) {
     if (packagingItems.some(i => i.inventoryId === inv.id)) return;
     setPackagingItems(prev => [...prev, { inventoryId: inv.id, name: inv.name, qtyPerBatch: 1, unit: inv.unit }]);
@@ -36,6 +44,7 @@ export default function EditProductModal({ productName, recipes, inventory, cate
     setShowDecorationPicker(false);
   }
 
+  const availableIngredients = inventory.filter(i => i.group === "ingredients" && !ingredientItems.some(ing => ing.inventoryId === i.id) && (i.name.toLowerCase().includes(ingredientSearch.toLowerCase()) || ingredientSearch === ""));
   const availablePackaging = inventory.filter(i => i.group === "packaging-materials" && !packagingItems.some(ing => ing.inventoryId === i.id) && (i.name.toLowerCase().includes(packagingSearch.toLowerCase()) || packagingSearch === ""));
   const availableDecoration = inventory.filter(i => i.group === "decoration-supplies" && !decorationItems.some(ing => ing.inventoryId === i.id) && (i.name.toLowerCase().includes(decorationSearch.toLowerCase()) || decorationSearch === ""));
 
@@ -48,7 +57,7 @@ export default function EditProductModal({ productName, recipes, inventory, cate
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(productName, name.trim(), packagingItems, decorationItems, linkedProduct, category);
+    onSave(productName, name.trim(), ingredientItems, packagingItems, decorationItems, linkedProduct, category);
   }
 
   return (
@@ -103,6 +112,54 @@ export default function EditProductModal({ productName, recipes, inventory, cate
                 </>
               )}
             </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Ingredients</span>
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">{ingredientItems.length}</span>
+              </div>
+              <div className="relative">
+                <button type="button" onClick={() => setShowIngredientPicker(!showIngredientPicker)} className="text-[12px] font-medium text-blue-600 hover:text-blue-800">+ Add</button>
+                {showIngredientPicker && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowIngredientPicker(false)} />
+                    <div className="absolute top-5 right-0 z-20 w-60 rounded-xl border border-zinc-200 bg-white shadow-lg">
+                      <div className="p-2 border-b border-zinc-100">
+                        <input value={ingredientSearch} onChange={e => setIngredientSearch(e.target.value)} placeholder="Search ingredients..." className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] outline-none focus:border-zinc-400" />
+                      </div>
+                      <div className="max-h-40 overflow-y-auto">
+                        {availableIngredients.length === 0 ? (
+                          <p className="px-3 py-3 text-[12px] text-zinc-400 text-center">No ingredients found.</p>
+                        ) : availableIngredients.map(i => (
+                          <button key={i.id} type="button" onClick={() => { addIngredient(i); setIngredientSearch(""); }} className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 text-[12px]">
+                            <span className="font-medium text-zinc-900">{i.name}</span>
+                            <span className="text-zinc-400 font-mono">{i.unit}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            {ingredientItems.length === 0 ? (
+              <p className="text-[12px] text-zinc-400 py-3 text-center border border-dashed border-zinc-200 rounded-xl">No ingredients added.</p>
+            ) : (
+              <div className="space-y-1 max-h-[140px] overflow-y-auto">
+                {ingredientItems.map(item => (
+                  <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                    <span className="text-[12px] font-medium text-zinc-900 truncate flex-1">{item.name}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <input value={item.unit} onChange={e => setIngredientItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, unit: e.target.value } : i))} className="w-12 rounded-lg border border-zinc-200 px-1.5 py-1 text-[10px] text-center outline-none focus:border-zinc-900" />
+                      <input type="number" min="0" step="any" value={item.qtyPerBatch} onChange={e => setIngredientItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, qtyPerBatch: Number(e.target.value) } : i))} className="w-16 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-center outline-none focus:border-zinc-400" />
+                      <button type="button" onClick={() => setIngredientItems(prev => prev.filter(i => i.inventoryId !== item.inventoryId))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="mb-3">

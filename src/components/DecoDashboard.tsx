@@ -46,7 +46,14 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     if (!ts) return true;
     const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
     const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-    return itemDate === todayStr;
+    if (itemDate === todayStr) return true;
+    // Include activated scheduled items that have a production task created today
+    return production.some(t => {
+      const taskTs = t.id.match(/PRD-(\d+)/)?.[1];
+      if (!taskTs) return false;
+      const taskDate = new Date(Number(taskTs)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+      return taskDate === todayStr && t.product === d.product;
+    });
   });
   const decoTaskProducts = new Set(production.filter(p => p.assignedTo === "deco").map(t => t.product));
   const dosForDeco = todayDOS.filter(d => decoTaskProducts.has(d.product));
@@ -133,20 +140,25 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   const handleCompleteMix = async (product: string) => {
     const dos = dosForDeco.find(d => d.product === product);
-    const recipe = recipes.find(r => r.productName === product);
-    if (!dos || !recipe) return;
+    if (!dos) return;
+    const productRecipes = getRecipesForProduct(product);
+    if (productRecipes.length === 0) return;
     const newInv = [...inventory];
     const deductions: string[] = [];
-    recipe.ingredients.forEach(ing => {
-      const neededQty = Math.ceil(ing.qtyPerBatch * dos.qty);
-      const idx = newInv.findIndex(i => i.id === ing.inventoryId);
-      if (idx >= 0) { newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - neededQty) }; deductions.push(ing.name); }
+    productRecipes.forEach(recipe => {
+      recipe.ingredients.forEach(ing => {
+        const neededQty = Math.ceil(ing.qtyPerBatch * dos.qty);
+        const idx = newInv.findIndex(i => i.id === ing.inventoryId);
+        if (idx >= 0) { newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - neededQty) }; deductions.push(`${recipe.productName}: ${ing.name}`); }
+      });
     });
     onUpdateInventory(newInv);
     await db.upsertInventory(newInv).catch(console.error);
     onAddAuditLog?.("FREE_MIX_COMPLETED", `${product}: ${deductions.join(", ")}`);
     setFreeMixDone(prev => new Set(prev).add(product));
-    recipe.ingredients.forEach(ing => togglePrepared(`${dos.id}-${ing.name}`));
+    productRecipes.forEach(recipe => {
+      recipe.ingredients.forEach(ing => togglePrepared(`${dos.id}-${recipe.productName}-${ing.name}`));
+    });
   };
 
   const updateCustomOrder = (id: string, status: CustomOrder["status"]) => {
@@ -163,13 +175,27 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   const getRecipesForProduct = (product: string) => {
     const direct = recipes.filter(r => r.productName === product);
+    // Recipes that explicitly link TO this product (via their linkedProduct field)
     const linked = recipes.filter(r => (r.linkedProduct ?? []).includes(product) && r.productName !== product);
-    return [...direct, ...linked];
+    // Recipes that are linked FROM this product's own linkedProduct field
+    const productRecipe = recipes.find(r => r.productName === product);
+    const fromLinks = productRecipe
+      ? ((productRecipe.linkedProduct ?? [])
+          .map(name => recipes.find(r => r.productName === name))
+          .filter((r): r is ProductRecipe => r !== undefined && r.productName !== product))
+      : [];
+    // Deduplicate by productName
+    const seen = new Set<string>();
+    return [...direct, ...fromLinks, ...linked].filter(r => {
+      if (seen.has(r.productName)) return false;
+      seen.add(r.productName);
+      return true;
+    });
   };
 
   const totalNeeded = dosForDeco.reduce((s, d) => {
     const productRecipes = getRecipesForProduct(d.product);
-    return s + productRecipes.reduce((sum, r) => sum + r.ingredients.length, 0);
+    return s + productRecipes.filter(r => r.ingredients.length > 0).length;
   }, 0);
   const totalPrepared = freeMixPrepared.size;
   const allMixesDone = dosForDeco.every(d => freeMixDone.has(d.product));
@@ -243,7 +269,6 @@ return (
             <table className="w-full">
               <thead>
                 <tr className="border-b border-zinc-700 bg-zinc-800 text-left text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
-                  <th className="w-10 px-3 py-2.5"></th>
                   <th className="px-2 py-2.5">Product</th>
                   <th className="px-2 py-2.5">Priority</th>
                   <th className="px-2 py-2.5 text-right">Total</th>
@@ -252,54 +277,71 @@ return (
               </thead>
               <tbody>
                 {dosForDeco.map(d => {
-                  const recipe = recipes.find(r => r.productName === d.product);
-                  const hasDetails = recipe && ((recipe.ingredients.length > 0) || (recipe.packagingMaterials ?? []).length > 0 || (recipe.decorationSupplies ?? []).length > 0);
+                  const productRecipes = getRecipesForProduct(d.product);
+                  const hasDetails = productRecipes.length > 0 && productRecipes.some(r => 
+                    r.ingredients.length > 0 || 
+                    (r.packagingMaterials ?? []).length > 0 || 
+                    (r.decorationSupplies ?? []).length > 0
+                  );
                   const isExpanded = expandedRows.has(d.id);
                   const pColor = d.priority === "HIGH" ? "bg-red-900/60 text-red-300" : d.priority === "MEDIUM" ? "bg-amber-900/60 text-amber-300" : "bg-zinc-700 text-zinc-400";
                   const sDot = d.status === "completed" ? "bg-emerald-500" : d.status === "in-progress" ? "bg-amber-500" : "bg-zinc-500";
                   return (
                     <Fragment key={d.id}>
                       <tr className="border-b border-zinc-800 text-[13px] hover:bg-zinc-800/50 transition-colors">
-                        <td className="px-3 py-2.5 text-center">
-                          {hasDetails && (
-                            <button onClick={() => setExpandedRows(prev => { const n = new Set(prev); if (n.has(d.id)) n.delete(d.id); else n.add(d.id); return n; })} className="grid h-6 w-6 place-items-center rounded-lg hover:bg-zinc-700 transition-colors text-zinc-400 text-[10px]">
-                              {isExpanded ? "▾" : "▸"}
+                        <td className="px-2 py-2.5">
+                          {hasDetails ? (
+                            <button onClick={() => setExpandedRows(prev => { const n = new Set(prev); if (n.has(d.id)) n.delete(d.id); else n.add(d.id); return n; })} className="inline-flex items-center gap-1.5 font-medium text-zinc-100 hover:text-white transition-colors text-left w-full cursor-pointer">
+                              <span className={`text-[10px] transition-transform ${isExpanded ? "rotate-90" : ""} text-zinc-500`}>▸</span>
+                              {d.product}
                             </button>
+                          ) : (
+                            <span className="font-medium text-zinc-100">{d.product}</span>
                           )}
+                          {newDOSIds?.has(d.id) && <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-900/60 px-1.5 py-0.5 text-[9px] font-bold text-blue-300 uppercase tracking-wider">New</span>}
                         </td>
-                        <td className="px-2 py-2.5 font-medium text-zinc-100">{d.product} {newDOSIds?.has(d.id) && <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-900/60 px-1.5 py-0.5 text-[9px] font-bold text-blue-300 uppercase tracking-wider">New</span>}</td>
                         <td className="px-2 py-2.5"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${pColor}`}>{d.priority}</span></td>
                         <td className="px-2 py-2.5 text-right font-mono text-zinc-300">{d.qty}</td>
                         <td className="px-3 py-2.5 text-right"><span className={`inline-flex items-center gap-1.5 ${d.status === "completed" ? "text-emerald-400" : d.status === "in-progress" ? "text-amber-400" : "text-zinc-400"}`}><span className={`h-1.5 w-1.5 rounded-full ${sDot}`} />{d.status === "in-progress" ? "In Progress" : d.status === "completed" ? "Completed" : "Pending"}</span></td>
                       </tr>
-                      {isExpanded && recipe && (
+                      {isExpanded && productRecipes.length > 0 && (
                         <tr key={`${d.id}-detail`}>
-                          <td colSpan={5} className="px-3 pb-3">
+                          <td colSpan={4} className="px-3 pb-3">
                             <div className="bg-zinc-800 rounded-xl p-3 space-y-2 mt-1">
-                              {recipe.ingredients.length > 0 && (
+                              {productRecipes.filter(r => r.ingredients.length > 0).length > 0 && (
                                 <div>
-                                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Ingredients</div>
+                                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Recipe</div>
                                   <div className="flex flex-wrap gap-1.5">
-                                    {recipe.ingredients.map((ing, i) => <span key={i} className="rounded-lg bg-zinc-700 border border-zinc-600 px-2 py-1 text-[11px] text-zinc-200">{ing.name} {ing.qtyPerBatch}{ing.unit}</span>)}
+                                    {productRecipes.filter(r => r.ingredients.length > 0).map(r => (
+                                      <span key={r.productName} className="rounded-lg bg-rose-900/50 border border-rose-700 px-2 py-1 text-[11px] text-rose-200">{r.productName}</span>
+                                    ))}
                                   </div>
                                 </div>
                               )}
-                              {(recipe.packagingMaterials ?? []).length > 0 && (
-                                <div>
-                                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Packaging</div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {recipe.packagingMaterials!.map((p, i) => <span key={i} className="rounded-lg bg-zinc-700 border border-blue-800 px-2 py-1 text-[11px] text-blue-300">{p.name} {p.qtyPerBatch}{p.unit}</span>)}
-                                  </div>
+                              {productRecipes.map((recipe, ri) => (
+                                <div key={ri}>
+                                  {(recipe.packagingMaterials ?? []).length > 0 && (
+                                    <div>
+                                      <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">
+                                        {recipe.productName !== d.product ? `${recipe.productName} — Packaging` : "Packaging"}
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {recipe.packagingMaterials!.map((p, i) => <span key={i} className="rounded-lg bg-zinc-700 border border-blue-800 px-2 py-1 text-[11px] text-blue-300">{p.name} {p.qtyPerBatch}{p.unit}</span>)}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {(recipe.decorationSupplies ?? []).length > 0 && (
+                                    <div>
+                                      <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">
+                                        {recipe.productName !== d.product ? `${recipe.productName} — Decoration` : "Decoration"}
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {recipe.decorationSupplies!.map((s, i) => <span key={i} className="rounded-lg bg-zinc-700 border border-purple-800 px-2 py-1 text-[11px] text-purple-300">{s.name} {s.qtyPerBatch}{s.unit}</span>)}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                              {(recipe.decorationSupplies ?? []).length > 0 && (
-                                <div>
-                                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Decoration</div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {recipe.decorationSupplies!.map((s, i) => <span key={i} className="rounded-lg bg-zinc-700 border border-purple-800 px-2 py-1 text-[11px] text-purple-300">{s.name} {s.qtyPerBatch}{s.unit}</span>)}
-                                  </div>
-                                </div>
-                              )}
+                              ))}
                             </div>
                           </td>
                         </tr>
@@ -330,45 +372,47 @@ return (
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${d.priority === "HIGH" ? "bg-red-100 text-red-700" : d.priority === "MEDIUM" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{d.priority}</span>
                   </div>
                 ))}
-                {summaryModal === "ingredients" && dosForDeco.flatMap(d => {
-                  const recipe = recipes.find(r => r.productName === d.product);
-                  return (recipe?.ingredients ?? []).map(ing => {
-                    const neededQty = Math.ceil(ing.qtyPerBatch * d.qty);
-                    return { product: d.product, name: ing.name, qty: neededQty, unit: ing.unit, key: `${d.id}-${ing.name}` };
-                  });
-                }).map(item => (
-                  <div key={item.key} className="flex items-center justify-between rounded-xl border border-rose-100 px-3.5 py-2.5">
-                    <div>
-                      <span className="text-[13px] font-medium text-zinc-900">{item.name}</span>
-                      <span className="ml-2 text-[11px] text-zinc-400">for {item.product}</span>
+                {summaryModal === "ingredients" && dosForDeco.map(d => {
+                  const productRecipes = getRecipesForProduct(d.product);
+                  const recipeNames = productRecipes.filter(r => r.ingredients.length > 0).map(r => r.productName);
+                  if (recipeNames.length === 0) return null;
+                  return (
+                    <div key={d.id} className="rounded-xl border border-rose-100 px-3.5 py-2.5">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[13px] font-medium text-zinc-900">{d.product} <span className="text-[12px] text-zinc-400 font-mono">×{d.qty}</span></span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {recipeNames.map(name => (
+                          <span key={name} className="rounded-lg bg-rose-100 border border-rose-200 px-2 py-1 text-[11px] font-medium text-rose-700">{name}</span>
+                        ))}
+                      </div>
                     </div>
-                    <span className="text-[13px] font-mono font-medium text-rose-600">{item.qty} {item.unit}</span>
-                  </div>
-                ))}
+                  );
+                })}
                 {summaryModal === "packaging" && dosForDeco.flatMap(d => {
-                  const recipe = recipes.find(r => r.productName === d.product);
-                  return (recipe?.packagingMaterials ?? []).map(mat => ({
-                    product: d.product, name: mat.name, qty: mat.qtyPerBatch, unit: mat.unit, key: `${d.id}-pkg-${mat.name}`
-                  }));
+                  const productRecipes = getRecipesForProduct(d.product);
+                  return productRecipes.flatMap(r => (r.packagingMaterials ?? []).map(mat => ({
+                    product: d.product, recipeName: r.productName, name: mat.name, qty: mat.qtyPerBatch, unit: mat.unit, key: `${d.id}-${r.productName}-pkg-${mat.name}`
+                  })));
                 }).map(item => (
                   <div key={item.key} className="flex items-center justify-between rounded-xl border border-blue-100 px-3.5 py-2.5">
                     <div>
                       <span className="text-[13px] font-medium text-zinc-900">{item.name}</span>
-                      <span className="ml-2 text-[11px] text-zinc-400">for {item.product}</span>
+                      <span className="ml-2 text-[11px] text-zinc-400">{item.recipeName !== item.product ? `(${item.recipeName})` : ""} for {item.product}</span>
                     </div>
                     <span className="text-[13px] font-mono font-medium text-blue-600">{item.qty} {item.unit}</span>
                   </div>
                 ))}
                 {summaryModal === "deco" && dosForDeco.flatMap(d => {
-                  const recipe = recipes.find(r => r.productName === d.product);
-                  return (recipe?.decorationSupplies ?? []).map(sup => ({
-                    product: d.product, name: sup.name, qty: sup.qtyPerBatch, unit: sup.unit, key: `${d.id}-deco-${sup.name}`
-                  }));
+                  const productRecipes = getRecipesForProduct(d.product);
+                  return productRecipes.flatMap(r => (r.decorationSupplies ?? []).map(sup => ({
+                    product: d.product, recipeName: r.productName, name: sup.name, qty: sup.qtyPerBatch, unit: sup.unit, key: `${d.id}-${r.productName}-deco-${sup.name}`
+                  })));
                 }).map(item => (
                   <div key={item.key} className="flex items-center justify-between rounded-xl border border-purple-100 px-3.5 py-2.5">
                     <div>
                       <span className="text-[13px] font-medium text-zinc-900">{item.name}</span>
-                      <span className="ml-2 text-[11px] text-zinc-400">for {item.product}</span>
+                      <span className="ml-2 text-[11px] text-zinc-400">{item.recipeName !== item.product ? `(${item.recipeName})` : ""} for {item.product}</span>
                     </div>
                     <span className="text-[13px] font-mono font-medium text-purple-600">{item.qty} {item.unit}</span>
                   </div>
@@ -406,122 +450,104 @@ return (
         {dosForDeco.length === 0 ? (
           <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No DOS items assigned for today.</p></div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-1.5">
             {dosForDeco.map(d => {
-              const recipe = recipes.find(r => r.productName === d.product);
+              const productRecipes = getRecipesForProduct(d.product);
+              const allIngredientsFromRecipes = productRecipes.flatMap(r => r.ingredients.map(ing => ({ ...ing, recipeName: r.productName })));
               const isDone = freeMixDone.has(d.product);
-              const allPrepared = recipe ? recipe.ingredients.every(ing => freeMixPrepared.has(`${d.id}-${ing.name}`)) : false;
+              const allPrepared = allIngredientsFromRecipes.length > 0 && allIngredientsFromRecipes.every(ing => freeMixPrepared.has(`${d.id}-${ing.recipeName}-${ing.name}`));
+              const preparedCount = allIngredientsFromRecipes.filter(ing => freeMixPrepared.has(`${d.id}-${ing.recipeName}-${ing.name}`)).length;
+              const allPackaging = productRecipes.flatMap(r => (r.packagingMaterials ?? []).map(p => ({ ...p, recipeName: r.productName })));
+              const allDecoration = productRecipes.flatMap(r => (r.decorationSupplies ?? []).map(s => ({ ...s, recipeName: r.productName })));
               return (
-                <div key={d.id} className={`rounded-2xl border p-5 ${isDone ? "border-emerald-200 bg-emerald-50/30" : "border-zinc-200 bg-white"}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <span className="text-[15px] font-semibold text-zinc-900">{d.product}</span>
-                      <span className="ml-2 text-[12px] text-zinc-500">×{d.qty}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
+                <div key={d.id} className={`rounded-xl border ${isDone ? "border-emerald-200 bg-emerald-50/30" : "border-zinc-200 bg-white"} p-2.5`}>
+                  {/* Header row */}
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[13px] font-semibold text-zinc-900 truncate">{d.product}</span>
+                      <span className="text-[10px] text-zinc-400 shrink-0">×{d.qty}</span>
                       {isDone ? (
-                        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-medium text-emerald-700">✓ Mixed & Deducted</span>
-                      ) : recipe && allPrepared ? (
-                        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-medium text-emerald-700">✓ All Mixed</span>
-                      ) : recipe ? (
-                        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-medium text-amber-700">{recipe.ingredients.filter(ing => freeMixPrepared.has(`${d.id}-${ing.name}`)).length}/{recipe.ingredients.length} Mixed</span>
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 shrink-0">✓ Deducted</span>
+                      ) : allIngredientsFromRecipes.length > 0 && allPrepared ? (
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 shrink-0">✓ Mixed</span>
+                      ) : allIngredientsFromRecipes.length > 0 ? (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 shrink-0">{preparedCount}/{allIngredientsFromRecipes.length}</span>
                       ) : (
-                        <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-medium text-zinc-500">No Recipe</span>
+                        <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[9px] font-medium text-zinc-500 shrink-0">No Recipe</span>
                       )}
                     </div>
+                    {!isDone && (
+                      <button onClick={() => handleEditRecipe(d.product)} className="shrink-0 rounded-md border border-zinc-300 px-1.5 py-0.5 text-[9px] font-medium text-zinc-500 hover:bg-zinc-100 transition-all">
+                        {productRecipes.length > 0 ? "Edit" : "+ Recipe"}
+                      </button>
+                    )}
                   </div>
 
-                  {!isDone && (
-                    <div className="flex items-center gap-2 mb-3">
-                      <button onClick={() => handleEditRecipe(d.product)} className="rounded-lg border border-zinc-300 px-2.5 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-100 transition-all">
-                        {recipe ? "Edit Recipe" : "+ Set Recipe"}
-                      </button>
-                    </div>
-                  )}
+                  {productRecipes.length > 0 ? (
+                    <>
+                      {/* Ingredients — clear rows with calculated qty */}
+                      {!isDone && allIngredientsFromRecipes.length > 0 && (
+                        <div className="space-y-[1px] mb-1">
+                          {allIngredientsFromRecipes.map((ing, i) => {
+                            const neededQty = Math.ceil(ing.qtyPerBatch * d.qty);
+                            const invItem = allIngredients.find(ii => ii.id === ing.inventoryId || ii.name.toLowerCase() === ing.name.toLowerCase());
+                            const hasStock = invItem ? invItem.onHand >= neededQty : true;
+                            const isPrepared = freeMixPrepared.has(`${d.id}-${ing.recipeName}-${ing.name}`);
+                            const key = `${d.id}-${ing.recipeName}-${ing.name}`;
+                            return (
+                              <div key={key} className={`flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors ${isPrepared ? "bg-emerald-50/40" : "hover:bg-zinc-50"}`}>
+                                <button onClick={() => togglePrepared(key)} className={`shrink-0 grid h-4 w-4 place-items-center rounded border text-[8px] transition-all ${isPrepared ? "bg-emerald-500 border-emerald-500 text-white" : "border-zinc-300 hover:border-zinc-400"}`}>{isPrepared ? "✓" : ""}</button>
+                                {ing.recipeName !== d.product && (
+                                  <span className="text-[10px] text-zinc-400 w-16 shrink-0 truncate">{ing.recipeName}</span>
+                                )}
+                                <span className="flex-1 text-[12px] text-zinc-800 min-w-0 truncate">{ing.name}</span>
+                                <span className="text-[12px] font-mono font-semibold text-zinc-800 shrink-0">{neededQty} {ing.unit}</span>
+                                <span className={`text-[10px] font-medium shrink-0 ${hasStock ? "text-emerald-600" : "text-red-500"}`}>
+                                  {hasStock ? (invItem ? `${invItem.onHand} ✓` : "✓") : `⚠ ${invItem ? invItem.onHand : "Low"}`}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
 
-                  {recipe ? (
-                    <div className="space-y-3">
-                      {recipe.ingredients.length > 0 && (
-                        <div className="rounded-xl border border-rose-200 overflow-hidden">
-                          <div className="flex items-center gap-2 bg-rose-50 px-3.5 py-2 border-b border-rose-100">
-                            <span className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider">Ingredients</span>
-                            <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-mono font-medium text-rose-600">{recipe.ingredients.length}</span>
-                          </div>
-                          <div className="divide-y divide-rose-50">
-                            {recipe.ingredients.map((ing, i) => {
-                              const neededQty = Math.ceil(ing.qtyPerBatch * d.qty);
-                              const invItem = allIngredients.find(ii => ii.id === ing.inventoryId || ii.name.toLowerCase() === ing.name.toLowerCase());
-                              const hasStock = invItem ? invItem.onHand >= neededQty : true;
-                              const isPrepared = freeMixPrepared.has(`${d.id}-${ing.name}`);
-                              return (
-                                <div key={i} className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-rose-50/30 transition-colors">
-                                  {!isDone && (
-                                    <button onClick={() => togglePrepared(`${d.id}-${ing.name}`)} className={`shrink-0 grid h-5 w-5 place-items-center rounded-md border text-[10px] transition-all ${isPrepared ? "bg-emerald-500 border-emerald-500 text-white" : "border-zinc-300 text-transparent hover:border-zinc-400"}`}>{isPrepared ? "✓" : ""}</button>
-                                  )}
-                                  <span className="flex-1 text-[13px] text-zinc-800">{ing.name}</span>
-                                  <span className="text-[12px] font-mono font-medium text-zinc-700">{neededQty} {ing.unit}</span>
-                                  <span className={`text-[11px] ${hasStock ? "text-emerald-600" : "text-red-500"}`}>{hasStock ? invItem ? `${invItem.onHand} in stock` : "In stock" : "Low stock!"}</span>
-                                  {isDone && <span className="text-[11px] text-emerald-600 font-medium">Deducted ✓</span>}
-                                </div>
-                              );
-                            })}
-                          </div>
+                      {/* Packaging & Decoration — inline chips (informational, no checkbox needed) */}
+                      {!isDone && (allPackaging.length > 0 || allDecoration.length > 0) && (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-400 mb-0.5">
+                          {allPackaging.length > 0 && (
+                            <>
+                              <span className="text-[8px] uppercase tracking-wider text-zinc-400 font-medium shrink-0">Pkg:</span>
+                              {allPackaging.map((p, i) => (
+                                <span key={`pkg-${i}`} className="inline-flex items-center gap-0.5 rounded-md bg-blue-50 border border-blue-100 px-1.5 py-0.5 text-[10px] text-blue-600">
+                                  {p.recipeName !== d.product && <span className="text-[8px] opacity-60">{p.recipeName}:</span>}
+                                  {p.name} {p.qtyPerBatch}{p.unit}
+                                </span>
+                              ))}
+                            </>
+                          )}
+                          {allDecoration.length > 0 && (
+                            <>
+                              <span className="text-[8px] uppercase tracking-wider text-zinc-400 font-medium shrink-0">Deco:</span>
+                              {allDecoration.map((s, i) => (
+                                <span key={`deco-${i}`} className="inline-flex items-center gap-0.5 rounded-md bg-purple-50 border border-purple-100 px-1.5 py-0.5 text-[10px] text-purple-600">
+                                  {s.recipeName !== d.product && <span className="text-[8px] opacity-60">{s.recipeName}:</span>}
+                                  {s.name} {s.qtyPerBatch}{s.unit}
+                                </span>
+                              ))}
+                            </>
+                          )}
                         </div>
                       )}
-                      {(recipe.packagingMaterials ?? []).length > 0 && (
-                        <div className="rounded-xl border border-blue-200 overflow-hidden">
-                          <div className="flex items-center gap-2 bg-blue-50 px-3.5 py-2 border-b border-blue-100">
-                            <span className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider">Packaging Materials</span>
-                            <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-mono font-medium text-blue-600">{recipe.packagingMaterials.length}</span>
-                          </div>
-                          <div className="divide-y divide-blue-50">
-                            {recipe.packagingMaterials.map((mat, i) => {
-                              const invItem = inventory.find(ii => ii.id === mat.inventoryId);
-                              return (
-                                <div key={`pkg-${i}`} className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-blue-50/30 transition-colors">
-                                  <span className="shrink-0 grid h-5 w-5 place-items-center rounded-md bg-blue-100 text-[10px] text-blue-500">□</span>
-                                  <span className="flex-1 text-[13px] text-zinc-800">{mat.name}</span>
-                                  <span className="text-[12px] font-mono font-medium text-zinc-700">{mat.qtyPerBatch} {mat.unit}</span>
-                                  <span className="text-[11px] text-blue-500">{invItem ? `${invItem.onHand} in stock` : "—"}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
+
+                      {/* Complete Mix */}
+                      {!isDone && allPrepared && (
+                        <button onClick={() => handleCompleteMix(d.product)} className="mt-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-emerald-700 transition-all active:scale-[0.98]">
+                          ✓ Complete Mix & Deduct
+                        </button>
                       )}
-                      {(recipe.decorationSupplies ?? []).length > 0 && (
-                        <div className="rounded-xl border border-purple-200 overflow-hidden">
-                          <div className="flex items-center gap-2 bg-purple-50 px-3.5 py-2 border-b border-purple-100">
-                            <span className="text-[11px] font-semibold text-purple-600 uppercase tracking-wider">Decoration Supplies</span>
-                            <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-mono font-medium text-purple-600">{recipe.decorationSupplies.length}</span>
-                          </div>
-                          <div className="divide-y divide-purple-50">
-                            {recipe.decorationSupplies.map((sup, i) => {
-                              const invItem = inventory.find(ii => ii.id === sup.inventoryId);
-                              return (
-                                <div key={`deco-${i}`} className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-purple-50/30 transition-colors">
-                                  <span className="shrink-0 grid h-5 w-5 place-items-center rounded-md bg-purple-100 text-[10px] text-purple-500">○</span>
-                                  <span className="flex-1 text-[13px] text-zinc-800">{sup.name}</span>
-                                  <span className="text-[12px] font-mono font-medium text-zinc-700">{sup.qtyPerBatch} {sup.unit}</span>
-                                  <span className="text-[11px] text-purple-500">{invItem ? `${invItem.onHand} in stock` : "—"}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    </>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-zinc-200 p-4 text-center">
-                      <p className="text-[13px] text-zinc-400">No recipe set for {d.product}.</p>
-                      <button onClick={() => handleEditRecipe(d.product)} className="mt-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-zinc-800">Create Recipe</button>
-                    </div>
-                  )}
-
-                  {!isDone && recipe && allPrepared && (
-                    <button onClick={() => handleCompleteMix(d.product)} className="mt-3 w-full rounded-xl bg-emerald-600 py-2.5 text-[13px] font-medium text-white hover:bg-emerald-700 transition-all active:scale-[0.98]">
-                      Complete Mix & Deduct from Stock
-                    </button>
+                    !isDone && <div className="text-[10px] text-zinc-400 italic">No recipe set.</div>
                   )}
                 </div>
               );
@@ -660,7 +686,35 @@ return (
             
             <div className="pt-6 border-t border-zinc-100 flex justify-end gap-3">
               <button onClick={() => setIsAdvLocked(false)} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-zinc-600 hover:bg-zinc-100">Cancel</button>
-              <button className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-zinc-900 hover:bg-zinc-800 flex items-center gap-2">
+              <button onClick={() => {
+                const batchRef = `ADV-${Date.now()}`;
+                const items: FreezerItem[] = Array.from(selectedAdvRecipes).map(productName => {
+                  const recipe = recipes.find(r => r.productName === productName);
+                  const qty = advMixQtys[productName] || 1;
+                  const adjustments = advMixAdjustments[productName];
+                  const notes = adjustments
+                    ? Object.entries(adjustments).filter(([, v]) => v !== 0).map(([name, v]) => `${name}: ${v > 0 ? "+" : ""}${v.toFixed(1)}`).join("; ")
+                    : "";
+                  return {
+                    id: `FRZ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    productName,
+                    qty,
+                    unit: "batch",
+                    batchRef,
+                    producedBy: "deco",
+                    dateProduced: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
+                    status: "stored",
+                    notes: notes || `Advanced Premix composition`,
+                  };
+                });
+                onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, ...items]);
+                db.upsertFreezerItems(items).catch(console.error);
+                onAddAuditLog?.("ADVANCED_PREMIX_SAVED", `Saved ${items.length} compositions to freezer (batch: ${batchRef})`);
+                setSelectedAdvRecipes(new Set());
+                setAdvMixQtys({});
+                setAdvMixAdjustments({});
+                setIsAdvLocked(false);
+              }} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-zinc-900 hover:bg-zinc-800 flex items-center gap-2">
                 Save to Freezer 📦
               </button>
             </div>
@@ -924,6 +978,25 @@ return (
       ? (getFilteredItems() as unknown as InventoryItem[]).filter(i => !freezerSearch || i.name.toLowerCase().includes(freezerSearch.toLowerCase()))
       : getFilteredItems().filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()))
     );
+
+    const handleAdd = () => {
+      if (!newProduct.trim() || !newQty) return;
+      const item: FreezerItem = {
+        id: `FRZ-${Date.now()}`,
+        productName: newProduct.trim(),
+        qty: Number(newQty),
+        unit: newUnit,
+        batchRef: newBatch.trim(),
+        producedBy: "deco",
+        dateProduced: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
+        status: "stored",
+        notes: newNotes.trim(),
+      };
+      onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, item]);
+      db.upsertFreezerItems([item]).catch(console.error);
+      setShowAddFreezer(false);
+      setNewProduct(""); setNewQty(""); setNewBatch(""); setNewNotes("");
+    };
 
     return (
       <div className="space-y-5">

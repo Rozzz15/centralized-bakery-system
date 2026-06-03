@@ -145,48 +145,7 @@ export default function PastryDashboard({ production, dosItems, activeTab, recip
     );
   }
 
-  if (activeTab === "recipes") {
-    return (
-      <div className="space-y-5">
-        <h1 className="text-[24px] font-semibold">Pastry Recipes</h1>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {recipes.length === 0 ? (
-            <div className="sm:col-span-2 text-center py-12 rounded-[24px] border border-[#E8E0D5] bg-white"><p className="text-[14px] text-zinc-500">No recipes yet.</p></div>
-          ) : recipes.map(r => (
-            <div key={r.productId} className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-              <h3 className="text-[15px] font-semibold text-zinc-900">{r.productName}</h3>
-              {r.ingredients.length > 0 && (
-                <div className="mt-3">
-                  <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5">Ingredients</div>
-                  <div className="space-y-1">
-                    {r.ingredients.map((ing, i) => (
-                      <div key={i} className="flex items-center justify-between text-[12px] text-zinc-600">
-                        <span>{ing.name}</span>
-                        <span style={{ fontFamily: "Fragment Mono, monospace" }}>{ing.qtyPerBatch} {ing.unit}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {r.packagingMaterials.length > 0 && (
-                <div className="mt-3 border-t border-zinc-100 pt-3">
-                  <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5">Packaging</div>
-                  <div className="space-y-1">
-                    {r.packagingMaterials.map((ing, i) => (
-                      <div key={i} className="flex items-center justify-between text-[12px] text-zinc-600">
-                        <span>{ing.name}</span>
-                        <span style={{ fontFamily: "Fragment Mono, monospace" }}>{ing.qtyPerBatch} {ing.unit}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  
 
   if (activeTab === "queue") {
     return (

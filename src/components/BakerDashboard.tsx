@@ -61,7 +61,14 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     if (!ts) return true;
     const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
     const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-    return itemDate === todayStr;
+    if (itemDate === todayStr) return true;
+    // Include activated scheduled items that have a production task created today
+    return production.some(t => {
+      const taskTs = t.id.match(/PRD-(\d+)/)?.[1];
+      if (!taskTs) return false;
+      const taskDate = new Date(Number(taskTs)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+      return taskDate === todayStr && t.product === d.product;
+    });
   });
   const bakerTaskProducts = new Set(production.filter(p => p.assignedTo === "baker").map(t => t.product));
   const bakerDOS = todayDOS.filter(d => bakerTaskProducts.has(d.product));
