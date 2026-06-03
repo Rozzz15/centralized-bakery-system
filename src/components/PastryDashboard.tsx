@@ -7,6 +7,8 @@ type Props = {
   dosItems: DOSItem[];
   activeTab: string;
   recipes: ProductRecipe[];
+  newDOSIds?: Set<string>;
+  onMarkDOSSeen?: (ids: string[]) => void;
   freezerItems?: FreezerItem[];
   onUpdateFreezer?: (cb: FreezerItem[] | ((prev: FreezerItem[]) => FreezerItem[])) => void;
   freezerHistory?: FreezerHistory[];
@@ -18,7 +20,7 @@ const steps = [
   { id: "done", label: "Completed" },
 ];
 
-export default function PastryDashboard({ production, dosItems, activeTab, recipes, freezerItems = [], onUpdateFreezer, freezerHistory = [] }: Props) {
+export default function PastryDashboard({ production, dosItems, activeTab, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [] }: Props) {
   const [step, setStep] = useState(0);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
 
@@ -39,17 +41,23 @@ export default function PastryDashboard({ production, dosItems, activeTab, recip
   const activeTasks = step === 0 ? pendingTasks : step === 1 ? pendingTasks : doneTasks;
 
   const todayDOS = dosItems.filter(d => {
-    if (d.status !== "in-progress" && d.status !== "pending") return false;
+    if (d.status === "scheduled") return false;
+    if (d.scheduledDate && d.scheduledDate <= new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]) return true;
     const ts = d.id.match(/DOS-(\d+)/)?.[1];
-    if (!ts) return true;
+    if (!ts) return false;
     const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-    const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-    return itemDate === todayStr;
+    return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
   });
 
   const handleComplete = (taskId: string) => {
     setCompletedIds(prev => new Set(prev).add(taskId));
   };
+
+  // Mark new DOS items as seen when viewing queue
+  if (activeTab === "queue" && todayDOS.length > 0 && newDOSIds && onMarkDOSSeen) {
+    const unseen = todayDOS.filter(d => newDOSIds.has(d.id));
+    if (unseen.length > 0) onMarkDOSSeen(unseen.map(d => d.id));
+  }
 
   if (activeTab === "dashboard") {
     return (
@@ -169,7 +177,10 @@ export default function PastryDashboard({ production, dosItems, activeTab, recip
               <tbody className="divide-y divide-zinc-50">
                 {todayDOS.map(d => (
                   <tr key={d.id} className="hover:bg-zinc-50/50 transition-colors">
-                    <td className="px-5 py-3.5 text-[13px] font-medium text-zinc-900">{d.product}</td>
+                    <td className="px-5 py-3.5 text-[13px] font-medium text-zinc-900">
+                      {d.product}
+                      {newDOSIds?.has(d.id) && <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700">New</span>}
+                    </td>
                     <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.qty}</td>
                     <td className="px-5 py-3.5 text-center">
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${d.priority === "HIGH" ? "bg-red-100 text-red-700" : d.priority === "MEDIUM" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{d.priority}</span>

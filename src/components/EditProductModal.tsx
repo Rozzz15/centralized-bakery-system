@@ -75,7 +75,7 @@ export default function EditProductModal({ productName, recipes, inventory, cate
 
           <div className="mb-4">
             <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Category</label>
-            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+            <select value={String(category || "")} onChange={e => setCategory(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">
               <option value="">No category</option>
               {(categories || []).map(c => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -112,54 +112,6 @@ export default function EditProductModal({ productName, recipes, inventory, cate
                 </>
               )}
             </div>
-          </div>
-
-          <div className="mb-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Ingredients</span>
-                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">{ingredientItems.length}</span>
-              </div>
-              <div className="relative">
-                <button type="button" onClick={() => setShowIngredientPicker(!showIngredientPicker)} className="text-[12px] font-medium text-blue-600 hover:text-blue-800">+ Add</button>
-                {showIngredientPicker && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setShowIngredientPicker(false)} />
-                    <div className="absolute top-5 right-0 z-20 w-60 rounded-xl border border-zinc-200 bg-white shadow-lg">
-                      <div className="p-2 border-b border-zinc-100">
-                        <input value={ingredientSearch} onChange={e => setIngredientSearch(e.target.value)} placeholder="Search ingredients..." className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] outline-none focus:border-zinc-400" />
-                      </div>
-                      <div className="max-h-40 overflow-y-auto">
-                        {availableIngredients.length === 0 ? (
-                          <p className="px-3 py-3 text-[12px] text-zinc-400 text-center">No ingredients found.</p>
-                        ) : availableIngredients.map(i => (
-                          <button key={i.id} type="button" onClick={() => { addIngredient(i); setIngredientSearch(""); }} className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 text-[12px]">
-                            <span className="font-medium text-zinc-900">{i.name}</span>
-                            <span className="text-zinc-400 font-mono">{i.unit}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            {ingredientItems.length === 0 ? (
-              <p className="text-[12px] text-zinc-400 py-3 text-center border border-dashed border-zinc-200 rounded-xl">No ingredients added.</p>
-            ) : (
-              <div className="space-y-1 max-h-[140px] overflow-y-auto">
-                {ingredientItems.map(item => (
-                  <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
-                    <span className="text-[12px] font-medium text-zinc-900 truncate flex-1">{item.name}</span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <input value={item.unit} onChange={e => setIngredientItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, unit: e.target.value } : i))} className="w-12 rounded-lg border border-zinc-200 px-1.5 py-1 text-[10px] text-center outline-none focus:border-zinc-900" />
-                      <input type="number" min="0" step="any" value={item.qtyPerBatch} onChange={e => setIngredientItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, qtyPerBatch: Number(e.target.value) } : i))} className="w-16 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-center outline-none focus:border-zinc-400" />
-                      <button type="button" onClick={() => setIngredientItems(prev => prev.filter(i => i.inventoryId !== item.inventoryId))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
           <div className="mb-3">

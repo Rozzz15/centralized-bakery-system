@@ -376,7 +376,7 @@ export default function App() {
           const today = getPHToday();
           const scheduled = loadedDOS.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
           if (scheduled.length > 0) {
-            const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
+            const updated = scheduled.map(i => ({ ...i, status: "pending" as const }));
             const taskMap = new Map<string, { product: string; role: string; total: number }>();
             updated.forEach(item => {
               const itemRoles = (item.roles ?? []).length > 0 ? item.roles! : ["baker"];
@@ -396,7 +396,7 @@ export default function App() {
             }));
             await db.upsertDOS(updated);
             await db.upsertProduction(tasks);
-            setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending", scheduledDate: undefined } : i));
+            setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending" } : i));
             setProduction(prev => [...prev, ...tasks]);
             logAudit("SCHEDULED_ACTIVATED", `${scheduled.length} scheduled DOS item${scheduled.length > 1 ? "s" : ""} activated for today`);
           }
@@ -429,6 +429,30 @@ export default function App() {
     });
   }, [loggedIn]);
 
+  // Real-time DOS items from Supabase
+  useEffect(() => {
+    if (!loggedIn) return;
+    return db.subscribeDOS(() => {
+      db.fetchDOS().then(setDosItems).catch(console.error);
+    });
+  }, [loggedIn]);
+
+  // Real-time production tasks from Supabase
+  useEffect(() => {
+    if (!loggedIn) return;
+    return db.subscribeProduction(() => {
+      db.fetchProduction().then(setProduction).catch(console.error);
+    });
+  }, [loggedIn]);
+
+  // Real-time inventory from Supabase
+  useEffect(() => {
+    if (!loggedIn) return;
+    return db.subscribeInventory(() => {
+      db.fetchAllInventory().then(setInventory).catch(console.error);
+    });
+  }, [loggedIn]);
+
   // Real-time production simulation
   useEffect(() => {
     if (!loggedIn) return;
@@ -456,7 +480,7 @@ export default function App() {
       setDosItems(prev => {
         const scheduled = prev.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
         if (scheduled.length === 0) return prev;
-        const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
+        const updated = scheduled.map(i => ({ ...i, status: "pending" as const }));
         const taskMap = new Map<string, { product: string; role: string; total: number }>();
         updated.forEach(item => {
           const itemRoles = (item.roles ?? []).length > 0 ? item.roles! : ["baker"];
@@ -480,7 +504,7 @@ export default function App() {
         logAudit("SCHEDULED_ACTIVATED", `${scheduled.length} scheduled DOS item${scheduled.length > 1 ? "s" : ""} activated for today`);
         return prev.map(i => {
           const found = scheduled.find(s => s.id === i.id);
-          return found ? { ...i, status: "pending" as const, scheduledDate: undefined } : i;
+          return found ? { ...i, status: "pending" as const } : i;
         });
       });
       setProduction(prev => {
@@ -590,7 +614,7 @@ export default function App() {
     const today = getPHToday();
     const scheduled = loadedDOS.filter(i => i.status === "scheduled" && i.scheduledDate && i.scheduledDate <= today);
     if (scheduled.length > 0) {
-      const updated = scheduled.map(i => ({ ...i, status: "pending" as const, scheduledDate: undefined }));
+      const updated = scheduled.map(i => ({ ...i, status: "pending" as const }));
       const tasks: ProductionTask[] = [];
       updated.forEach((item, idx) => {
         const itemRoles = (item.roles ?? []).length > 0 ? item.roles! : ["baker"];
@@ -607,7 +631,7 @@ export default function App() {
       });
       await db.upsertDOS(updated);
       await db.upsertProduction(tasks);
-      setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending", scheduledDate: undefined } : i));
+      setDosItems(prev => prev.map(i => scheduled.find(s => s.id === i.id) ? { ...i, status: "pending" } : i));
       setProduction(prev => [...prev, ...tasks]);
       logAudit("SCHEDULED_ACTIVATED", `${scheduled.length} scheduled DOS item${scheduled.length > 1 ? "s" : ""} activated for today`);
     }
@@ -970,7 +994,7 @@ export default function App() {
               />
             )}
             {role === "pastry" && ["dashboard", "queue", "freezer"].includes(activeTab) && (
-              <PastryDashboard production={production} dosItems={dosItems} activeTab={activeTab} recipes={recipes} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
+              <PastryDashboard production={production} dosItems={dosItems} activeTab={activeTab} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
             )}
           </div>
         </main>

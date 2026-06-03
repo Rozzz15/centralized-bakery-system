@@ -302,7 +302,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Categories</th><th className="px-4 py-3">Recipe</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-36" /></tr>
+                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Linked Recipes</th><th className="px-4 py-3">Categories</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-36" /></tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 text-[13px]">
                 {[...filteredProducts].sort((a, b) => {
@@ -319,19 +319,20 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                         <div className="font-medium text-zinc-900">{product}</div>
                       </td>
                       <td className="px-4 py-3">
-                        {productCategoryMap[product] ? (
-                          <span className="inline-block rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{productCategoryMap[product]}</span>
-                        ) : (
-                          <span className="text-[12px] text-zinc-400 italic">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
                         {recipe?.linkedProduct && recipe.linkedProduct.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
                             {recipe.linkedProduct.map(lp => (
                               <span key={lp} className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700">{lp}</span>
                             ))}
                           </div>
+                        )}
+                        {!recipe?.linkedProduct || recipe.linkedProduct.length === 0 && <span className="text-[12px] text-zinc-400 italic">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {productCategoryMap[product] ? (
+                          <span className="inline-block rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{productCategoryMap[product]}</span>
+                        ) : (
+                          <span className="text-[12px] text-zinc-400 italic">—</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -422,16 +423,19 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             <AddProductWithRecipeModal
               inventory={inventory}
               recipes={recipes}
-              onSave={(name, packagingMaterials, decorationSupplies, linkedProduct) => {
+              categories={categories}
+              onSave={async (name, packagingMaterials, decorationSupplies, linkedProduct, category) => {
                 onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]);
-                db.addToCatalog(name).catch(console.error);
+                await db.addToCatalog(name).catch(console.error);
                 const recipe: ProductRecipe = { productId: name, productName: name, ingredients: [], packagingMaterials, decorationSupplies, notes: "", linkedProduct };
                 onUpdateRecipes(prev => {
                   const idx = prev.findIndex(p => p.productId === recipe.productId);
                   if (idx >= 0) { const next = [...prev]; next[idx] = recipe; return next; }
                   return [...prev, recipe];
                 });
-                db.upsertRecipe(recipe).catch(console.error);
+                await db.upsertRecipe(recipe).catch(console.error);
+                await db.saveProductCategory(name, category || null).catch(console.error);
+                setProductCategoryMap(prev => ({ ...prev, [name]: category || "" }));
                 setShowAddProduct(false);
               }}
               onClose={() => setShowAddProduct(false)}
@@ -467,19 +471,19 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             inventory={inventory}
             categories={categories}
             initialCategory={productCategoryMap[editingProduct] || ""}
-            onSave={async (originalName, newName, packagingMaterials, decorationSupplies, linkedProduct, category) => {
+            onSave={async (originalName, newName, ingredients, packagingMaterials, decorationSupplies, linkedProduct, category) => {
               if (originalName !== newName) {
                 onUpdateProductCatalog(prev => {
                   const next = prev.filter(p => p !== originalName);
                   return next.includes(newName) ? next : [...next, newName];
                 });
-                db.removeFromCatalog(originalName).catch(console.error);
-                db.addToCatalog(newName).catch(console.error);
+                await db.removeFromCatalog(originalName).catch(console.error);
+                await db.addToCatalog(newName).catch(console.error);
               }
               const recipe: ProductRecipe = {
                 productId: newName,
                 productName: newName,
-                ingredients: recipes.find(r => r.productName === originalName)?.ingredients || [],
+                ingredients,
                 packagingMaterials,
                 decorationSupplies,
                 notes: recipes.find(r => r.productName === originalName)?.notes || "",
@@ -495,7 +499,12 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 return [...prev, recipe];
               });
               db.upsertRecipe(recipe).catch(console.error);
-              await db.saveProductCategory(newName, category || null).catch(console.error);
+              await db.saveProductCategory(newName, category || null).then(() => {
+                console.log("Category saved successfully");
+              }).catch(err => {
+                console.error("Failed to save category:", err);
+                alert(`Failed to save category: ${err.message || JSON.stringify(err)}`);
+              });
               setProductCategoryMap(prev => ({ ...prev, [newName]: category || "" }));
               setEditingProduct(null);
               setRenamingProduct("");
@@ -3221,11 +3230,11 @@ function CompactTaskCard({ task, color }: { task: ProductionTask; color: string 
   );
 }
 
-function AddProductWithRecipeModal({ inventory, recipes, onSave, onClose }: {
-  inventory: InventoryItem[]; recipes: ProductRecipe[]; onSave: (name: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedProduct: string[]) => void; onClose: () => void;
+function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onClose }: {
+  inventory: InventoryItem[]; recipes: ProductRecipe[]; categories: string[]; onSave: (name: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedProduct: string[], category: string) => void; onClose: () => void;
 }) {
   const [name, setName] = useState("");
-  const [linkedProduct, setLinkedProduct] = useState<string[]>([]);
+  const [category, setCategory] = useState("");
   const [packagingItems, setPackagingItems] = useState<RecipeIngredient[]>([]);
   const [decorationItems, setDecorationItems] = useState<RecipeIngredient[]>([]);
   const [recipeSearch, setRecipeSearch] = useState("");
@@ -3233,6 +3242,7 @@ function AddProductWithRecipeModal({ inventory, recipes, onSave, onClose }: {
   const [showDecorationPicker, setShowDecorationPicker] = useState(false);
   const [packagingSearch, setPackagingSearch] = useState("");
   const [decorationSearch, setDecorationSearch] = useState("");
+  const [linkedProduct, setLinkedProduct] = useState<string[]>([]);
 
   function addPackaging(inv: InventoryItem) {
     if (packagingItems.some(i => i.inventoryId === inv.id)) return;
@@ -3257,7 +3267,7 @@ function AddProductWithRecipeModal({ inventory, recipes, onSave, onClose }: {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(name.trim(), packagingItems, decorationItems, linkedProduct);
+    onSave(name.trim(), packagingItems, decorationItems, linkedProduct, category);
   }
 
   return (
@@ -3271,6 +3281,14 @@ function AddProductWithRecipeModal({ inventory, recipes, onSave, onClose }: {
           <div className="mb-5">
             <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Product Name</label>
             <input required value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. Pandesal" autoFocus />
+          </div>
+
+          <div className="mb-4">
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Category</label>
+            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+              <option value="">No category</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
 
           <div className="mb-4">

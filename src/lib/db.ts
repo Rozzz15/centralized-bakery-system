@@ -195,6 +195,39 @@ export function subscribeFreezer(onChange: () => void) {
   return () => { supabase.removeChannel(channel); };
 }
 
+export function subscribeDOS(onChange: () => void) {
+  const channel = supabase.channel("dos-realtime").on("postgres_changes", { event: "*", schema: "public", table: "dos_items" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
+
+export function subscribeProduction(onChange: () => void) {
+  const channel = supabase.channel("production-realtime").on("postgres_changes", { event: "*", schema: "public", table: "production_tasks" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
+
+export function subscribeInventory(onChange: () => void) {
+  const channels = Object.values(INVENTORY_TABLES).map(table =>
+    supabase.channel(`${table}-realtime`).on("postgres_changes", { event: "*", schema: "public", table }, () => { onChange(); }).subscribe()
+  );
+  return () => { channels.forEach(ch => supabase.removeChannel(ch)); };
+}
+
+// ─── Deco Production Prep ───
+export async function fetchDecoProductionPrep(): Promise<{ dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean }[]> {
+  const { data, error } = await supabase.from("deco_production_prep").select("*");
+  if (error) throw error;
+  return (data ?? []).map((d: any) => ({ dosId: d.dos_id, productName: d.product_name, productQty: d.product_qty, prepared: d.prepared, done: d.done }));
+}
+
+export async function saveDecoProductionPrep(items: { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean }[]) {
+  if (items.length === 0) return;
+  const { error } = await supabase.from("deco_production_prep").upsert(
+    items.map(i => ({ dos_id: i.dosId, product_name: i.productName, product_qty: i.productQty, prepared: i.prepared, done: i.done })),
+    { onConflict: "dos_id,product_name" }
+  );
+  if (error) throw error;
+}
+
 // ─── Audit Logs ───
 export async function fetchAuditLogs(): Promise<AuditLog[]> {
   const { data, error } = await supabase.from("audit_logs").select("*").order("id", { ascending: false });
@@ -275,8 +308,21 @@ export async function fetchProductCategories(): Promise<Record<string, string>> 
 }
 
 export async function saveProductCategory(productName: string, category: string | null) {
-  const { error } = await supabase.from("product_catalog").update({ category }).eq("name", productName);
-  if (error) throw error;
+  // 1. If a category is provided, ensure it exists in product_categories first
+  if (category) {
+    const { error: catErr } = await supabase.from("product_categories").insert({ name: category });
+    if (catErr && (catErr as any).code !== '23505') { // 23505 = unique_violation (duplicate)
+      console.error("Failed to ensure category exists:", catErr);
+      throw catErr;
+    }
+  }
+
+  // 2. Perform the upsert on product_catalog
+  const { error } = await supabase.from("product_catalog").upsert({ name: productName, category }, { onConflict: "name" });
+  if (error) {
+    console.error("Supabase upsert error details:", JSON.stringify(error, null, 2));
+    throw error;
+  }
 }
 
 // ─── Product Catalog ───
