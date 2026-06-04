@@ -1,4 +1,4 @@
-import { useEffect, useState, Fragment } from "react";
+import { useEffect, useState, useRef, Fragment } from "react";
 import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role } from "../types";
 import * as db from "../lib/db";
 
@@ -20,6 +20,12 @@ type DecoTask = {
   theme: string;
   status: "pending" | "in-progress" | "completed";
   notes: string;
+  freezerItemId?: string;
+  sourceQty?: number;
+  sourceBatchRef?: string;
+  sourceProducedBy?: string;
+  sourceSnapshot?: InventoryItem;
+  createdAt?: string;
 };
 
 type Props = {
@@ -42,6 +48,22 @@ type Props = {
 };
 
 export default function DecoDashboard({ production, dosItems, onCompleteTask, activeTab, setActiveTab, productCatalog, recipes, inventory, onUpdateInventory, onUpdateRecipes, onAddAuditLog, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [] }: Props) {
+  // Defer setState calls to the next macrotask (setTimeout 0) to avoid
+  // "Cannot update a component (App) while rendering DecoDashboard" warning.
+  // queueMicrotask is NOT enough — React's setState also runs in microtasks.
+  const defer = (fn: () => void) => { setTimeout(fn, 0); };
+
+  // StrictMode dev-mode dedup: React calls setState updater functions twice.
+  // This ref tracks (id+status) pairs we've already processed side effects for,
+  // so the duplicate StrictMode call skips the side effects.
+  // Key is cleared 200ms later so the next user click still works.
+  const processedDecoRef = useRef<Set<string>>(new Set());
+  const markProcessed = (key: string) => {
+    processedDecoRef.current.add(key);
+    setTimeout(() => processedDecoRef.current.delete(key), 200);
+  };
+  const isAlreadyProcessed = (key: string) => processedDecoRef.current.has(key);
+
   const todayDOS = dosItems.filter(d => {
     if (d.status === "scheduled") return false;
     // Include items that were activated from scheduled (scheduledDate is still set but status !== "scheduled")
@@ -133,11 +155,37 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     { id: "CO-003", customer: "Lisa Cruz", product: "Sponge Fudge", request: "Minimalist white icing + fresh flowers", status: "pending", createdAt: "May 28, 11:00 AM" },
   ]);
 
-  const [decoQueue, setDecoQueue] = useState<DecoTask[]>([
-    { id: "DQ-001", product: "Chocolate Cake", orderRef: "DOS-001", theme: "Frozen Theme", status: "pending", notes: "Blue icing, snowflake toppers" },
-    { id: "DQ-002", product: "Choco Moist Cake", orderRef: "DOS-002", theme: "Minimalist", status: "in-progress", notes: "White base, gold accents" },
-    { id: "DQ-003", product: "Sponge Fudge", orderRef: "DOS-003", theme: "Floral", status: "pending", notes: "Pink roses, green leaves" },
-  ]);
+  const [decoQueue, setDecoQueue] = useState<DecoTask[]>([]);
+
+  // Load decoration queue from Supabase on mount
+  useEffect(() => {
+    db.fetchDecorationQueue().then(rows => {
+      setDecoQueue(rows.map(r => ({
+        id: r.id,
+        product: r.product,
+        orderRef: r.orderRef,
+        theme: r.theme,
+        status: r.status,
+        notes: r.notes,
+        freezerItemId: r.freezerItemId,
+        sourceQty: r.sourceQty,
+        sourceBatchRef: r.sourceBatchRef,
+        sourceProducedBy: r.sourceProducedBy,
+        sourceSnapshot: r.sourceSnapshot,
+        createdAt: r.createdAt,
+      })));
+    }).catch(console.error);
+  }, []);
+
+  const [designModal, setDesignModal] = useState<{ product: string; inventoryId: string; qty: number } | null>(null);
+  const [designTheme, setDesignTheme] = useState("");
+  const [designNotes, setDesignNotes] = useState("");
+  const [designQty, setDesignQty] = useState(1);
+  const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
+  const [prepSearch, setPrepSearch] = useState("");
+  const [prepSlide, setPrepSlide] = useState(0);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const [expandedHistoryIds, setExpandedHistoryIds] = useState<Set<string>>(new Set());
 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [summaryModal, setSummaryModal] = useState<"products" | "ingredients" | "packaging" | "deco" | null>(null);
@@ -215,12 +263,181 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   };
 
   const updateDecoTask = (id: string, status: DecoTask["status"]) => {
-    setDecoQueue(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    setDecoQueue(prev => {
+      const prevTask = prev.find(t => t.id === id);
+      const next = prev.map(t => t.id === id ? { ...t, status } : t);
+      const task = next.find(t => t.id === id);
+      if (task) {
+        // StrictMode dedup: skip side effects on the duplicate invocation
+        const dedupKey = `update-${id}-${status}`;
+        if (isAlreadyProcessed(dedupKey)) {
+          return next;
+        }
+        markProcessed(dedupKey);
+        db.upsertDecorationQueueTask({
+          id: task.id, product: task.product, orderRef: task.orderRef,
+          theme: task.theme, status: task.status, notes: task.notes,
+          freezerItemId: task.freezerItemId, sourceQty: task.sourceQty,
+          sourceBatchRef: task.sourceBatchRef, sourceProducedBy: undefined, createdAt: task.createdAt,
+          sourceSnapshot: task.sourceSnapshot,
+        }).catch(console.error);
+
+        // On Start Decorating (pending → in-progress), deduct packaging + decoration supplies
+        if (status === "in-progress" && prevTask?.status === "pending") {
+          const productRecipes = getRecipesForProduct(task.product);
+          if (productRecipes.length > 0) {
+            const qtyMultiplier = task.sourceQty && task.sourceQty > 0 ? task.sourceQty : 1;
+            const newInv = [...inventory];
+            const deductions: string[] = [];
+            const skipped: string[] = [];
+            productRecipes.forEach(recipe => {
+              const consume = (name: string, inventoryId: string, perBatch: number, unit: string, kind: string) => {
+                if (!inventoryId) {
+                  const matchByName = newInv.find(i => i.name.toLowerCase() === name.toLowerCase());
+                  if (matchByName) inventoryId = matchByName.id;
+                }
+                if (!inventoryId) { skipped.push(`${name} (no inventory link)`); return; }
+                const idx = newInv.findIndex(i => i.id === inventoryId);
+                if (idx < 0) { skipped.push(`${name} (not in inventory)`); return; }
+                const needed = perBatch * qtyMultiplier;
+                const before = newInv[idx].onHand;
+                newInv[idx] = { ...newInv[idx], onHand: Math.max(0, before - needed) };
+                const actualDeducted = before - newInv[idx].onHand;
+                deductions.push(`${kind}: ${name} -${actualDeducted}${unit}`);
+              };
+              (recipe.packagingMaterials ?? []).forEach(p => consume(p.name, p.inventoryId, p.qtyPerBatch, p.unit, "Pack"));
+              (recipe.decorationSupplies ?? []).forEach(s => consume(s.name, s.inventoryId, s.qtyPerBatch, s.unit, "Deco"));
+            });
+            if (deductions.length > 0) {
+              defer(() => onUpdateInventory(newInv));
+              db.upsertInventory(newInv).catch(console.error);
+              defer(() => onAddAuditLog?.("DECO_TASK_STARTED", `${task.product} ×${qtyMultiplier} (${task.theme}): ${deductions.join(", ")}`));
+            }
+            if (skipped.length > 0) {
+              defer(() => onAddAuditLog?.("DECO_DEDUCTION_SKIPPED", `${task.product}: ${skipped.join(", ")}`));
+            }
+          }
+        }
+
+        // On Put it on Display Cake (in-progress → completed), add to Freezer Display Cakes
+        if (status === "completed" && prevTask?.status === "in-progress") {
+          const qtyMultiplier = task.sourceQty && task.sourceQty > 0 ? task.sourceQty : 1;
+          const dateProduced = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+          const baseNotes = `From Decoration Queue · ${task.theme}${task.notes ? ` · ${task.notes}` : ""}`;
+          const newDisplayItem: FreezerItem = {
+            id: `FRZ-DQ-${Date.now()}`,
+            productName: task.product,
+            qty: qtyMultiplier,
+            unit: "pcs",
+            batchRef: `DQ-${task.id.replace(/^DQ-/, "")}`,
+            producedBy: "deco",
+            dateProduced,
+            status: "stored",
+            notes: baseNotes,
+          };
+          defer(() => onUpdateFreezer?.(prev => {
+            // MERGE: if a row already exists for the same (productName + theme),
+            // ADD the new task's qty to the existing row's qty and update it.
+            // Otherwise insert a new row with the task's qty.
+            const themePrefix = `From Decoration Queue · ${task.theme}`;
+            const sameKey = (f: FreezerItem) => f.productName === task.product && (f.notes || "").startsWith(themePrefix);
+            const existing = prev.find(sameKey);
+            if (existing) {
+              const merged: FreezerItem = {
+                ...existing,
+                qty: (Number(existing.qty) || 0) + qtyMultiplier,
+              };
+              db.upsertFreezerItems([merged]).catch(err => console.error("Freezer save failed:", err));
+              return prev.map(f => (f.id === existing.id ? merged : f));
+            }
+            db.upsertFreezerItems([newDisplayItem]).catch(err => console.error("Freezer save failed:", err));
+            return [...prev, newDisplayItem];
+          }));
+          // Audit log: also deferred to avoid setState-during-render warning.
+          defer(() => onAddAuditLog?.("DECO_TASK_COMPLETED", `${task.product} ×${qtyMultiplier} → Freezer/Display Cakes`));
+        }
+      }
+      return next;
+    });
   };
+
+  const deleteDecoTask = (id: string) => {
+    setDecoQueue(prev => {
+      const task = prev.find(t => t.id === id);
+      if (task && task.freezerItemId && task.sourceQty && task.sourceQty > 0) {
+        // StrictMode dedup
+        const dedupKey = `delete-${id}`;
+        if (isAlreadyProcessed(dedupKey)) {
+          return prev.filter(t => t.id !== id);
+        }
+        markProcessed(dedupKey);
+        // If a snapshot exists, the source was hard-deleted at task creation —
+        // the user "used" the FULL snapshot amount, so the correct restore is
+        // to reset onHand to snapshot.onHand (NOT add to current).
+        // If no snapshot (older task) and source still exists, refund sourceQty
+        // onto the current onHand.
+        if (task.sourceSnapshot) {
+          const snap = task.sourceSnapshot;
+          defer(() => onUpdateInventory(prevInv => {
+            const existingDup = prevInv.find(i =>
+              i.id === task.freezerItemId
+              || (i.name.toLowerCase() === snap.name.toLowerCase() && i.group === snap.group && i.source === snap.source)
+            );
+            if (existingDup) {
+              // Source came back via Production Prep or another path.
+              // Reset onHand to snapshot's original (since user used all of it).
+              const restored = { ...existingDup, onHand: snap.onHand };
+              db.upsertInventoryItem(restored).catch(err => {
+                console.error("Inventory restore failed:", err);
+              });
+              defer(() => onAddAuditLog?.("DECO_TASK_DELETED", `${task.product} ×${snap.onHand} restored to My Inventory (reset to original)`));
+              return prevInv.map(i => i.id === existingDup.id ? restored : i);
+            } else {
+              // Source is genuinely gone — re-add with snapshot data
+              const restored: InventoryItem = { ...snap, id: task.freezerItemId! };
+              db.upsertInventoryItem(restored).catch(err => {
+                console.error("Inventory re-add failed:", err);
+              });
+              defer(() => onAddAuditLog?.("DECO_TASK_DELETED", `${task.product} ×${snap.onHand} re-added to My Inventory`));
+              return [...prevInv, restored];
+            }
+          }));
+        } else {
+          // No snapshot (older task) — use the partial-use restore path
+          const sourceItem = inventory.find(i => i.id === task.freezerItemId);
+          if (sourceItem) {
+defer(() => onUpdateInventory(prevInv => {
+              const existing = prevInv.find(i => i.id === sourceItem.id);
+              if (existing) {
+                const restored = { ...existing, onHand: existing.onHand + task.sourceQty! };
+                db.upsertInventoryItem(restored).catch(err => {
+                  console.error("Inventory restore failed:", err);
+                });
+                defer(() => onAddAuditLog?.("DECO_TASK_DELETED", `${task.product} ×${task.sourceQty} restored to My Inventory`));
+                return prevInv.map(i => i.id === existing.id ? restored : i);
+              } else {
+                return prevInv;
+              }
+            }));
+          } else {
+            defer(() => onAddAuditLog?.("DECO_TASK_DELETED", `${task.product} ×${task.sourceQty} deleted (source item no longer exists)`));
+          }
+        }
+      }
+      return prev.filter(t => t.id !== id);
+    });
+    db.deleteDecorationQueueTask(id).catch(console.error);
+  };
+
 
   const pendingRecipes = productCatalog.filter(p => !recipes.some(r => r.productName === p)).length;
   const pendingDecoTasks = decoQueue.filter(t => t.status === "pending").length;
   const pendingCustomOrders = customOrders.filter(o => o.status === "pending").length;
+
+  const formatQty = (qty: number, unit: string) => {
+    const wholeUnits = ["pcs", "pc", "pieces", "piece", "pack", "packs", "box", "boxes", "tray", "trays", "set", "sets", "bottle", "bottles", "can", "cans"];
+    return wholeUnits.includes((unit || "").toLowerCase()) ? Math.round(qty).toString() : qty.toFixed(1);
+  };
 
   const getRecipesForProduct = (product: string) => {
     const direct = recipes.filter(r => r.productName === product);
@@ -810,6 +1027,10 @@ return (
                   const batchRef = `DEC-${Date.now()}`;
                   const allItems: FreezerItem[] = [];
                   const newQty = { ...productQty };
+                  // Working inventory for ingredient deductions
+                  let workingInv: InventoryItem[] = inventory;
+                  const allDeductions: string[] = [];
+                  const allSkipped: string[] = [];
                   selectedProducts.forEach(dosId => {
                     const dos = dosForDeco.find(dd => dd.id === dosId);
                     if (!dos) return;
@@ -842,6 +1063,25 @@ return (
                       const preparedKey = `${dos.id}:::${r!.productName.toLowerCase()}`;
                       setFreeMixPrepared(prev => new Set(prev).add(preparedKey));
                     });
+                    // Deduct ingredients (with custom adjustment) from My Inventory
+                    const productRecipes = recipes.filter(r => r.productName === dos.product);
+                    productRecipes.forEach(recipe => {
+                      (recipe.ingredients ?? []).forEach(ing => {
+                        let invId = ing.inventoryId;
+                        if (!invId) {
+                          const match = workingInv.find(i => i.name.toLowerCase() === ing.name.toLowerCase());
+                          if (match) invId = match.id;
+                        }
+                        if (!invId) { allSkipped.push(`${ing.name} (no inventory link)`); return; }
+                        const idx = workingInv.findIndex(i => i.id === invId);
+                        if (idx < 0) { allSkipped.push(`${ing.name} (not in inventory)`); return; }
+                        const needed = ing.qtyPerBatch * dosQty;
+                        const before = workingInv[idx].onHand;
+                        workingInv = workingInv.map((it, i) => i === idx ? { ...it, onHand: Math.max(0, before - needed) } : it);
+                        const actualDeducted = before - workingInv[idx].onHand;
+                        allDeductions.push(`Ing: ${ing.name} -${actualDeducted}${ing.unit}`);
+                      });
+                    });
                   });
                   setProductQty(newQty);
                   setSaveAmounts({});
@@ -852,6 +1092,23 @@ return (
                       onAddAuditLog?.("FREEZER_ERROR", `Failed to save ${allItems.length} items: ${err.message}`);
                     });
                   }
+                  // Persist ingredient deductions
+                  if (allDeductions.length > 0 || allSkipped.length > 0) {
+                    onUpdateInventory?.(workingInv);
+                    const changedItems = workingInv.filter(item => {
+                      const orig = inventory.find(o => o.id === item.id);
+                      return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
+                    });
+                    if (changedItems.length > 0) {
+                      db.upsertInventory(changedItems).catch(err => console.error("Inventory deduction save failed:", err));
+                    }
+                    if (allDeductions.length > 0) {
+                      onAddAuditLog?.("INGREDIENTS_DEDUCTED", `Put in Production Recipe: ${allDeductions.join(", ")}`);
+                    }
+                    if (allSkipped.length > 0) {
+                      onAddAuditLog?.("DEDUCTION_SKIPPED", `Put in Production Recipe: ${allSkipped.join(", ")}`);
+                    }
+                  }
                   onAddAuditLog?.("FREEZER_ADDED", `Items saved to Production Recipe freezer`);
                   setSelectedRecipes(new Set());
                   setSelectedProducts(new Set());
@@ -860,21 +1117,25 @@ return (
               >Put in Production Recipe</button>
               <button
                 onClick={() => {
-                  const allItems: InventoryItem[] = [];
+                  const allNewItems: InventoryItem[] = [];
+                  const allUpdatedItems: InventoryItem[] = [];
                   const newQty = { ...productQty };
+                  // Working inventory: start with current, add product updates, then deduct ingredients
+                  let workingInv: InventoryItem[] = inventory;
+                  const allDeductions: string[] = [];
+                  const allSkipped: string[] = [];
                   selectedProducts.forEach(dosId => {
                     const dos = dosForDeco.find(dd => dd.id === dosId);
                     if (!dos) return;
                     const dosQty = saveAmounts[dos.id] ?? 1;
-                    const existingItem = inventory.find(i => i.name === dos.product && i.accessRoles?.includes("deco"));
+                    const existingItem = workingInv.find(i => i.name === dos.product && i.accessRoles?.includes("deco"));
                     if (existingItem) {
-                      const updatedItem = { ...existingItem, onHand: existingItem.onHand + dosQty };
-                      onUpdateInventory?.(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
-                      db.upsertInventoryItem(updatedItem).catch(err => {
-                        console.error("Inventory update failed:", err);
-                      });
+                      const updatedItem = { ...existingItem, onHand: existingItem.onHand + dosQty, source: "production-prep" as const };
+                      const idx = workingInv.indexOf(existingItem);
+                      workingInv = [...workingInv.slice(0, idx), updatedItem, ...workingInv.slice(idx + 1)];
+                      allUpdatedItems.push(updatedItem);
                     } else {
-                      allItems.push({
+                      const newItem: InventoryItem = {
                         id: `INV-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                         name: dos.product,
                         sku: `DECO-${dos.product.substring(0, 8).toUpperCase()}-${Date.now()}`,
@@ -887,7 +1148,10 @@ return (
                         category: "dry" as const,
                         group: "ingredients" as const,
                         accessRoles: ["deco"] as Role[],
-                      });
+                        source: "production-prep" as const,
+                      };
+                      workingInv = [...workingInv, newItem];
+                      allNewItems.push(newItem);
                     }
                     newQty[dos.id] = Math.max(0, (productQty[dos.id] ?? dos.qty) - dosQty);
                     const linkedRecipes = (recipes.find(r => r.productName === dos.product)?.linkedProduct ?? [])
@@ -897,14 +1161,46 @@ return (
                       const preparedKey = `${dos.id}:::${r!.productName.toLowerCase()}`;
                       setFreeMixPrepared(prev => new Set(prev).add(preparedKey));
                     });
+                    // Deduct ingredients (with custom adjustment) from My Inventory
+                    const productRecipes = recipes.filter(r => r.productName === dos.product);
+                    productRecipes.forEach(recipe => {
+                      (recipe.ingredients ?? []).forEach(ing => {
+                        let invId = ing.inventoryId;
+                        if (!invId) {
+                          const match = workingInv.find(i => i.name.toLowerCase() === ing.name.toLowerCase());
+                          if (match) invId = match.id;
+                        }
+                        if (!invId) { allSkipped.push(`${ing.name} (no inventory link)`); return; }
+                        const idx = workingInv.findIndex(i => i.id === invId);
+                        if (idx < 0) { allSkipped.push(`${ing.name} (not in inventory)`); return; }
+                        const needed = ing.qtyPerBatch * dosQty;
+                        const before = workingInv[idx].onHand;
+                        workingInv = workingInv.map((it, i) => i === idx ? { ...it, onHand: Math.max(0, before - needed) } : it);
+                        const actualDeducted = before - workingInv[idx].onHand;
+                        allDeductions.push(`Ing: ${ing.name} -${actualDeducted}${ing.unit}`);
+                      });
+                    });
                   });
                   setProductQty(newQty);
                   setSaveAmounts({});
-                  if (onUpdateInventory && allItems.length > 0) {
-                    onUpdateInventory(prev => [...prev, ...allItems]);
-                    db.upsertInventory(allItems).catch(err => {
-                      console.error("Inventory save failed:", err);
-                    });
+                  // Single setState for all inventory changes (product add/update + ingredient deductions)
+                  onUpdateInventory?.(workingInv);
+                  // Persist only changed items
+                  const persistIds = new Set([...allUpdatedItems.map(i => i.id), ...allNewItems.map(i => i.id)]);
+                  const changedByDeduction = workingInv.filter(item => {
+                    if (persistIds.has(item.id)) return false;
+                    const orig = inventory.find(o => o.id === item.id);
+                    return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
+                  });
+                  const allToPersist = [...allUpdatedItems, ...allNewItems, ...changedByDeduction];
+                  if (allToPersist.length > 0) {
+                    db.upsertInventory(allToPersist).catch(err => console.error("Inventory save failed:", err));
+                  }
+                  if (allDeductions.length > 0) {
+                    onAddAuditLog?.("INGREDIENTS_DEDUCTED", `Put in My Inventory: ${allDeductions.join(", ")}`);
+                  }
+                  if (allSkipped.length > 0) {
+                    onAddAuditLog?.("DEDUCTION_SKIPPED", `Put in My Inventory: ${allSkipped.join(", ")}`);
                   }
                   onAddAuditLog?.("INVENTORY_ADDED", `Items added to My Inventory`);
                   setSelectedRecipes(new Set());
@@ -1152,40 +1448,525 @@ return (
 
   /* ── Decoration Queue ── */
   if (activeTab === "deco-queue") {
+    const prepInventory = inventory.filter(i => i.accessRoles?.includes("deco") && i.source === "production-prep");
+    const activeDesignItem = selectedDesignId ? inventory.find(i => i.id === selectedDesignId) ?? null : null;
+
+    const renderDecoCard = (task: DecoTask, opts?: { compact?: boolean; expanded?: boolean; onToggle?: () => void }) => {
+      const taskRecipes = getRecipesForProduct(task.product);
+      const taskPkgMap = new Map<string, { name: string; qty: number; unit: string; source: string }>();
+      const taskDecoMap = new Map<string, { name: string; qty: number; unit: string; source: string }>();
+      taskRecipes.forEach(r => {
+        (r.packagingMaterials ?? []).forEach(p => {
+          const key = p.name.toLowerCase();
+          const existing = taskPkgMap.get(key);
+          if (existing) existing.qty += p.qtyPerBatch;
+          else taskPkgMap.set(key, { name: p.name, qty: p.qtyPerBatch, unit: p.unit, source: r.productName });
+        });
+        (r.decorationSupplies ?? []).forEach(s => {
+          const key = s.name.toLowerCase();
+          const existing = taskDecoMap.get(key);
+          if (existing) existing.qty += s.qtyPerBatch;
+          else taskDecoMap.set(key, { name: s.name, qty: s.qtyPerBatch, unit: s.unit, source: r.productName });
+        });
+      });
+      const taskPkg = [...taskPkgMap.values()];
+      const taskDeco = [...taskDecoMap.values()];
+      const qtyMult = task.sourceQty && task.sourceQty > 0 ? task.sourceQty : 1;
+      const isCompleted = task.status === "completed";
+      const compact = !!opts?.compact;
+      const expanded = !!opts?.expanded;
+
+      // Compact history card: product name, date, time, qty badge, chevron
+      if (compact) {
+        const created = task.createdAt ? new Date(task.createdAt) : null;
+        const dateStr = created ? created.toLocaleDateString("en-PH", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" }) : "—";
+        const timeStr = created ? created.toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", hour12: true }) : "";
+        return (
+          <div key={task.id} className={`rounded-xl border overflow-hidden ${isCompleted ? "border-emerald-200 bg-emerald-50/20" : "border-zinc-200 bg-white"}`}>
+            <button
+              onClick={opts?.onToggle}
+              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-zinc-50/60 transition-colors text-left"
+            >
+              <span className={`text-[10px] text-zinc-400 transition-transform shrink-0 ${expanded ? "rotate-90" : ""}`}>▸</span>
+              <span className="rounded-lg bg-zinc-900 text-white font-mono font-bold text-[12px] px-2 py-0.5 shrink-0">×{qtyMult}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-semibold text-zinc-900 truncate">{task.product}</div>
+                <div className="text-[11px] text-zinc-500 font-mono">{dateStr} · {timeStr}</div>
+              </div>
+              <span className="rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px] font-medium shrink-0">Decorated</span>
+            </button>
+            {expanded && (
+              <div className="border-t border-zinc-100 px-4 py-4 space-y-3 bg-white">
+                <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+                  <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-600">{task.theme}</span>
+                  <span className="text-zinc-400">{task.orderRef}</span>
+                </div>
+                {task.notes && <div className="text-[12px] text-zinc-600">{task.notes}</div>}
+                {(taskPkg.length > 0 || taskDeco.length > 0) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-2.5">
+                      <div className="text-[10px] uppercase tracking-wider text-blue-700 font-semibold mb-1.5">Linked Packaging</div>
+                      {taskPkg.length === 0 ? (
+                        <div className="text-[11px] text-zinc-400">None</div>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {taskPkg.map((p, i) => (
+                            <li key={`hqp-${i}`} className="flex items-center justify-between text-[11px] text-zinc-700">
+                              <span className="truncate mr-2">{p.name}</span>
+                              <span className="font-mono font-semibold text-blue-700 shrink-0">{formatQty(p.qty * qtyMult, p.unit)}{p.unit}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="rounded-xl border border-purple-100 bg-purple-50/40 p-2.5">
+                      <div className="text-[10px] uppercase tracking-wider text-purple-700 font-semibold mb-1.5">Linked Decoration</div>
+                      {taskDeco.length === 0 ? (
+                        <div className="text-[11px] text-zinc-400">None</div>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {taskDeco.map((s, i) => (
+                            <li key={`hqd-${i}`} className="flex items-center justify-between text-[11px] text-zinc-700">
+                              <span className="truncate mr-2">{s.name}</span>
+                              <span className="font-mono font-semibold text-purple-700 shrink-0">{formatQty(s.qty * qtyMult, s.unit)}{s.unit}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="flex justify-end pt-1">
+                  <button onClick={() => { if (confirm(`Remove decoration task for ${task.product}?`)) deleteDecoTask(task.id); }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Delete</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // Full card (Active Decoration Queue)
+      return (
+        <div key={task.id} className={`rounded-2xl border p-5 ${isCompleted ? "border-emerald-200 bg-emerald-50/30" : "border-zinc-200 bg-white"}`}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="rounded-lg bg-zinc-900 text-white font-mono font-bold text-[13px] px-2.5 py-1">×{qtyMult}</span>
+              <div>
+                <span className="text-[15px] font-semibold text-zinc-900">{task.product}</span>
+                <span className="ml-2 text-[12px] text-zinc-400">{task.orderRef}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium ${isCompleted ? "bg-emerald-100 text-emerald-700" : task.status === "in-progress" ? "bg-blue-100 text-blue-700" : "bg-zinc-100 text-zinc-600"}`}>{task.status}</span>
+              <button onClick={() => { if (confirm(`Remove decoration task for ${task.product}?`)) deleteDecoTask(task.id); }} className="rounded-lg border border-red-200 bg-white px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-all">Delete</button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-[12px] text-zinc-500 mb-3">
+            <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-600">{task.theme}</span>
+            <span>{task.notes}</span>
+          </div>
+          {(taskPkg.length > 0 || taskDeco.length > 0) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+              <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-2.5">
+                <div className="text-[10px] uppercase tracking-wider text-blue-700 font-semibold mb-1.5">Linked Packaging</div>
+                {taskPkg.length === 0 ? (
+                  <div className="text-[11px] text-zinc-400">None</div>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {taskPkg.map((p, i) => (
+                      <li key={`qp-${i}`} className="flex items-center justify-between text-[11px] text-zinc-700">
+                        <span className="truncate mr-2">{p.name}</span>
+                        <span className="font-mono font-semibold text-blue-700 shrink-0">{formatQty(p.qty * qtyMult, p.unit)}{p.unit}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="rounded-xl border border-purple-100 bg-purple-50/40 p-2.5">
+                <div className="text-[10px] uppercase tracking-wider text-purple-700 font-semibold mb-1.5">Linked Decoration</div>
+                {taskDeco.length === 0 ? (
+                  <div className="text-[11px] text-zinc-400">None</div>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {taskDeco.map((s, i) => (
+                      <li key={`qd-${i}`} className="flex items-center justify-between text-[11px] text-zinc-700">
+                        <span className="truncate mr-2">{s.name}</span>
+                        <span className="font-mono font-semibold text-purple-700 shrink-0">{formatQty(s.qty * qtyMult, s.unit)}{s.unit}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+          {!isCompleted && (
+            <div className="flex justify-center pt-1">
+              {task.status === "pending" && (
+                <button onClick={() => updateDecoTask(task.id, "in-progress")} className="rounded-xl bg-blue-600 px-6 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-700 transition-all shadow-sm">Start Decorating</button>
+              )}
+              {task.status === "in-progress" && (
+                <button onClick={() => updateDecoTask(task.id, "completed")} className="rounded-xl bg-emerald-600 px-6 py-2.5 text-[13px] font-semibold text-white hover:bg-emerald-700 transition-all shadow-sm">Put it on Display Cake 🎂</button>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const openDesign = (product: string, inventoryId: string, qty: number) => {
+      setDesignModal({ product, inventoryId, qty });
+      setDesignTheme("");
+      setDesignNotes("");
+      // Default designQty to the source on-hand qty (capped at qty, floor of 1)
+      setDesignQty(Math.max(1, qty));
+    };
+
+    const confirmDesign = () => {
+      if (!designModal) return;
+      const sourceItem = inventory.find(i => i.id === designModal.inventoryId);
+      if (!sourceItem) {
+        alert("Source inventory item no longer exists.");
+        return;
+      }
+      if (sourceItem.onHand < designQty) {
+        if (!confirm(`Only ${sourceItem.onHand} on hand. Design ${designQty} anyway?`)) return;
+      }
+
+      const newTask: DecoTask = {
+        id: `DQ-${Date.now()}`,
+        product: designModal.product,
+        orderRef: `INV-${designModal.inventoryId.slice(-6).toUpperCase()}`,
+        theme: designTheme.trim() || "Custom Design",
+        status: "pending",
+        notes: designNotes.trim() || "Designed from My Inventory",
+        freezerItemId: designModal.inventoryId,
+        sourceQty: designQty,
+        sourceSnapshot: { ...sourceItem },
+        createdAt: new Date().toISOString(),
+      };
+      setDecoQueue(prev => [newTask, ...prev]);
+      setSelectedDesignId(designModal.inventoryId);
+      setDesignModal(null);
+      db.upsertDecorationQueueTask({
+        id: newTask.id, product: newTask.product, orderRef: newTask.orderRef,
+        theme: newTask.theme, status: newTask.status, notes: newTask.notes,
+        freezerItemId: newTask.freezerItemId, sourceQty: newTask.sourceQty,
+        sourceBatchRef: undefined, sourceProducedBy: undefined, createdAt: newTask.createdAt,
+        sourceSnapshot: newTask.sourceSnapshot,
+      }).catch(console.error);
+      onAddAuditLog?.("DECO_TASK_CREATED", `${designModal.product} ×${designQty} added to Decoration Queue`);
+
+      // Deduct the designed qty from the source My Inventory item.
+      // If on-hand hits 0, remove the item from inventory entirely.
+      const remaining = sourceItem.onHand - designQty;
+      if (remaining <= 0) {
+        onUpdateInventory(prev => prev.filter(i => i.id !== sourceItem.id));
+        db.deleteInventoryItem(sourceItem.id, sourceItem.group).catch(err => {
+          console.error("Inventory delete failed:", err);
+        });
+        onAddAuditLog?.("INVENTORY_REMOVED", `${sourceItem.name} removed (0 on hand after design)`);
+        setSelectedDesignId(prev => prev === sourceItem.id ? null : prev);
+      } else {
+        const updatedItem = { ...sourceItem, onHand: remaining };
+        onUpdateInventory(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+        db.upsertInventoryItem(updatedItem).catch(err => {
+          console.error("Inventory update failed:", err);
+        });
+      }
+    };
+
     return (
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight">Decoration Queue</h1>
-          <p className="mt-1 text-[13px] text-zinc-500">Manage decoration tasks for each product order.</p>
+          <p className="mt-1 text-[13px] text-zinc-500">Pick a product from My Inventory (Production Prep), design it, then add to the queue.</p>
         </div>
 
-        <div className="space-y-3">
-          {decoQueue.map(task => (
-            <div key={task.id} className={`rounded-2xl border p-5 ${task.status === "completed" ? "border-emerald-200 bg-emerald-50/30" : "border-zinc-200 bg-white"}`}>
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <span className="text-[15px] font-semibold text-zinc-900">{task.product}</span>
-                  <span className="ml-2 text-[12px] text-zinc-400">{task.orderRef}</span>
+        {/* Available from My Inventory — Production Prep group */}
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/30 p-5">
+          <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+            <div>
+              <h2 className="text-[15px] font-semibold text-zinc-900">Available from My Inventory</h2>
+              <p className="text-[12px] text-zinc-500 mt-0.5">Group: <span className="font-semibold text-emerald-700">Production Prep</span> · Select a product to design</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
+                <input
+                  value={prepSearch}
+                  onChange={e => { setPrepSearch(e.target.value); setPrepSlide(0); }}
+                  placeholder="Search products..."
+                  className="w-56 rounded-xl border border-emerald-200 bg-white pl-9 pr-3 py-2 text-[13px] outline-none focus:border-emerald-400"
+                />
+              </div>
+              <span className="rounded-full bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 uppercase tracking-wider">{prepInventory.length} item{prepInventory.length !== 1 ? "s" : ""}</span>
+            </div>
+          </div>
+          {prepInventory.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-emerald-200 bg-white/60 p-6 text-center">
+              <p className="text-[12px] text-zinc-500">No Production Prep items in My Inventory yet. Put items in My Inventory from <span className="font-semibold">Production Prep</span> first.</p>
+            </div>
+          ) : (() => {
+            const filtered = prepInventory.filter(inv => !prepSearch || inv.name.toLowerCase().includes(prepSearch.toLowerCase()) || inv.sku.toLowerCase().includes(prepSearch.toLowerCase()));
+            const pageSize = 3;
+            const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+            const safeSlide = Math.min(prepSlide, totalPages - 1);
+            const pageItems = filtered.slice(safeSlide * pageSize, safeSlide * pageSize + pageSize);
+            return (
+            <>
+            {filtered.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-emerald-200 bg-white/60 p-6 text-center">
+                <p className="text-[12px] text-zinc-500">No products match "<span className="font-semibold">{prepSearch}</span>".</p>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {pageItems.map(inv => {
+                    const isSelected = selectedDesignId === inv.id;
+                    return (
+                      <div
+                        key={inv.id}
+                        onClick={() => setSelectedDesignId(isSelected ? null : inv.id)}
+                        className={`rounded-xl border p-3.5 cursor-pointer transition-all ${isSelected ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200" : "border-zinc-200 bg-white hover:border-emerald-300"}`}
+                      >
+                    <div className="flex items-start justify-between mb-1.5">
+                      <div>
+                        <div className="text-[13px] font-semibold text-zinc-900 truncate">{inv.name}</div>
+                        <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{inv.sku}</div>
+                      </div>
+                      {isSelected && <span className="shrink-0 rounded-full bg-emerald-500 text-white w-5 h-5 grid place-items-center text-[10px] font-bold">✓</span>}
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-[11px] text-zinc-500">On hand: <span className="font-mono font-semibold text-zinc-900">{inv.onHand}</span> {inv.unit}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openDesign(inv.name, inv.id, inv.onHand); }}
+                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 transition-all"
+                      >Design →</button>
+                    </div>
+                  </div>
+                    );
+                  })}
                 </div>
-                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium ${task.status === "completed" ? "bg-emerald-100 text-emerald-700" : task.status === "in-progress" ? "bg-blue-100 text-blue-700" : "bg-zinc-100 text-zinc-600"}`}>{task.status}</span>
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-3">
+                    <button
+                      onClick={() => setPrepSlide(s => Math.max(0, s - 1))}
+                      disabled={safeSlide === 0}
+                      className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    >← Prev</button>
+                    <div className="flex items-center gap-1.5">
+                      {Array.from({ length: totalPages }).map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setPrepSlide(i)}
+                          className={`h-2 rounded-full transition-all ${i === safeSlide ? "w-6 bg-emerald-600" : "w-2 bg-emerald-200 hover:bg-emerald-300"}`}
+                          aria-label={`Go to page ${i + 1}`}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setPrepSlide(s => Math.min(totalPages - 1, s + 1))}
+                      disabled={safeSlide === totalPages - 1}
+                      className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    >Next →</button>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-2 text-[12px] text-zinc-500 mb-3">
-                <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-600">{task.theme}</span>
-                <span>{task.notes}</span>
+            )}
+            </>
+            );
+          })()}
+
+          {activeDesignItem && (
+            <div className="mt-4 rounded-xl border border-emerald-300 bg-white p-4 flex items-center justify-between">
+              <div className="text-[12px] text-zinc-700">
+                <span className="text-zinc-400">Selected:</span> <span className="font-semibold text-zinc-900">{activeDesignItem.name}</span>
+                <span className="ml-2 text-zinc-400">·</span>
+                <span className="ml-2 text-zinc-500">on hand <span className="font-mono font-semibold">{activeDesignItem.onHand}</span> {activeDesignItem.unit}</span>
               </div>
-              {task.status !== "completed" && (
-                <div className="flex gap-2">
-                  {task.status === "pending" && (
-                    <button onClick={() => updateDecoTask(task.id, "in-progress")} className="rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-blue-700 transition-all">Start Decorating</button>
-                  )}
-                  {task.status === "in-progress" && (
-                    <button onClick={() => updateDecoTask(task.id, "completed")} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700 transition-all">Mark Finished</button>
-                  )}
+              <button
+                onClick={() => openDesign(activeDesignItem.name, activeDesignItem.id, activeDesignItem.onHand)}
+                className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-zinc-800 transition-all"
+              >Open Design</button>
+            </div>
+          )}
+        </div>
+
+        {/* Active Decoration Queue */}
+        <div>
+          <h2 className="text-[15px] font-semibold text-zinc-900 mb-3">Active Decoration Queue</h2>
+          {(() => {
+            const activeTasks = decoQueue.filter(t => t.status !== "completed");
+            if (activeTasks.length === 0) {
+              return <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No active decoration tasks.</p></div>;
+            }
+            return (
+              <div className="space-y-3">
+                {activeTasks.map(task => renderDecoCard(task))}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Decoration History */}
+        {(() => {
+          const completedTasks = decoQueue
+            .filter(t => t.status === "completed")
+            .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+          if (completedTasks.length === 0) return null;
+          const visibleCount = showAllHistory ? completedTasks.length : Math.min(3, completedTasks.length);
+          const visible = completedTasks.slice(0, visibleCount);
+          const hasMore = completedTasks.length > 3;
+          const toggleExpanded = (id: string) => setExpandedHistoryIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          });
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-[15px] font-semibold text-zinc-900">Decoration History</h2>
+                <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-bold text-zinc-600 uppercase tracking-wider">{completedTasks.length} completed</span>
+              </div>
+              <div className="space-y-2">
+                {visible.map(task => renderDecoCard(task, {
+                  compact: true,
+                  expanded: expandedHistoryIds.has(task.id),
+                  onToggle: () => toggleExpanded(task.id),
+                }))}
+              </div>
+              {hasMore && (
+                <div className="flex justify-center mt-3">
+                  <button
+                    onClick={() => setShowAllHistory(s => !s)}
+                    className="rounded-xl border border-zinc-200 bg-white px-5 py-2 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all"
+                  >
+                    {showAllHistory ? "← Show less" : `See more (${completedTasks.length - 3} more)`}
+                  </button>
                 </div>
               )}
             </div>
-          ))}
-        </div>
+          );
+        })()}
+
+        {/* Design Modal */}
+        {designModal && (() => {
+          const linkedRecipes = getRecipesForProduct(designModal.product);
+          const pkgMap = new Map<string, { name: string; qty: number; unit: string; source: string }>();
+          const decoMap = new Map<string, { name: string; qty: number; unit: string; source: string }>();
+          linkedRecipes.forEach(r => {
+            (r.packagingMaterials ?? []).forEach(p => {
+              const key = p.name.toLowerCase();
+              const existing = pkgMap.get(key);
+              if (existing) existing.qty += p.qtyPerBatch;
+              else pkgMap.set(key, { name: p.name, qty: p.qtyPerBatch, unit: p.unit, source: r.productName });
+            });
+            (r.decorationSupplies ?? []).forEach(s => {
+              const key = s.name.toLowerCase();
+              const existing = decoMap.get(key);
+              if (existing) existing.qty += s.qtyPerBatch;
+              else decoMap.set(key, { name: s.name, qty: s.qtyPerBatch, unit: s.unit, source: r.productName });
+            });
+          });
+          const packagingItems = [...pkgMap.values()];
+          const decorationItems = [...decoMap.values()];
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setDesignModal(null)}>
+              <div className="w-full max-w-[560px] max-h-[90vh] rounded-[28px] border border-[#E8E0D5] bg-white shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-zinc-900">Design Product</h3>
+                    <p className="text-[12px] text-zinc-500 mt-0.5">from My Inventory · <span className="font-semibold text-emerald-700">{designModal.product}</span></p>
+                  </div>
+                  <button onClick={() => setDesignModal(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600">✕</button>
+                </div>
+                <div className="overflow-y-auto px-6 py-5 space-y-4 flex-1">
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Quantity to Design</label>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setDesignQty(q => Math.max(1, q - 1))} className="w-9 h-9 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center">−</button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={designModal.qty}
+                        value={designQty}
+                        onChange={e => setDesignQty(Math.max(1, Math.min(designModal.qty, parseInt(e.target.value) || 1)))}
+                        className="flex-1 text-center font-mono text-[14px] font-bold text-zinc-900 rounded-lg border border-zinc-200 bg-zinc-50/60 px-3 py-2 outline-none focus:border-zinc-400"
+                      />
+                      <button onClick={() => setDesignQty(q => Math.min(designModal.qty, q + 1))} className="w-9 h-9 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center">+</button>
+                      <span className="text-[11px] text-zinc-400 font-mono">/ {designModal.qty} avail</span>
+                    </div>
+                  </div>
+
+                  {/* Linked Packaging */}
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Linked Packaging</label>
+                    {packagingItems.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/40 px-3 py-2.5 text-[12px] text-zinc-400">No packaging materials linked to this product.</div>
+                    ) : (
+                      <div className="rounded-xl border border-blue-100 bg-blue-50/30 divide-y divide-blue-100/60 overflow-hidden">
+                        {packagingItems.map((p, i) => (
+                          <div key={`pkg-${i}`} className="flex items-center justify-between px-3 py-2.5">
+                            <div>
+                              <div className="text-[12px] font-medium text-zinc-800">{p.name}</div>
+                              <div className="text-[10px] text-zinc-400">from {p.source}</div>
+                            </div>
+                            <div className="text-[12px] font-mono text-zinc-700">{formatQty(p.qty * designQty, p.unit)} {p.unit}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Linked Decoration Supplies */}
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Linked Decoration Supplies</label>
+                    {decorationItems.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/40 px-3 py-2.5 text-[12px] text-zinc-400">No decoration supplies linked to this product.</div>
+                    ) : (
+                      <div className="rounded-xl border border-purple-100 bg-purple-50/30 divide-y divide-purple-100/60 overflow-hidden">
+                        {decorationItems.map((s, i) => (
+                          <div key={`deco-${i}`} className="flex items-center justify-between px-3 py-2.5">
+                            <div>
+                              <div className="text-[12px] font-medium text-zinc-800">{s.name}</div>
+                              <div className="text-[10px] text-zinc-400">from {s.source}</div>
+                            </div>
+                            <div className="text-[12px] font-mono text-zinc-700">{formatQty(s.qty * designQty, s.unit)} {s.unit}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Theme / Design Style</label>
+                    <input
+                      value={designTheme}
+                      onChange={e => setDesignTheme(e.target.value)}
+                      placeholder="e.g. Frozen Theme, Floral, Minimalist"
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Design Notes / Decorations</label>
+                    <textarea
+                      value={designNotes}
+                      onChange={e => setDesignNotes(e.target.value)}
+                      rows={3}
+                      placeholder="e.g. Blue icing, snowflake toppers, gold ribbon"
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400 resize-none"
+                    />
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-zinc-100 flex gap-2">
+                  <button onClick={() => setDesignModal(null)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                  <button onClick={confirmDesign} className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-[13px] font-medium text-white hover:bg-emerald-700">Add to Queue</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Workflow Nav */}
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
@@ -1331,6 +2112,14 @@ return (
       ? (getFilteredItems() as unknown as InventoryItem[]).filter(i => !freezerSearch || i.name.toLowerCase().includes(freezerSearch.toLowerCase()))
       : getFilteredItems().filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()))
     );
+    const sortedInventory = isInventoryTab
+      ? ([...filtered as unknown as InventoryItem[]].sort((a, b) => {
+          const aPrep = a.source === "production-prep" ? 0 : 1;
+          const bPrep = b.source === "production-prep" ? 0 : 1;
+          if (aPrep !== bPrep) return aPrep - bPrep;
+          return a.name.localeCompare(b.name);
+        }))
+      : null;
 
     const handleAdd = () => {
       if (!newProduct.trim() || !newQty) return;
@@ -1396,21 +2185,68 @@ return (
                     <th className="px-5 py-3 text-right">Threshold</th>
                     <th className="px-5 py-3">Unit</th>
                     <th className="px-5 py-3">Section</th>
+                    <th className="px-5 py-3">Group</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
-                  {(filtered as unknown as InventoryItem[]).length === 0 ? (
-                    <tr><td colSpan={6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No inventory items with deco-only access.</td></tr>
-                  ) : (filtered as unknown as InventoryItem[]).map(inv => (
-                    <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
-                      <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{inv.name}</div></td>
-                      <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{inv.sku}</td>
-                      <td className="px-5 py-3.5 text-[13px] text-right font-mono" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand}</td>
-                      <td className="px-5 py-3.5 text-[13px] text-right font-mono text-zinc-500">{inv.threshold}</td>
-                      <td className="px-5 py-3.5 text-[13px] text-zinc-500">{inv.unit}</td>
-                      <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.group.replace(/-/g, ' ')}</span></td>
-                    </tr>
-                  ))}
+                  {(sortedInventory ?? []).length === 0 ? (
+                    <tr><td colSpan={7} className="px-5 py-12 text-center text-[13px] text-zinc-400">No inventory items with deco-only access.</td></tr>
+                  ) : (() => {
+                    const rows: React.ReactNode[] = [];
+                    let lastGroup: string | null = null;
+                    (sortedInventory ?? []).forEach((inv, idx) => {
+                      const groupKey = inv.source === "production-prep" ? "production-prep" : "manual";
+                      if (lastGroup !== null && lastGroup !== groupKey) {
+                        rows.push(
+                          <tr key={`divider-${idx}`}>
+                            <td colSpan={7} className="px-5 py-2 bg-zinc-50/60 border-y border-zinc-100">
+                              <div className="flex items-center gap-2">
+                                <span className="h-px flex-1 bg-zinc-200" />
+                                <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-400">Manual</span>
+                                <span className="h-px flex-1 bg-zinc-200" />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+                      if (lastGroup !== groupKey && groupKey === "production-prep") {
+                        rows.push(
+                          <tr key={`header-production-prep`}>
+                            <td colSpan={7} className="px-5 py-2 bg-emerald-50/60 border-b border-emerald-100">
+                              <div className="flex items-center gap-2">
+                                <span className="h-px flex-1 bg-emerald-200" />
+                                <span className="text-[10px] uppercase tracking-wider font-semibold text-emerald-700">From Production Prep</span>
+                                <span className="h-px flex-1 bg-emerald-200" />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+                      lastGroup = groupKey;
+                      const isPrep = inv.source === "production-prep";
+                      rows.push(
+                        <tr key={inv.id} className={`hover:bg-zinc-50/50 transition-colors ${isPrep ? "bg-emerald-50/20" : ""}`}>
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-2">
+                              <div className="text-[13px] font-medium text-zinc-900">{inv.name}</div>
+                              {isPrep && <span className="rounded-full bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase tracking-wider">Prep</span>}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{inv.sku}</td>
+                          <td className="px-5 py-3.5 text-[13px] text-right font-mono" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand}</td>
+                          <td className="px-5 py-3.5 text-[13px] text-right font-mono text-zinc-500">{inv.threshold}</td>
+                          <td className="px-5 py-3.5 text-[13px] text-zinc-500">{inv.unit}</td>
+                          <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.group.replace(/-/g, ' ')}</span></td>
+                          <td className="px-5 py-3.5">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isPrep ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : "bg-zinc-100 text-zinc-600 border border-zinc-200"}`}>
+                              {isPrep ? "Production Prep" : "Manual"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    });
+                    return rows;
+                  })()}
                 </tbody>
               </table>
             ) : freezerTab === "Display Cakes" ? (

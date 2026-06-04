@@ -14,6 +14,7 @@ export type InventoryItem = {
   group: "ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies";
   expiryDate?: string;
   accessRoles?: Role[];
+  source?: "production-prep" | "manual";
 };
 
 export type DOSItem = {

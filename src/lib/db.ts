@@ -38,10 +38,10 @@ const INVENTORY_TABLES: Record<string, string> = {
 };
 
 function parseInventoryItem(d: any, group: string): InventoryItem {
-  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: group as InventoryItem["group"], expiryDate: d.expiry_date || undefined, accessRoles: d.access_roles || [] };
+  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: group as InventoryItem["group"], expiryDate: d.expiry_date || undefined, accessRoles: d.access_roles || [], source: d.source || undefined };
 }
 function toInventoryRow(i: InventoryItem) {
-  return { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: i.onHand, threshold: i.threshold, cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category, expiry_date: i.expiryDate || null, access_roles: i.accessRoles ?? [] };
+  return { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: i.onHand, threshold: i.threshold, cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category, expiry_date: i.expiryDate || null, access_roles: i.accessRoles ?? [], source: i.source ?? null };
 }
 
 export async function fetchInventoryByGroup(group: string): Promise<InventoryItem[]> {
@@ -95,6 +95,7 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
   if ("lastIn" in updates) row.last_in = updates.lastIn;
   if ("category" in updates) row.category = updates.category;
   if ("accessRoles" in updates) row.access_roles = updates.accessRoles ?? [];
+  if ("source" in updates) row.source = updates.source ?? null;
   const { error } = await supabase.from(table).update(row).eq("id", id);
   if (error) throw error;
 }
@@ -225,6 +226,64 @@ export async function saveDecoProductionPrep(items: { dosId: string; productName
     items.map(i => ({ dos_id: i.dosId, product_name: i.productName, product_qty: i.productQty, prepared: i.prepared, done: i.done })),
     { onConflict: "dos_id,product_name" }
   );
+  if (error) throw error;
+}
+
+// ─── Decoration Queue ───
+export type DecoQueueRow = {
+  id: string;
+  product: string;
+  orderRef: string;
+  theme: string;
+  status: "pending" | "in-progress" | "completed";
+  notes: string;
+  freezerItemId?: string;
+  sourceQty?: number;
+  sourceBatchRef?: string;
+  sourceProducedBy?: string;
+  sourceSnapshot?: InventoryItem;
+  createdAt?: string;
+};
+
+export async function fetchDecorationQueue(): Promise<DecoQueueRow[]> {
+  const { data, error } = await supabase.from("decoration_queue").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((d: any) => ({
+    id: d.id,
+    product: d.product,
+    orderRef: d.order_ref ?? "",
+    theme: d.theme ?? "Standard",
+    status: d.status ?? "pending",
+    notes: d.notes ?? "",
+    freezerItemId: d.freezer_item_id || undefined,
+    sourceQty: d.source_qty ?? undefined,
+    sourceBatchRef: d.source_batch_ref || undefined,
+    sourceProducedBy: d.source_produced_by || undefined,
+    sourceSnapshot: d.source_snapshot || undefined,
+    createdAt: d.created_at || undefined,
+  }));
+}
+
+export async function upsertDecorationQueueTask(task: DecoQueueRow) {
+  const row: any = {
+    id: task.id,
+    product: task.product,
+    order_ref: task.orderRef,
+    theme: task.theme,
+    status: task.status,
+    notes: task.notes,
+    freezer_item_id: task.freezerItemId ?? null,
+    source_qty: task.sourceQty ?? null,
+    source_batch_ref: task.sourceBatchRef ?? null,
+    source_produced_by: task.sourceProducedBy ?? null,
+    source_snapshot: task.sourceSnapshot ?? null,
+  };
+  const { error } = await supabase.from("decoration_queue").upsert(row, { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteDecorationQueueTask(id: string) {
+  const { error } = await supabase.from("decoration_queue").delete().eq("id", id);
   if (error) throw error;
 }
 
