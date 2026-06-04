@@ -855,18 +855,34 @@ return (
                       </button>
                       <h2 className="text-[14px] font-semibold text-zinc-700">{d.product}</h2>
                     </div>
-                    {selectedProducts.has(d.id) ? (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => setSaveAmounts(prev => ({ ...prev, [d.id]: Math.max(1, (prev[d.id] ?? 1) - 1) }))}
-                          className="w-6 h-6 rounded border border-zinc-200 bg-white text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
-                        >−</button>
-                        <span className="w-8 text-center font-mono text-[13px] font-semibold text-zinc-900">{saveAmounts[d.id] ?? 1}</span>
-                        <button
-                          onClick={() => setSaveAmounts(prev => ({ ...prev, [d.id]: Math.min(remaining, (prev[d.id] ?? 1) + 1) }))}
-                          className="w-6 h-6 rounded border border-zinc-200 bg-white text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
-                        >+</button>
-                        <span className="text-[11px] text-zinc-400 font-mono">/ {remaining}</span>
+                      {selectedProducts.has(d.id) ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setSaveAmounts(prev => ({ ...prev, [d.id]: Math.max(1, (prev[d.id] ?? remaining) - 1) }))}
+                            className="w-6 h-6 rounded border border-zinc-200 bg-white text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
+                          >−</button>
+                          <input
+                            type="number"
+                            min={1}
+                            max={remaining}
+                            value={saveAmounts[d.id] ?? remaining}
+                            onChange={e => {
+                              const raw = e.target.value;
+                              if (raw === "") {
+                                setSaveAmounts(prev => ({ ...prev, [d.id]: 1 }));
+                                return;
+                              }
+                              const v = parseInt(raw, 10);
+                              if (isNaN(v)) return;
+                              setSaveAmounts(prev => ({ ...prev, [d.id]: Math.max(1, Math.min(remaining, v)) }));
+                            }}
+                            className="w-14 text-center font-mono text-[13px] font-semibold text-zinc-900 rounded border border-zinc-200 bg-white px-1 py-0.5 outline-none focus:border-emerald-500"
+                          />
+                          <button
+                            onClick={() => setSaveAmounts(prev => ({ ...prev, [d.id]: Math.min(remaining, (prev[d.id] ?? remaining) + 1) }))}
+                            className="w-6 h-6 rounded border border-zinc-200 bg-white text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
+                          >+</button>
+                          <span className="text-[11px] text-zinc-400 font-mono">/ {remaining}</span>
                       </div>
                     ) : (
                       <span className="text-[11px] text-zinc-400">{allRecipes.length} recipe{allRecipes.length > 1 ? "s" : ""}</span>
@@ -926,7 +942,7 @@ return (
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
                 <div>
                   <h3 className="text-[16px] font-semibold text-zinc-900">{selectedRecipeModal.recipe.productName}</h3>
-                  <p className="text-[12px] text-zinc-500 mt-0.5">for {selectedRecipeModal.dosProduct} × {(() => { const dos = dosForDeco.find(dd => dd.id === selectedRecipeModal.dosId); return productQty[dos?.id ?? ""] ?? dos?.qty ?? 1; })()}</p>
+                  <p className="text-[12px] text-zinc-500 mt-0.5">for {selectedRecipeModal.dosProduct} × {(() => { const dos = dosForDeco.find(dd => dd.id === selectedRecipeModal.dosId); return saveAmounts[dos?.id ?? ""] ?? productQty[dos?.id ?? ""] ?? dos?.qty ?? 1; })()}</p>
                 </div>
                 <button onClick={() => setSelectedRecipeModal(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-all">✕</button>
               </div>
@@ -935,29 +951,19 @@ return (
                 <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium">Ingredients</div>
                 {(() => {
                   const dos = dosForDeco.find(dd => dd.id === selectedRecipeModal.dosId);
-                  const dosQty = productQty[dos?.id ?? ""] ?? dos?.qty ?? 1;
+                  const dosQty = saveAmounts[dos?.id ?? ""] ?? productQty[dos?.id ?? ""] ?? dos?.qty ?? 1;
                   return selectedRecipeModal.recipe.ingredients.map((ing, i) => {
-                    const baseQty = recipeModalDraft[ing.name] ?? ing.qtyPerBatch;
+                    const baseQty = ing.qtyPerBatch;
                     const totalQty = baseQty * dosQty;
                     return (
                       <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/60 px-4 py-3">
                         <div className="flex-1">
                           <span className="text-[13px] font-medium text-zinc-800">{ing.name}</span>
                           <span className="text-[11px] text-zinc-400 ml-2">{ing.unit}</span>
-                          <span className="text-[10px] text-zinc-400 ml-1">({baseQty} × {dosQty})</span>
+                          <div className="text-[10px] text-zinc-400 mt-0.5">{baseQty} per batch × {dosQty} = <span className="font-semibold text-zinc-600">{totalQty} {ing.unit} total</span></div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setRecipeModalDraft(prev => ({ ...prev, [ing.name]: Math.max(0, (prev[ing.name] ?? ing.qtyPerBatch) - 1) }))}
-                            className="w-7 h-7 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center transition-all"
-                          >−</button>
-                          <div className="w-16 text-center font-mono text-[14px] font-bold text-zinc-900">
-                            {totalQty}
-                          </div>
-                          <button
-                            onClick={() => setRecipeModalDraft(prev => ({ ...prev, [ing.name]: (prev[ing.name] ?? ing.qtyPerBatch) + 1 }))}
-                            className="w-7 h-7 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center transition-all"
-                          >+</button>
+                        <div className="w-20 text-center font-mono text-[15px] font-bold text-zinc-900">
+                          {totalQty}
                         </div>
                       </div>
                     );
@@ -966,7 +972,7 @@ return (
 
                 {(selectedRecipeModal.recipe.packagingMaterials ?? []).length > 0 && (() => {
                   const dos = dosForDeco.find(dd => dd.id === selectedRecipeModal.dosId);
-                  const dosQty = productQty[dos?.id ?? ""] ?? dos?.qty ?? 1;
+                  const dosQty = saveAmounts[dos?.id ?? ""] ?? productQty[dos?.id ?? ""] ?? dos?.qty ?? 1;
                   return (
                     <>
                       <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium pt-2">Packaging</div>
@@ -981,7 +987,7 @@ return (
                 })()}
                 {(selectedRecipeModal.recipe.decorationSupplies ?? []).length > 0 && (() => {
                   const dos = dosForDeco.find(dd => dd.id === selectedRecipeModal.dosId);
-                  const dosQty = productQty[dos?.id ?? ""] ?? dos?.qty ?? 1;
+                  const dosQty = saveAmounts[dos?.id ?? ""] ?? productQty[dos?.id ?? ""] ?? dos?.qty ?? 1;
                   return (
                     <>
                       <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium pt-2">Decoration</div>
@@ -997,19 +1003,8 @@ return (
               </div>
 
               <div className="px-6 py-4 border-t border-zinc-100">
-                <button onClick={() => {
-                  const recipe = selectedRecipeModal.recipe;
-                  const updatedIngredients = recipe.ingredients.map(ing => ({
-                    ...ing,
-                    qtyPerBatch: recipeModalDraft[ing.name] ?? ing.qtyPerBatch,
-                  }));
-                  const updatedRecipe = { ...recipe, ingredients: updatedIngredients };
-                  onUpdateRecipes?.(prev => prev.map(r => r.productName === recipe.productName ? updatedRecipe : r));
-                  db.upsertRecipe(updatedRecipe).catch(console.error);
-                  onAddAuditLog?.("RECIPE_ADJUSTED", `${recipe.productName}: quantities updated for ${selectedRecipeModal.dosProduct}`);
-                  setSelectedRecipeModal(null);
-                }} className="w-full rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
-                  Save Changes
+                <button onClick={() => setSelectedRecipeModal(null)} className="w-full rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
+                  Close
                 </button>
               </div>
             </div>
@@ -1034,7 +1029,7 @@ return (
                   selectedProducts.forEach(dosId => {
                     const dos = dosForDeco.find(dd => dd.id === dosId);
                     if (!dos) return;
-                    const dosQty = saveAmounts[dos.id] ?? 1;
+                    const dosQty = saveAmounts[dos.id] ?? (productQty[dos.id] ?? dos.qty);
                     const existingItem = freezerItems.find(fi => fi.productName === dos.product && fi.producedBy === "deco" && fi.notes?.startsWith("Production Recipe"));
                     if (existingItem) {
                       const updatedItem = { ...existingItem, qty: existingItem.qty + dosQty };
@@ -1065,16 +1060,36 @@ return (
                     });
                     // Deduct ingredients (with custom adjustment) from My Inventory
                     const productRecipes = recipes.filter(r => r.productName === dos.product);
+                    const findInventoryMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
+                      // 1. Direct inventoryId
+                      if (ingredient.inventoryId) {
+                        const direct = workingInv.find(i => i.id === ingredient.inventoryId);
+                        if (direct) return direct;
+                      }
+                      // 2. Exact name match (case-insensitive, trimmed)
+                      const ingLower = ingredient.name.toLowerCase().trim();
+                      let match = workingInv.find(i => i.name.toLowerCase().trim() === ingLower);
+                      if (match) return match;
+                      // 3. Partial contains (either direction)
+                      match = workingInv.find(i =>
+                        i.name.toLowerCase().includes(ingLower) || ingLower.includes(i.name.toLowerCase())
+                      );
+                      if (match) return match;
+                      // 4. SKU match
+                      if (ingredient.sku) {
+                        match = workingInv.find(i => i.sku === ingredient.sku);
+                      }
+                      return match;
+                    };
                     productRecipes.forEach(recipe => {
                       (recipe.ingredients ?? []).forEach(ing => {
-                        let invId = ing.inventoryId;
-                        if (!invId) {
-                          const match = workingInv.find(i => i.name.toLowerCase() === ing.name.toLowerCase());
-                          if (match) invId = match.id;
+                        const match = findInventoryMatch(ing);
+                        if (!match) {
+                          const invNames = workingInv.map(i => i.name).slice(0, 8).join(", ");
+                          allSkipped.push(`${ing.name} (no inventory link — available: ${invNames}${workingInv.length > 8 ? "..." : ""})`);
+                          return;
                         }
-                        if (!invId) { allSkipped.push(`${ing.name} (no inventory link)`); return; }
-                        const idx = workingInv.findIndex(i => i.id === invId);
-                        if (idx < 0) { allSkipped.push(`${ing.name} (not in inventory)`); return; }
+                        const idx = workingInv.findIndex(i => i.id === match.id);
                         const needed = ing.qtyPerBatch * dosQty;
                         const before = workingInv[idx].onHand;
                         workingInv = workingInv.map((it, i) => i === idx ? { ...it, onHand: Math.max(0, before - needed) } : it);
@@ -1127,7 +1142,7 @@ return (
                   selectedProducts.forEach(dosId => {
                     const dos = dosForDeco.find(dd => dd.id === dosId);
                     if (!dos) return;
-                    const dosQty = saveAmounts[dos.id] ?? 1;
+                    const dosQty = saveAmounts[dos.id] ?? (productQty[dos.id] ?? dos.qty);
                     const existingItem = workingInv.find(i => i.name === dos.product && i.accessRoles?.includes("deco"));
                     if (existingItem) {
                       const updatedItem = { ...existingItem, onHand: existingItem.onHand + dosQty, source: "production-prep" as const };
@@ -1163,16 +1178,36 @@ return (
                     });
                     // Deduct ingredients (with custom adjustment) from My Inventory
                     const productRecipes = recipes.filter(r => r.productName === dos.product);
+                    const findInventoryMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
+                      // 1. Direct inventoryId
+                      if (ingredient.inventoryId) {
+                        const direct = workingInv.find(i => i.id === ingredient.inventoryId);
+                        if (direct) return direct;
+                      }
+                      // 2. Exact name match (case-insensitive, trimmed)
+                      const ingLower = ingredient.name.toLowerCase().trim();
+                      let match = workingInv.find(i => i.name.toLowerCase().trim() === ingLower);
+                      if (match) return match;
+                      // 3. Partial contains (either direction)
+                      match = workingInv.find(i =>
+                        i.name.toLowerCase().includes(ingLower) || ingLower.includes(i.name.toLowerCase())
+                      );
+                      if (match) return match;
+                      // 4. SKU match
+                      if (ingredient.sku) {
+                        match = workingInv.find(i => i.sku === ingredient.sku);
+                      }
+                      return match;
+                    };
                     productRecipes.forEach(recipe => {
                       (recipe.ingredients ?? []).forEach(ing => {
-                        let invId = ing.inventoryId;
-                        if (!invId) {
-                          const match = workingInv.find(i => i.name.toLowerCase() === ing.name.toLowerCase());
-                          if (match) invId = match.id;
+                        const match = findInventoryMatch(ing);
+                        if (!match) {
+                          const invNames = workingInv.map(i => i.name).slice(0, 8).join(", ");
+                          allSkipped.push(`${ing.name} (no inventory link — available: ${invNames}${workingInv.length > 8 ? "..." : ""})`);
+                          return;
                         }
-                        if (!invId) { allSkipped.push(`${ing.name} (no inventory link)`); return; }
-                        const idx = workingInv.findIndex(i => i.id === invId);
-                        if (idx < 0) { allSkipped.push(`${ing.name} (not in inventory)`); return; }
+                        const idx = workingInv.findIndex(i => i.id === match.id);
                         const needed = ing.qtyPerBatch * dosQty;
                         const before = workingInv[idx].onHand;
                         workingInv = workingInv.map((it, i) => i === idx ? { ...it, onHand: Math.max(0, before - needed) } : it);

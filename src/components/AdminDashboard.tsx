@@ -154,14 +154,26 @@ export default function AdminDashboard({
     }));
   }, [newDeliveryBranch, productPricing]);
 
-  // Helper: filter DOS items created today (by timestamp in ID)
+  // Helper: filter DOS items scheduled for today (or created today if no scheduledDate)
   const getTodayDOS = () => {
     const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    const toDateStr = (input: string | number | Date | undefined) => {
+      if (!input) return null;
+      const d = new Date(input);
+      if (isNaN(d.getTime())) return null;
+      return d.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    };
     return dosItems.filter(i => {
-      if (i.status === "scheduled") return false;
+      // Prefer scheduledDate if present
+      if (i.scheduledDate) {
+        const sd = toDateStr(i.scheduledDate);
+        if (sd) return sd === todayStr;
+      }
+      // Fall back to ID timestamp
       const ts = i.id.match(/DOS-(\d+)/)?.[1];
       if (!ts) return true;
-      const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+      const itemDate = toDateStr(Number(ts));
+      if (!itemDate) return true;
       return itemDate === todayStr;
     });
   };
