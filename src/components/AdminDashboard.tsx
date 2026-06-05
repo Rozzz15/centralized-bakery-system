@@ -1232,7 +1232,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           {[
             { tasks: bakerTasks, label: "Baker", accent: "bg-stone-600", dot: "bg-stone-500", tag: "bg-stone-100 text-stone-700", bar: "bg-stone-500" },
             { tasks: pastryTasks, label: "Pastry", accent: "bg-amber-600", dot: "bg-amber-500", tag: "bg-amber-100 text-amber-700", bar: "bg-amber-500" },
-            { tasks: decoTasks, label: "Deco / Free-Mix", accent: "bg-rose-600", dot: "bg-rose-500", tag: "bg-rose-100 text-rose-700", bar: "bg-rose-500" },
+            { tasks: decoTasks, label: "Deco / Pre-Mix", accent: "bg-rose-600", dot: "bg-rose-500", tag: "bg-rose-100 text-rose-700", bar: "bg-rose-500" },
             { tasks: kitchenTasks, label: "Kitchen", accent: "bg-emerald-600", dot: "bg-emerald-500", tag: "bg-emerald-100 text-emerald-700", bar: "bg-emerald-500" },
           ].map(({ tasks, label, accent, dot, tag, bar }) => {
             const done = tasks.filter(t => t.status === "completed").length;
@@ -1632,7 +1632,7 @@ return (
                   const searchKey = `search_${producer}`;
                   const searchVal = deliverySearch[searchKey] || "";
                   const producerItems = freezerItems.filter(i => i.status === "stored" && i.producedBy === producer && (!searchVal || i.productName.toLowerCase().includes(searchVal.toLowerCase())));
-                  const producerLabel = producer === "baker" ? "Baker" : producer === "deco" ? "Deco / Free-Mix" : "Pastry";
+                  const producerLabel = producer === "baker" ? "Baker" : producer === "deco" ? "Deco / Pre-Mix" : "Pastry";
                   return (
                     <div key={producer} className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-3 mb-2">
                       <div className="flex items-center justify-between mb-2">

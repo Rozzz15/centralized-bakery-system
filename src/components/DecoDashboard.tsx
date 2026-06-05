@@ -87,8 +87,8 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   const [editingRecipe, setEditingRecipe] = useState<string | null>(null);
   const [recipeDraft, setRecipeDraft] = useState<{ inventoryId: string; name: string; qtyPerBatch: number; unit: string }[]>([]);
-  const [freeMixPrepared, setFreeMixPrepared] = useState<Set<string>>(new Set());
-  const [freeMixDone, setFreeMixDone] = useState<Set<string>>(new Set());
+  const [preMixPrepared, setPreMixPrepared] = useState<Set<string>>(new Set());
+  const [preMixDone, setPreMixDone] = useState<Set<string>>(new Set());
   const [productQty, setProductQty] = useState<Record<string, number>>({});
 
   // Load from Supabase on mount
@@ -103,8 +103,8 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         if (i.done) done.add(key);
         qty[i.dosId] = i.productQty;
       });
-      setFreeMixPrepared(prepared);
-      setFreeMixDone(done);
+      setPreMixPrepared(prepared);
+      setPreMixDone(done);
       setProductQty(qty);
     }).catch(console.error);
   }, []);
@@ -112,7 +112,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   // Save to Supabase on change
   useEffect(() => {
     const items: DecoProductionPrep[] = [];
-    const allDosIds = new Set([...[...freeMixPrepared].map(k => k.split("-")[0]), ...[...freeMixDone].map(k => k.split("-")[0]), ...Object.keys(productQty)]);
+    const allDosIds = new Set([...[...preMixPrepared].map(k => k.split("-")[0]), ...[...preMixDone].map(k => k.split("-")[0]), ...Object.keys(productQty)]);
     allDosIds.forEach(dosId => {
       const dos = dosForDeco.find(d => d.id === dosId);
       if (!dos) return;
@@ -124,20 +124,21 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
       const allRecipes = linkedRecipes;
       if (allRecipes.length === 0) {
         const key = `${dosId}-${dos.product.toLowerCase()}`;
-        items.push({ dosId, productName: dos.product, productQty: productQty[dosId] ?? dos.qty, prepared: freeMixPrepared.has(key), done: freeMixDone.has(key) });
+        items.push({ dosId, productName: dos.product, productQty: productQty[dosId] ?? dos.qty, prepared: preMixPrepared.has(key), done: preMixDone.has(key) });
       }
       allRecipes.forEach(r => {
         const key = `${dosId}-${r!.productName.toLowerCase()}`;
-        items.push({ dosId, productName: r!.productName, productQty: productQty[dosId] ?? dos.qty, prepared: freeMixPrepared.has(key), done: freeMixDone.has(key) });
+        items.push({ dosId, productName: r!.productName, productQty: productQty[dosId] ?? dos.qty, prepared: preMixPrepared.has(key), done: preMixDone.has(key) });
       });
     });
     if (items.length > 0) db.saveDecoProductionPrep(items).catch(console.error);
-  }, [freeMixPrepared, freeMixDone, productQty]);
+  }, [preMixPrepared, preMixDone, productQty]);
   const [advMixSearch, setAdvMixSearch] = useState("");
   const [selectedAdvRecipes, setSelectedAdvRecipes] = useState<Set<string>>(new Set());
   const [advMixQtys, setAdvMixQtys] = useState<Record<string, number>>({});
   const [advMixAdjustments, setAdvMixAdjustments] = useState<Record<string, Record<string, number>>>({});
   const [isAdvLocked, setIsAdvLocked] = useState(false);
+  const [showAdvConfirm, setShowAdvConfirm] = useState(false);
 
   // Freezer state
   const [showAddFreezer, setShowAddFreezer] = useState(false);
@@ -222,7 +223,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const ingredientItems = inventory.filter(i => i.group === "ingredients");
   const lowDecoMaterials = decoMaterials.filter(i => i.onHand > 0 && i.onHand < i.threshold);
 
-  const togglePrepared = (id: string) => setFreeMixPrepared(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const togglePrepared = (id: string) => setPreMixPrepared(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const handleEditRecipe = (product: string) => {
     const existing = recipes.find(r => r.productName === product);
@@ -269,8 +270,8 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     });
     onUpdateInventory(newInv);
     await db.upsertInventory(newInv).catch(console.error);
-    onAddAuditLog?.("FREE_MIX_COMPLETED", `${product}: ${deductions.join(", ")}`);
-    setFreeMixDone(prev => new Set(prev).add(product));
+    onAddAuditLog?.("PRE_MIX_COMPLETED", `${product}: ${deductions.join(", ")}`);
+    setPreMixDone(prev => new Set(prev).add(product));
     // Mark all deduped ingredients as prepared
     const toggleKeys = new Set<string>();
     productRecipes.forEach(recipe => {
@@ -488,12 +489,12 @@ defer(() => onUpdateInventory(prevInv => {
       .filter(r => r!.productName !== d.product);
     return s + linkedRecipes.length;
   }, 0);
-  const totalPrepared = freeMixPrepared.size;
-  const allMixesDone = dosForDeco.every(d => freeMixDone.has(d.product));
+  const totalPrepared = preMixPrepared.size;
+  const allMixesDone = dosForDeco.every(d => preMixDone.has(d.product));
 
   const workflowSteps = [
     { id: "dashboard", label: "DOS Received" },
-    { id: "free-mix", label: "Production Prep" },
+    { id: "pre-mix", label: "Pre-Mix" },
     { id: "advanced-premix", label: "Advanced Premix" },
     { id: "deco-queue", label: "Decoration Queue" },
     { id: "freezer", label: "Finished Products" },
@@ -532,7 +533,7 @@ return (
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight text-white">DOS Received</h1>
-              <p className="mt-1 text-[13px] text-zinc-400">Admin issued these items. Your job is to prepare the Free Mix (ingredient pre-mixes) for each product.</p>
+              <p className="mt-1 text-[13px] text-zinc-400">Admin issued these items. Your job is to prepare the Pre-Mix (ingredient pre-mixes) for each product.</p>
             </div>
             {dosForDeco.length > 0 && (
               <div className="shrink-0 rounded-xl bg-white/10 px-4 py-2.5 text-center">
@@ -801,7 +802,7 @@ return (
   }
 
   /* ── Production Prep ── */
-  if (activeTab === "free-mix") {
+  if (activeTab === "pre-mix") {
     const updateIngredientQty = (recipeName: string, ingredientName: string, newQty: number) => {
       if (!onUpdateRecipes) return;
       onUpdateRecipes(prev => {
@@ -911,7 +912,7 @@ return (
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {allRecipes.map(r => {
-                      const isPrepared = freeMixPrepared.has(`${d.id}:::${r!.productName.toLowerCase()}`);
+                      const isPrepared = preMixPrepared.has(`${d.id}:::${r!.productName.toLowerCase()}`);
                       const ingCount = r!.ingredients.length;
                       const pkgCount = (r!.packagingMaterials ?? []).length;
                       const decoCount = (r!.decorationSupplies ?? []).length;
@@ -1077,7 +1078,7 @@ return (
                       .filter(Boolean);
                     linkedRecipes.forEach(r => {
                       const preparedKey = `${dos.id}:::${r!.productName.toLowerCase()}`;
-                      setFreeMixPrepared(prev => new Set(prev).add(preparedKey));
+                      setPreMixPrepared(prev => new Set(prev).add(preparedKey));
                     });
                     // Deduct ingredients (with custom adjustment) from My Inventory
                     const productRecipes = getRecipesForProduct(dos.product);
@@ -1195,7 +1196,7 @@ return (
                       .filter(Boolean);
                     linkedRecipes.forEach(r => {
                       const preparedKey = `${dos.id}:::${r!.productName.toLowerCase()}`;
-                      setFreeMixPrepared(prev => new Set(prev).add(preparedKey));
+                      setPreMixPrepared(prev => new Set(prev).add(preparedKey));
                     });
                     // Deduct ingredients (with custom adjustment) from My Inventory
                     const productRecipes = getRecipesForProduct(dos.product);
@@ -1287,7 +1288,7 @@ return (
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-6 pb-6 border-b border-zinc-100">
           <div>
-            <h1 className="text-[32px] font-extrabold tracking-tight text-zinc-900">Advanced Freemix</h1>
+            <h1 className="text-[32px] font-extrabold tracking-tight text-zinc-900">Advanced Premix</h1>
             <p className="mt-1 text-[14px] text-zinc-500">Curate recipe batches and fine-tune ingredient compositions.</p>
           </div>
           
@@ -1389,50 +1390,91 @@ return (
             
             <div className="pt-6 border-t border-zinc-100 flex justify-end gap-3">
               <button onClick={() => setIsAdvLocked(false)} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-zinc-600 hover:bg-zinc-100">Cancel</button>
-              <button onClick={() => {
-                const batchRef = `ADV-${Date.now()}`;
-                const items: FreezerItem[] = Array.from(selectedAdvRecipes).map(productName => {
-                  const recipe = recipes.find(r => r.productName === productName);
-                  const qty = advMixQtys[productName] || 1;
-                  const adjustments = advMixAdjustments[productName];
-                  const notes = adjustments
-                    ? Object.entries(adjustments).filter(([, v]) => v !== 0).map(([name, v]) => `${name}: ${v > 0 ? "+" : ""}${v.toFixed(1)}`).join("; ")
-                    : "";
-                  return {
-                    id: `FRZ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                    productName,
-                    qty,
-                    unit: "batch",
-                    batchRef,
-                    producedBy: "deco",
-                    dateProduced: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
-                    status: "stored",
-                    notes: notes || `Advanced Premix composition`,
-                  };
-                });
-                onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, ...items]);
-                db.upsertFreezerItems(items).catch(console.error);
-                onAddAuditLog?.("ADVANCED_PREMIX_SAVED", `Saved ${items.length} compositions to freezer (batch: ${batchRef})`);
-                // Create pending assembly tasks for Baker
-                const assemblyTasks = items.map(item => ({
-                  id: crypto.randomUUID?.() ?? `ASM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  productName: item.productName,
-                  premixItemId: item.id,
-                  premixQtyUsed: item.qty,
-                  qtyAssembled: 0,
-                  status: "pending" as const,
-                  assembledBy: "baker",
-                  notes: `From Deco Advanced Premix (${batchRef})`,
-                }));
-                Promise.all(assemblyTasks.map(t => db.saveBakerAssemblyTask(t))).catch(console.error);
-                setSelectedAdvRecipes(new Set());
-                setAdvMixQtys({});
-                setAdvMixAdjustments({});
-                setIsAdvLocked(false);
-              }} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-zinc-900 hover:bg-zinc-800 flex items-center gap-2">
+              <button onClick={() => setShowAdvConfirm(true)} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-zinc-900 hover:bg-zinc-800 flex items-center gap-2">
                 Save to Freezer 📦
               </button>
             </div>
+
+            {showAdvConfirm && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowAdvConfirm(false)}>
+                <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                  <h2 className="text-[18px] font-semibold mb-1">Confirm Save</h2>
+                  <p className="text-[13px] text-zinc-500 mb-5">The following Advanced Premix items will be saved to the freezer and sent to Baker's Assembly:</p>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto mb-5">
+                    {Array.from(selectedAdvRecipes).map(productName => {
+                      const recipe = recipes.find(r => r.productName === productName);
+                      const qty = advMixQtys[productName] || 1;
+                      const adjustments = advMixAdjustments[productName];
+                      const hasAdjustments = adjustments && Object.values(adjustments).some(v => v !== 0);
+                      return (
+                        <div key={productName} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3.5">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[14px] font-medium text-zinc-900">{productName}</span>
+                            <span className="text-[13px] font-mono font-medium">×{qty} batch</span>
+                          </div>
+                          {hasAdjustments && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {Object.entries(adjustments).filter(([, v]) => v !== 0).map(([name, v]) => (
+                                <span key={name} className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${v > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                                  {name} {v > 0 ? "+" : ""}{v.toFixed(1)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowAdvConfirm(false)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                    <button onClick={() => {
+                      setShowAdvConfirm(false);
+                      const batchRef = `ADV-${Date.now()}`;
+                      const items: FreezerItem[] = Array.from(selectedAdvRecipes).map(productName => {
+                        const recipe = recipes.find(r => r.productName === productName);
+                        const qty = advMixQtys[productName] || 1;
+                        const adjustments = advMixAdjustments[productName];
+                        const notes = adjustments
+                          ? Object.entries(adjustments).filter(([, v]) => v !== 0).map(([name, v]) => `${name}: ${v > 0 ? "+" : ""}${v.toFixed(1)}`).join("; ")
+                          : "";
+                        return {
+                          id: `FRZ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                          productName,
+                          qty,
+                          unit: "batch",
+                          batchRef,
+                          producedBy: "deco",
+                          dateProduced: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
+                          status: "stored",
+                          notes: notes || `Advanced Premix composition`,
+                        };
+                      });
+                      onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, ...items]);
+                      db.upsertFreezerItems(items).then(() => {
+                        const assemblyTasks = items.map(item => ({
+                          id: crypto.randomUUID?.() ?? `ASM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                          productName: item.productName,
+                          premixItemId: item.id,
+                          premixQtyUsed: item.qty,
+                          qtyAssembled: 0,
+                          status: "pending" as const,
+                          assembledBy: "baker",
+                          notes: `From Deco Advanced Premix (${batchRef})`,
+                        }));
+                        return Promise.all(assemblyTasks.map(t => db.saveBakerAssemblyTask(t)));
+                      }).catch(console.error);
+                      onAddAuditLog?.("ADVANCED_PREMIX_SAVED", `Saved ${items.length} compositions to freezer (batch: ${batchRef})`);
+                      setSelectedAdvRecipes(new Set());
+                      setAdvMixQtys({});
+                      setAdvMixAdjustments({});
+                      setIsAdvLocked(false);
+                    }} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-bold text-white hover:bg-zinc-800">Confirm Save</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
         
