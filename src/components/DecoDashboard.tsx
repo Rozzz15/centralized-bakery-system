@@ -1413,6 +1413,18 @@ return (
                 onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, ...items]);
                 db.upsertFreezerItems(items).catch(console.error);
                 onAddAuditLog?.("ADVANCED_PREMIX_SAVED", `Saved ${items.length} compositions to freezer (batch: ${batchRef})`);
+                // Create pending assembly tasks for Baker
+                const assemblyTasks = items.map(item => ({
+                  id: crypto.randomUUID?.() ?? `ASM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  productName: item.productName,
+                  premixItemId: item.id,
+                  premixQtyUsed: item.qty,
+                  qtyAssembled: 0,
+                  status: "pending" as const,
+                  assembledBy: "baker",
+                  notes: `From Deco Advanced Premix (${batchRef})`,
+                }));
+                Promise.all(assemblyTasks.map(t => db.saveBakerAssemblyTask(t))).catch(console.error);
                 setSelectedAdvRecipes(new Set());
                 setAdvMixQtys({});
                 setAdvMixAdjustments({});
@@ -2156,7 +2168,7 @@ return (
     // Categorization logic
     const tabs: ("Display Cakes" | "Production Recipe" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "My Inventory"];
     const displayCakes = myFreezer.filter(i => !i.notes?.startsWith("Production Recipe"));
-    const productionRecipes = myFreezer.filter(i => i.notes?.startsWith("Production Recipe"));
+    const productionRecipes = myFreezer.filter(i => i.notes?.startsWith("Production Recipe") && i.qty > 0);
     const getFilteredItems = () => {
         if (freezerTab === "Display Cakes") return displayCakes;
         if (freezerTab === "Production Recipe") return productionRecipes;

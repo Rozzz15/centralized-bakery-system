@@ -961,6 +961,62 @@ export async function fetchWasteLog(): Promise<WasteLog[]> {
     referenceId: d.reference_id, date: d.date, createdAt: d.created_at,
   }));
 }
+// ─── Baker Assembly Tasks ───
+export interface BakerAssemblyTask {
+  id: string;
+  productName: string;
+  dosId?: string;
+  dosQty?: number;
+  premixItemId: string;
+  premixQtyUsed: number;
+  qtyAssembled: number;
+  status: "pending" | "in_progress" | "completed";
+  assembledBy: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export async function fetchBakerAssemblyTasks(): Promise<BakerAssemblyTask[]> {
+  const { data, error } = await supabase.from("baker_assembly_tasks").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((d: any) => ({
+    id: d.id,
+    productName: d.product_name,
+    dosId: d.dos_id,
+    dosQty: d.dos_qty,
+    premixItemId: d.premix_item_id,
+    premixQtyUsed: d.premix_qty_used,
+    qtyAssembled: d.qty_assembled,
+    status: d.status,
+    assembledBy: d.assembled_by,
+    notes: d.notes,
+    createdAt: d.created_at,
+    updatedAt: d.updated_at,
+  }));
+}
+
+export async function saveBakerAssemblyTask(task: BakerAssemblyTask) {
+  const { error } = await supabase.from("baker_assembly_tasks").upsert({
+    id: task.id,
+    product_name: task.productName,
+    dos_id: task.dosId || null,
+    dos_qty: task.dosQty ?? 0,
+    premix_item_id: task.premixItemId,
+    premix_qty_used: task.premixQtyUsed,
+    qty_assembled: task.qtyAssembled,
+    status: task.status,
+    assembled_by: task.assembledBy,
+    notes: task.notes ?? "",
+  }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteBakerAssemblyTask(id: string) {
+  const { error } = await supabase.from("baker_assembly_tasks").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function upsertWasteLog(items: WasteLog[]) {
   const { error } = await supabase.from("waste_log").upsert(items.map(w => ({
     id: w.id, product: w.product, qty_rejected: w.qtyRejected, unit_cost: w.unitCost,
