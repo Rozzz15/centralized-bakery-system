@@ -52,6 +52,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "deco-queue", label: "Decoration Queue", icon: "" },
     { id: "custom-orders", label: "Custom Orders", icon: "" },
     { id: "freezer", label: "Freezer", icon: "" },
+    { id: "waste-adjustment", label: "Waste/Adjustment", icon: "" },
   ],
   kitchen: [
     { id: "dashboard", label: "Dispatch", icon: "◼" },
@@ -564,7 +565,7 @@ export default function App() {
     return () => clearInterval(sync);
   }, [loggedIn, role]);
 
-  const eggs = inventory.find(i => i.id === "INV-001");
+  const eggs = inventory?.find(i => i?.id === "INV-001");
   const isEggCritical = eggs ? eggs.onHand < eggs.threshold : false;
 
   const kpis = useMemo(() => {
@@ -978,8 +979,8 @@ export default function App() {
             {role === "baker" && ["dashboard", "freezer"].includes(activeTab) && (
               <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} />
             )}
-            {role === "deco" && ["dashboard", "free-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer"].includes(activeTab) && (
-              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
+            {role === "deco" && ["dashboard", "free-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer", "waste-adjustment"].includes(activeTab) && (
+              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} wasteLog={wasteLog} onUpdateWasteLog={setWasteLog} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (
               <KitchenDashboard production={production} deliveries={deliveries} dosItems={dosItems} onUpdateDeliveries={setDeliveries} activeTab={activeTab} />

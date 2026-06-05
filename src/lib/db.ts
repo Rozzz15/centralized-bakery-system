@@ -49,8 +49,10 @@ export async function fetchInventoryByGroup(group: string): Promise<InventoryIte
   if (!table) return [];
   const { data, error } = await supabase.from(table).select("*").order("name");
   if (error) throw error;
-  return (data ?? []).map((d: any) => parseInventoryItem(d, group));
+  return (data ?? []).map(d => parseInventoryItem(d, group));
 }
+
+
 
 export async function fetchAllInventory(): Promise<InventoryItem[]> {
   const results = await Promise.all(

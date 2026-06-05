@@ -619,7 +619,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000);
 
     const groupItems = (g: typeof warehouseSection) => inventory.filter(i => g === "history" ? false : i.group === g);
-    const roleFiltered = (items: InventoryItem[]) => warehouseSection !== "ingredients" || ingredientRoleFilter === "all" ? items : items.filter(i => i.accessRoles?.includes(ingredientRoleFilter));
+    const roleFiltered = (items: InventoryItem[]) => warehouseSection !== "ingredients" || ingredientRoleFilter === "all" ? items : items.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter));
 
     const sidebarItems: { key: typeof warehouseSection; label: string; icon: string }[] = [
       { key: "ingredients", label: "Ingredients", icon: "◇" },
@@ -748,7 +748,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 </div>
                 <div className="overflow-x-auto">
                   <div className="min-w-[500px] space-y-2">
-                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || i.accessRoles?.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).map(item => {
+                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).map(item => {
                     const pct = Math.min(100, (item.onHand / item.threshold) * 100);
                     const isCritical = item.onHand < item.threshold;
                     const isExpired = item.expiryDate && item.expiryDate < todayStr;
@@ -773,7 +773,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                       </div>
                     );
                   })}
-                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || i.accessRoles?.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).length === 0 && <div className="text-center py-10 text-[14px] text-zinc-400">{invSearch ? "No items match your search." : "No items in this group yet."}</div>}
+                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).length === 0 && <div className="text-center py-10 text-[14px] text-zinc-400">{invSearch ? "No items match your search." : "No items in this group yet."}</div>}
                   </div>
                 </div>
               </div>
@@ -1025,7 +1025,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
 
         {/* Scheduled DOS */}
         {(() => {
-          const scheduled = dosItems.filter(i => i.status === "scheduled");
+          const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+          const scheduled = dosItems.filter(i => i.status === "scheduled" && i.scheduledDate !== todayStr);
           if (scheduled.length === 0) return null;
           const byDate = new Map<string, DOSItem[]>();
           scheduled.forEach(i => { const d = i.scheduledDate || "unknown"; if (!byDate.has(d)) byDate.set(d, []); byDate.get(d)!.push(i); });
@@ -3036,7 +3037,8 @@ dosItems.forEach(d => rows.push([d.id, d.product, String(d.qty), d.priority, d.s
             <button onClick={() => setActiveTab("dos")} className="text-[12px] font-medium text-zinc-700 hover:underline">Manage</button>
           </div>
           {(() => {
-            const scheduled = dosItems.filter(i => i.status === "scheduled").sort((a, b) => (a.scheduledDate || "").localeCompare(b.scheduledDate || ""));
+            const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+            const scheduled = dosItems.filter(i => i.status === "scheduled" && i.scheduledDate !== todayStr).sort((a, b) => (a.scheduledDate || "").localeCompare(b.scheduledDate || ""));
             if (scheduled.length === 0) return <p className="text-[13px] text-zinc-400 text-center py-6">No scheduled DOS items.</p>;
             const byDate = new Map<string, typeof scheduled>();
             scheduled.forEach(i => { const d = i.scheduledDate || "unknown"; if (!byDate.has(d)) byDate.set(d, []); byDate.get(d)!.push(i); });

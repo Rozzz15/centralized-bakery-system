@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, Fragment } from "react";
-import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role } from "../types";
+import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog } from "../types";
 import * as db from "../lib/db";
 
 type DecoProductionPrep = { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean };
@@ -45,9 +45,11 @@ type Props = {
   freezerItems?: FreezerItem[];
   onUpdateFreezer?: (cb: FreezerItem[] | ((prev: FreezerItem[]) => FreezerItem[])) => void;
   freezerHistory?: FreezerHistory[];
+  wasteLog?: WasteLog[];
+  onUpdateWasteLog?: (cb: WasteLog[] | ((prev: WasteLog[]) => WasteLog[])) => void;
 };
 
-export default function DecoDashboard({ production, dosItems, onCompleteTask, activeTab, setActiveTab, productCatalog, recipes, inventory, onUpdateInventory, onUpdateRecipes, onAddAuditLog, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [] }: Props) {
+export default function DecoDashboard({ production, dosItems, onCompleteTask, activeTab, setActiveTab, productCatalog, recipes, inventory, onUpdateInventory, onUpdateRecipes, onAddAuditLog, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], wasteLog = [], onUpdateWasteLog }: Props) {
   // Defer setState calls to the next macrotask (setTimeout 0) to avoid
   // "Cannot update a component (App) while rendering DecoDashboard" warning.
   // queueMicrotask is NOT enough — React's setState also runs in microtasks.
@@ -195,6 +197,25 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [saveAmounts, setSaveAmounts] = useState<Record<string, number>>({});
   const [recipeModalDraft, setRecipeModalDraft] = useState<Record<string, number>>({});
+  const [showInventoryConfirmModal, setShowInventoryConfirmModal] = useState(false);
+  const [wasteSource, setWasteSource] = useState("my-inventory");
+  const [wasteItemId, setWasteItemId] = useState<string>("");
+  const [wasteQty, setWasteQty] = useState<number>(1);
+  const [wasteReason, setWasteReason] = useState("Spoilage");
+
+  const [wasteSearch, setWasteSearch] = useState("");
+  const [wasteShowDropdown, setWasteShowDropdown] = useState(false);
+  const wasteSearchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (wasteSearchRef.current && !wasteSearchRef.current.contains(e.target as Node)) {
+        setWasteShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const allIngredients = inventory.filter(i => i.group === "ingredients" || i.group === "decoration-supplies" || i.group === "packaging-materials");
   const decoMaterials = inventory.filter(i => i.group === "decoration-supplies");
@@ -241,7 +262,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     const deductions: string[] = [];
     productRecipes.forEach(recipe => {
       recipe.ingredients.forEach(ing => {
-        const neededQty = Math.ceil(ing.qtyPerBatch * dos.qty);
+        const neededQty = Math.ceil(ing.qtyPerBatch * (productQty[dos.id] ?? dos.qty));
         const idx = newInv.findIndex(i => i.id === ing.inventoryId);
         if (idx >= 0) { newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - neededQty) }; deductions.push(`${recipe.productName}: ${ing.name}`); }
       });
@@ -882,10 +903,10 @@ return (
                             onClick={() => setSaveAmounts(prev => ({ ...prev, [d.id]: Math.min(remaining, (prev[d.id] ?? remaining) + 1) }))}
                             className="w-6 h-6 rounded border border-zinc-200 bg-white text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
                           >+</button>
-                          <span className="text-[11px] text-zinc-400 font-mono">/ {remaining}</span>
+                          <span className="text-[11px] text-zinc-400 font-mono">/ {d.qty}</span>
                       </div>
                     ) : (
-                      <span className="text-[11px] text-zinc-400">{allRecipes.length} recipe{allRecipes.length > 1 ? "s" : ""}</span>
+                      <span className="text-[11px] text-zinc-400 font-mono">×{remaining} / {d.qty} · {allRecipes.length} recipe{allRecipes.length > 1 ? "s" : ""}</span>
                     )}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1059,7 +1080,7 @@ return (
                       setFreeMixPrepared(prev => new Set(prev).add(preparedKey));
                     });
                     // Deduct ingredients (with custom adjustment) from My Inventory
-                    const productRecipes = recipes.filter(r => r.productName === dos.product);
+                    const productRecipes = getRecipesForProduct(dos.product);
                     const findInventoryMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
                       // 1. Direct inventoryId
                       if (ingredient.inventoryId) {
@@ -1177,7 +1198,7 @@ return (
                       setFreeMixPrepared(prev => new Set(prev).add(preparedKey));
                     });
                     // Deduct ingredients (with custom adjustment) from My Inventory
-                    const productRecipes = recipes.filter(r => r.productName === dos.product);
+                    const productRecipes = getRecipesForProduct(dos.product);
                     const findInventoryMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
                       // 1. Direct inventoryId
                       if (ingredient.inventoryId) {
@@ -1483,7 +1504,7 @@ return (
 
   /* ── Decoration Queue ── */
   if (activeTab === "deco-queue") {
-    const prepInventory = inventory.filter(i => i.accessRoles?.includes("deco") && i.source === "production-prep");
+    const prepInventory = inventory.filter(i => i.source === "production-prep" && (!i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco")));
     const activeDesignItem = selectedDesignId ? inventory.find(i => i.id === selectedDesignId) ?? null : null;
 
     const renderDecoCard = (task: DecoTask, opts?: { compact?: boolean; expanded?: boolean; onToggle?: () => void }) => {
@@ -2130,7 +2151,7 @@ return (
   /* ── Freezer Tab ── */
   if (activeTab === "freezer") {
     const myFreezer = freezerItems.filter(i => i.producedBy === "deco");
-    const decoOnlyInventory = inventory.filter(i => i.accessRoles?.includes("deco"));
+    const decoOnlyInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco"));
     
     // Categorization logic
     const tabs: ("Display Cakes" | "Production Recipe" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "My Inventory"];
@@ -2439,6 +2460,273 @@ return (
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  /* ── Waste / Adjustment ── */
+  if (activeTab === "waste-adjustment") {
+    const wasteReasons = ["Spoilage", "Damaged / Breakage", "Expired", "Overproduction", "Quality Issue", "Wrong Product", "Contamination", "Other"];
+    const sourceOptions = [
+      { id: "freezer-display" as const, label: "Freezer - Display Cakes" },
+      { id: "freezer-production" as const, label: "Freezer - Production Recipe" },
+      { id: "my-inventory" as const, label: "My Inventory" },
+    ];
+
+    const getSourceItems = () => {
+      switch (wasteSource) {
+        case "freezer-display": return freezerItems.filter(i => i.producedBy === "deco" && !i.notes?.startsWith("Production Recipe")).map(i => ({ id: i.id, name: i.productName, qty: i.qty, unit: i.unit, source: "freezer" as const }));
+        case "freezer-production": return freezerItems.filter(i => i.producedBy === "deco" && i.notes?.startsWith("Production Recipe")).map(i => ({ id: i.id, name: i.productName, qty: i.qty, unit: i.unit, source: "freezer" as const }));
+        case "my-inventory": return inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco")).map(i => ({ id: i.id, name: i.name, qty: i.onHand, unit: i.unit, source: "inventory" as const }));
+      }
+    };
+    const sourceItems = getSourceItems();
+    const selectedItem = sourceItems.find(s => s.id === wasteItemId);
+
+    const handleRecordWaste = async () => {
+      if (!selectedItem || wasteQty <= 0) return;
+      if (wasteQty > selectedItem.qty) {
+        if (!confirm(`Only ${selectedItem.qty} ${selectedItem.unit} available. Record waste of ${wasteQty} anyway?`)) return;
+      }
+
+      const sourceLabels: Record<string, string> = {
+        "freezer-display": "Deco - Freezer Display Cakes",
+        "freezer-production": "Deco - Freezer Production Recipe",
+        "my-inventory": "Deco - My Inventory",
+      };
+
+      // Get cost info from inventory item
+      const itemCost = selectedItem.source === "inventory"
+        ? inventory.find(i => i.id === selectedItem.id)?.cost ?? 0
+        : 0;
+      const unitCost = itemCost;
+      const totalCost = unitCost * wasteQty;
+
+      const log: WasteLog = {
+        id: `WASTE-${Date.now()}`,
+        product: selectedItem.name,
+        qtyRejected: wasteQty,
+        unitCost,
+        totalCost,
+        reason: wasteReason,
+        source: sourceLabels[wasteSource] || wasteSource,
+        referenceId: selectedItem.id,
+        date: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
+      };
+
+      // Deduct from source
+      const deductedQty = wasteQty;
+      try {
+        if (selectedItem.source === "inventory") {
+          const currentItem = inventory.find(i => i.id === selectedItem.id);
+          if (!currentItem) { alert("Item not found in inventory."); return; }
+          const newOnHand = Math.max(0, currentItem.onHand - deductedQty);
+          onUpdateInventory(prev => prev.map(i => i.id === currentItem.id ? { ...i, onHand: newOnHand } : i));
+          await db.upsertInventoryItem({ ...currentItem, onHand: newOnHand });
+        } else {
+          const currentFz = freezerItems.find(i => i.id === selectedItem.id);
+          if (!currentFz) { alert("Item not found in freezer."); return; }
+          const newQty = Math.max(0, currentFz.qty - deductedQty);
+          onUpdateFreezer?.(prev => prev.map(i => i.id === currentFz.id ? { ...i, qty: newQty } : i));
+          await db.upsertFreezerItems([{ ...currentFz, qty: newQty }]);
+        }
+      } catch (err) {
+        alert("Failed to deduct stock: " + (err instanceof Error ? err.message : String(err)));
+        return;
+      }
+
+      // Save to shared waste_log (visible in Admin Finance)
+      try {
+        onUpdateWasteLog?.(prev => [log, ...prev]);
+        await db.upsertWasteLog([log]);
+      } catch (err) {
+        alert("Failed to save waste record: " + (err instanceof Error ? err.message : String(err)));
+        return;
+      }
+      onAddAuditLog?.("DECO_WASTE_RECORDED", `${selectedItem.name} ×${wasteQty} ${selectedItem.unit} — ${wasteReason} (${wasteSource})`);
+
+      // Reset form
+      setWasteQty(1);
+      setWasteReason(wasteReasons[0]);
+
+      setWasteItemId("");
+      setWasteSearch("");
+    };
+
+    return (
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-[28px] font-semibold tracking-tight">Waste & Adjustment</h1>
+          <p className="mt-1 text-[13px] text-zinc-500">Record wasted or adjusted stock from your inventory and freezer.</p>
+        </div>
+
+        <div className="rounded-2xl border border-red-200 bg-red-50/40 p-5">
+          <h2 className="text-[15px] font-semibold text-zinc-900 mb-4">Record Waste / Adjustment (- Stock)</h2>
+
+          {/* Source Type */}
+          <div className="mb-4">
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Source</label>
+            <div className="flex flex-wrap gap-2">
+              {sourceOptions.map(opt => (
+                <button
+                  key={opt.id}
+                  onClick={() => { setWasteSource(opt.id); setWasteItemId(""); }}
+                  className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all ${
+                    wasteSource === opt.id
+                      ? "bg-red-600 text-white shadow-sm"
+                      : "bg-white border border-zinc-200 text-zinc-600 hover:border-zinc-400"
+                  }`}
+                >{opt.label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Item Select */}
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Item</label>
+              {sourceItems.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-zinc-200 bg-white/60 p-4 text-center text-[12px] text-zinc-400">No items in this source.</div>
+              ) : (
+                <div ref={wasteSearchRef} className="relative">
+                  <input
+                    value={wasteSearch}
+                    onChange={e => { setWasteSearch(e.target.value); setWasteShowDropdown(true); setWasteItemId(""); }}
+                    onFocus={() => setWasteShowDropdown(true)}
+                    placeholder="Search items..."
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-red-400"
+                  />
+                  {wasteItemId && (() => {
+                    const sel = sourceItems.find(s => s.id === wasteItemId);
+                    return sel ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-zinc-400 font-mono">{sel.qty} {sel.unit}</span> : null;
+                  })()}
+                  {wasteShowDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-1 z-50 max-h-48 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-lg">
+                      {sourceItems
+                        .filter(i => !wasteSearch || i.name.toLowerCase().includes(wasteSearch.toLowerCase()))
+                        .map(item => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => { setWasteItemId(item.id); setWasteSearch(item.name); setWasteShowDropdown(false); }}
+                            className={`w-full flex items-center justify-between px-3 py-2.5 text-[13px] text-left hover:bg-red-50 transition-colors ${wasteItemId === item.id ? "bg-red-50 font-medium" : ""}`}
+                          >
+                            <span className="truncate">{item.name}</span>
+                            <span className="shrink-0 ml-2 font-mono text-[12px] text-zinc-400">{item.qty} {item.unit}</span>
+                          </button>
+                        ))}
+                      {sourceItems.filter(i => !wasteSearch || i.name.toLowerCase().includes(wasteSearch.toLowerCase())).length === 0 && (
+                        <div className="px-3 py-3 text-[12px] text-zinc-400 text-center">No matches.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Qty + Reason */}
+            <div className="space-y-4">
+              <div>
+                <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Quantity to deduct</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setWasteQty(q => Math.max(1, q - 1))}
+                    disabled={!selectedItem}
+                    className="w-8 h-8 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 flex items-center justify-center"
+                  >−</button>
+                  <input
+                    type="number"
+                    min={1}
+                    value={wasteQty}
+                    disabled={!selectedItem}
+                    onChange={e => setWasteQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-20 text-center font-mono text-[14px] font-semibold text-zinc-900 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 outline-none focus:border-red-400"
+                  />
+                  <button
+                    onClick={() => setWasteQty(q => q + 1)}
+                    disabled={!selectedItem}
+                    className="w-8 h-8 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 flex items-center justify-center"
+                  >+</button>
+                  {selectedItem && <span className="text-[11px] text-zinc-400 font-mono">/ {selectedItem.qty} {selectedItem.unit}</span>}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Reason</label>
+                <select
+                  value={wasteReason}
+                  onChange={e => setWasteReason(e.target.value)}
+                  disabled={!selectedItem}
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-red-400"
+                >
+                  {wasteReasons.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+
+
+          {/* Record Button */}
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={handleRecordWaste}
+              disabled={!selectedItem || wasteQty <= 0}
+              className="rounded-xl bg-red-600 px-6 py-2.5 text-[13px] font-semibold text-white hover:bg-red-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+            >Record Waste / Adjustment</button>
+          </div>
+        </div>
+
+        {/* Waste History */}
+        <div>
+          <h2 className="text-[15px] font-semibold text-zinc-900 mb-3">Waste / Adjustment History</h2>
+          {(() => {
+            const decoEntries = wasteLog.filter(e => e.source.startsWith("Deco - "));
+            if (decoEntries.length === 0) {
+              return <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No waste/adjustment records yet.</p></div>;
+            }
+            return (
+              <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
+                <table className="w-full text-left">
+                  <thead className="bg-zinc-50 border-b border-zinc-100">
+                    <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Product</th>
+                      <th className="px-4 py-3 text-right">Qty</th>
+                      <th className="px-4 py-3">Source</th>
+                      <th className="px-4 py-3">Reason</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 text-[13px]">
+                    {decoEntries.map(entry => (
+                      <tr key={entry.id} className="hover:bg-red-50/30 transition-colors">
+                        <td className="px-4 py-3 text-zinc-500 font-mono text-[12px]">{entry.date}</td>
+                        <td className="px-4 py-3 font-medium text-zinc-900">{entry.product}</td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-red-600">-{entry.qtyRejected} pcs</td>
+                        <td className="px-4 py-3">
+                          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{entry.source}</span>
+                        </td>
+                        <td className="px-4 py-3 text-zinc-700">{entry.reason}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={async () => {
+                              if (confirm(`Delete waste record for ${entry.product}? This will NOT restore the stock.`)) {
+                                onUpdateWasteLog?.(prev => prev.filter(e => e.id !== entry.id));
+                                await db.upsertWasteLog([{ ...entry, source: entry.source + " (deleted)" }]).catch(console.error);
+                              }
+                            }}
+                            className="rounded-lg border border-red-200 bg-white px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-all"
+                          >Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+        </div>
       </div>
     );
   }
