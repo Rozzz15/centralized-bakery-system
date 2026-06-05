@@ -284,8 +284,12 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         <div className="flex items-center justify-between">
           <h1 className="text-[24px] font-semibold">Products</h1>
           <div className="flex items-center gap-2">
-            <button onClick={async () => { setNewCategoryName(""); setEditingCategory(null); setRenamingCategory(""); const cats = await db.fetchCategories().catch(() => []); setCategories(cats); const map = await db.fetchProductCategories().catch(() => ({})); setProductCategoryMap(map); setShowCategoryManager(true); }} className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 shadow-sm">Manage Category</button>
-            <button onClick={() => setShowAddProduct(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Product</button>
+            {activeProductSubTab === "Products" && <button onClick={async () => { setNewCategoryName(""); setEditingCategory(null); setRenamingCategory(""); const cats = await db.fetchCategories().catch(() => []); setCategories(cats); const map = await db.fetchProductCategories().catch(() => ({})); setProductCategoryMap(map); setShowCategoryManager(true); }} className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 shadow-sm">Manage Category</button>}
+            {activeProductSubTab === "Recipes" ? (
+              <button onClick={() => { setRecipeProduct(""); setShowRecipe(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Recipe</button>
+            ) : (
+              <button onClick={() => setShowAddProduct(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Product</button>
+            )}
           </div>
         </div>
 

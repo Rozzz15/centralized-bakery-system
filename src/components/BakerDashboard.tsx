@@ -34,6 +34,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const [expandedSched, setExpandedSched] = useState<Set<string>>(new Set());
   const toggleSched = (date: string) => setExpandedSched(prev => { const n = new Set(prev); if (n.has(date)) n.delete(date); else n.add(date); return n; });
 
+  // Filling state
+  const [fillingName, setFillingName] = useState("");
+  const [fillingQty, setFillingQty] = useState("");
+  const [fillingSearch, setFillingSearch] = useState("");
+
   // Freezer state
   const [showAddFreezer, setShowAddFreezer] = useState(false);
   const [showEditFreezer, setShowEditFreezer] = useState(false);
@@ -72,14 +77,38 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
     return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
   });
-  const bakerTaskProducts = new Set(production.filter(p => p.assignedTo === "baker").map(t => t.product));
-  const bakerDOS = todayDOS.filter(d => bakerTaskProducts.has(d.product));
-  const bakerProducts = new Set(bakerDOS.map(d => d.product));
-  const myTasks = production.filter(p => p.assignedTo === "baker" && bakerProducts.has(p.product));
+  // Compute Deco Production Recipe items for the step wizard
+  const decoProductionItems = freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.notes?.startsWith("Production Recipe"));
+
+  const bakerDOS = todayDOS;
+  const decoProductSet = new Set(decoProductionItems.map(i => i.productName));
+  // Total DOS qty per product (for display)
+  const dosQtyMap = new Map<string, number>();
+  bakerDOS.forEach(d => { dosQtyMap.set(d.product, (dosQtyMap.get(d.product) || 0) + d.qty); });
+
+  // Only show products that exist in BOTH DOS and Deco Production Recipe
+  // Baker bakes the Deco PR qty; DOS remaining = DOS - Deco PR
+  const myTasks = (() => {
+    const seen = new Set<string>();
+    return bakerDOS
+      .filter(d => decoProductSet.has(d.product) && !seen.has(d.product) && seen.add(d.product))
+      .map((d, idx) => {
+        const decoQty = decoProductionItems
+          .filter(i => i.productName === d.product)
+          .reduce((s, i) => s + i.qty, 0);
+        return {
+          id: `TASK-${d.product.replace(/[^a-zA-Z0-9]/g, "-")}`,
+          product: d.product,
+          target: decoQty,
+          completed: 0,
+          assignedTo: "baker" as const,
+          status: "pending" as const,
+        };
+      });
+  })();
   const tomorrowStr = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]; })();
   const allBakerTasks = production.filter(p => p.assignedTo === "baker");
   const bakerScheduled = dosItems.filter(d => d.status === "scheduled" && d.scheduledDate === tomorrowStr && allBakerTasks.some(t => t.product === d.product));
-  const allDone = myTasks.length > 0 && myTasks.every(t => t.status === "completed");
   const releasedReqs = ingredientReqs.filter(r => r.status === "released");
 
   const handleSubmitRequest = (id: string) => {
@@ -96,7 +125,132 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       return updated;
     });
   };
-  const handleSendToKitchen = () => { myTasks.forEach(t => onCompleteTask(t.id)); setSent(true); };
+  const handleSendToKitchen = () => {
+    myTasks.forEach(t => {
+      const prodTasks = production.filter(p => p.product === t.product && p.assignedTo === "baker");
+      prodTasks.forEach(pt => onCompleteTask(pt.id));
+    });
+    setSent(true);
+  };
+
+  /* ── Filling Tab ── */
+  if (activeTab === "filling") {
+    const fillings = freezerItems.filter(i => i.notes === "Filling" && i.status === "stored");
+    const filtered = fillingSearch ? fillings.filter(i => i.productName.toLowerCase().includes(fillingSearch.toLowerCase())) : fillings;
+
+    const handleAddFilling = () => {
+      if (!fillingName.trim() || !fillingQty) return;
+      const batchQty = Number(fillingQty);
+      const recipe = recipes.find(r => r.productName === fillingName.trim());
+      if (!recipe) { alert("No recipe found for this filling."); return; }
+
+      // Deduct ingredients from inventory
+      let workingInv = inventory;
+      const deductions: string[] = [];
+      recipe.ingredients.forEach(ing => {
+        const match = ing.inventoryId
+          ? workingInv.find(i => i.id === ing.inventoryId)
+          : workingInv.find(i => i.name.toLowerCase() === ing.name.toLowerCase());
+        if (!match) { deductions.push(`${ing.name} (not in inventory — skipped)`); return; }
+        const idx = workingInv.findIndex(i => i.id === match.id);
+        const needed = ing.qtyPerBatch * batchQty;
+        const before = workingInv[idx].onHand;
+        workingInv = workingInv.map((it, i) => i === idx ? { ...it, onHand: Math.max(0, before - needed) } : it);
+        const actual = before - workingInv[idx].onHand;
+        deductions.push(`${ing.name} -${actual}${ing.unit}`);
+      });
+      const changedItems = workingInv.filter(item => {
+        const orig = inventory.find(o => o.id === item.id);
+        return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
+      });
+      if (changedItems.length > 0) {
+        onUpdateInventory?.(workingInv);
+        db.upsertInventory(changedItems).catch(err => console.error("Failed to deduct ingredients:", err));
+      }
+
+      // Save filling to freezer
+      const item: FreezerItem = {
+        id: `FRZ-${Date.now()}`,
+        productName: fillingName.trim(),
+        qty: batchQty,
+        unit: "batches",
+        batchRef: `BATCH-${Date.now()}`,
+        producedBy: "baker",
+        dateProduced: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
+        status: "stored",
+        notes: "Filling",
+      };
+      onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, item]);
+      db.upsertFreezerItems([item]).catch(console.error);
+      setFillingName(""); setFillingQty("");
+    };
+
+    return (
+      <div className="space-y-5">
+        <div><h1 className="text-[24px] font-semibold">Filling</h1><p className="mt-1 text-[13px] text-zinc-600">Record filling batches produced.</p></div>
+
+        {/* Add Filling Form */}
+        <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
+          <h2 className="text-[15px] font-semibold mb-4">New Filling Batch</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Filling Name</label>
+              <input value={fillingName} onChange={e => setFillingName(e.target.value)} placeholder="e.g. Vanilla Custard" list="filling-list" className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+              <datalist id="filling-list">
+                {recipes.map(r => <option key={r.productName} value={r.productName} />)}
+              </datalist>
+            </div>
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Qty Produced</label>
+              <input type="number" min={1} value={fillingQty} onChange={e => setFillingQty(e.target.value)} placeholder="0" className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+            </div>
+            <div className="flex items-end">
+              <button onClick={handleAddFilling} disabled={!fillingName.trim() || !fillingQty} className="w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 disabled:opacity-40">Create Filling</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Fillings List */}
+        <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-100">
+            <h2 className="text-[15px] font-semibold">Filling Batches</h2>
+            <div className="relative max-w-[200px]">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
+              <input value={fillingSearch} onChange={e => setFillingSearch(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-1.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-zinc-50 border-b border-zinc-100">
+                <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
+                  <th className="px-5 py-3">Filling</th>
+                  <th className="px-5 py-3 text-right">Qty</th>
+                  <th className="px-5 py-3">Date</th>
+                  <th className="px-5 py-3">Batch</th>
+                  <th className="px-5 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-50">
+                {filtered.length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-[13px] text-zinc-400">No fillings recorded yet.</td></tr>
+                ) : filtered.map(f => (
+                  <tr key={f.id} className="hover:bg-zinc-50/50 transition-colors">
+                    <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{f.productName}</div></td>
+                    <td className="px-5 py-3.5 text-[13px] text-right font-mono">{f.qty}</td>
+                    <td className="px-5 py-3.5 text-[12px] text-zinc-500">{f.dateProduced}</td>
+                    <td className="px-5 py-3.5 text-[12px] text-zinc-500 font-mono">{f.batchRef || "—"}</td>
+                    <td className="px-5 py-3.5 text-right">
+                      <button onClick={() => { if (confirm(`Delete ${f.productName} batch?`)) { const updated = freezerItems.filter(x => x.id !== f.id); onUpdateFreezer?.(updated); db.deleteFreezerItem(f.id).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   /* ── Freezer Tab ── */
   if (activeTab === "freezer") {
@@ -276,9 +430,6 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     );
   }
 
-  // Compute Deco Production Recipe items for the step wizard
-  const decoProductionItems = freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.notes?.startsWith("Production Recipe"));
-
   /* ── Main Dashboard (Step Wizard) ── */
   if (activeTab !== "dashboard") return null;
 
@@ -290,12 +441,15 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       </div>
 
       <div className="flex items-center gap-1 overflow-x-auto pb-1">
-        {steps.map((s, i) => (
-          <button key={s.id} onClick={() => setStep(i)} className={`flex items-center gap-2.5 rounded-full px-5 py-2.5 text-[14px] font-medium whitespace-nowrap transition-all ${i === step ? "bg-zinc-900 text-white shadow-sm" : i < step ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200"}`}>
-            <span className={`grid h-7 w-7 place-items-center rounded-full text-[13px] font-bold ${i === step ? "bg-white/20" : i < step ? "bg-emerald-600 text-white" : "bg-zinc-300 text-white"}`}>{i < step ? "✓" : i + 1}</span>
+        {steps.map((s, i) => {
+          const canClick = i <= step + 1;
+          return (
+          <button key={s.id} onClick={() => canClick && setStep(i)} disabled={!canClick} className={`flex items-center gap-2.5 rounded-full px-5 py-2.5 text-[14px] font-medium whitespace-nowrap transition-all ${i === step ? "bg-zinc-900 text-white shadow-sm" : i < step ? "bg-emerald-100 text-emerald-700" : "bg-zinc-50 text-zinc-300 cursor-not-allowed"}`}>
+            <span className={`grid h-7 w-7 place-items-center rounded-full text-[13px] font-bold ${i === step ? "bg-white/20" : i < step ? "bg-emerald-600 text-white" : "bg-zinc-200 text-zinc-300"}`}>{i < step ? "✓" : i + 1}</span>
             {s.label}
           </button>
-        ))}
+          );
+        })}
       </div>
 
       <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-6 shadow-sm">
@@ -406,6 +560,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 </div>
               );
             })()}
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => setStep(1)} className="rounded-xl bg-zinc-900 px-4 py-2 sm:px-6 sm:py-3 text-[14px] font-medium text-white hover:bg-zinc-800">Next →</button>
+            </div>
           </div>
         )}
 
@@ -422,38 +579,46 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 {myTasks.map(task => {
                   if (bakedCompleted.has(task.id) || task.status === "completed") return null;
                   const isSelected = selectedForBaking.has(task.id);
-                  const decoQty = decoProductionItems
-                    .filter(i => i.productName === task.product)
-                    .reduce((s, i) => s + i.qty, 0);
-                  const dosQty = task.target;
+                  const dosQty = dosQtyMap.get(task.product) || 0;
                   const alreadyBaked = task.completed;
-                  const remaining = dosQty - alreadyBaked;
-                  const maxBake = Math.max(0, remaining);
+                  const decoQty = task.target;
+                  const bakeTarget = Math.min(decoQty, Math.max(0, dosQty - alreadyBaked));
+                  const remaining = Math.max(0, dosQty - alreadyBaked - bakeTarget);
+                  const maxBake = Math.max(0, bakeTarget);
                   const bakeQty = bakerBakeQty[task.id] ?? Math.max(0, maxBake);
-                  const pct = dosQty > 0 ? Math.round((alreadyBaked / dosQty) * 100) : 0;
+                  const pct = dosQty > 0 ? Math.round(((alreadyBaked + bakeTarget) / dosQty) * 100) : 0;
                   return (
-                    <div key={task.id} className={`rounded-2xl border p-4 transition-all ${isSelected ? "border-zinc-900 bg-zinc-50/60 shadow-sm" : "border-zinc-200 bg-white"}`}>
+                    <div
+                      key={task.id}
+                      onClick={() => {
+                        setSelectedForBaking(prev => {
+                          const n = new Set(prev);
+                          if (n.has(task.id)) n.delete(task.id); else n.add(task.id);
+                          return n;
+                        });
+                        // Initialize bake qty to max when first selected
+                        setBakerBakeQty(prev => {
+                          if (prev[task.id] === undefined) return { ...prev, [task.id]: bakeTarget };
+                          return prev;
+                        });
+                      }}
+                      className={`rounded-2xl border p-4 transition-all cursor-pointer ${isSelected ? "border-zinc-900 bg-zinc-50/60 shadow-sm" : "border-zinc-200 bg-white hover:border-zinc-300"}`}
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setSelectedForBaking(prev => { const n = new Set(prev); if (n.has(task.id)) n.delete(task.id); else n.add(task.id); return n; })}
-                              className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${isSelected ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 bg-white"}`}
-                            >
+                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0 ${isSelected ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 bg-white"}`}>
                               {isSelected && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                            </button>
+                            </div>
                             <span className="text-[15px] font-medium text-zinc-900">{task.product}</span>
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${task.status === "in-progress" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{task.status}</span>
                           </div>
                           {/* DOS / Deco / Remaining summary */}
                           <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px]">
                             <span className="text-zinc-500">DOS: <strong className="text-zinc-800">{dosQty}</strong> pcs</span>
-                            <span className="text-rose-600">Deco Production Recipe: <strong>{decoQty}</strong> pcs</span>
+                            <span className="text-rose-600">Deco PR: <strong>{decoQty}</strong> pcs</span>
                             <span className="text-zinc-500">Already baked: <strong className="text-zinc-800">{alreadyBaked}</strong> pcs</span>
-                            <span className="text-amber-600">Remaining needed: <strong>{remaining}</strong> pcs</span>
-                            {decoQty > 0 && (
-                              <span className="text-emerald-600">Covered by Deco: <strong>{Math.min(remaining, decoQty)}</strong> pcs</span>
-                            )}
+                            <span className="text-amber-600">After baking: <strong>{remaining}</strong> pcs remaining</span>
                           </div>
                           <div className="mt-3"><div className="h-2 rounded-full bg-zinc-100"><div className="h-full rounded-full bg-stone-500" style={{ width: `${pct}%` }} /></div></div>
                         </div>
@@ -463,16 +628,17 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                         <label className="text-[12px] text-zinc-600 font-medium">Bake this batch:</label>
                         <div className="flex items-center gap-1.5">
                           <button
-                            onClick={() => setBakerBakeQty(prev => ({ ...prev, [task.id]: Math.max(1, (prev[task.id] ?? 1) - 1) }))}
+                            onClick={e => { e.stopPropagation(); setBakerBakeQty(prev => ({ ...prev, [task.id]: Math.max(1, (prev[task.id] ?? 1) - 1) })); }}
                             className="w-7 h-7 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
                           >−</button>
                           <input
                             type="number"
                             min={1}
-                            max={remaining}
+                            max={bakeTarget}
                             value={bakeQty}
+                            onClick={e => e.stopPropagation()}
                             onChange={e => {
-                              const v = Math.min(remaining, Math.max(1, Number(e.target.value) || 1));
+                              const v = Math.min(bakeTarget, Math.max(1, Number(e.target.value) || 1));
                               setBakerBakeQty(prev => ({ ...prev, [task.id]: v }));
                               if (!selectedForBaking.has(task.id)) {
                                 setSelectedForBaking(prev => new Set(prev).add(task.id));
@@ -481,27 +647,26 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                             className="w-16 text-center rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[13px] font-mono font-semibold outline-none focus:border-zinc-400"
                           />
                           <button
-                            onClick={() => setBakerBakeQty(prev => ({ ...prev, [task.id]: Math.min(remaining, (prev[task.id] ?? 1) + 1) }))}
+                            onClick={e => { e.stopPropagation(); setBakerBakeQty(prev => ({ ...prev, [task.id]: Math.min(bakeTarget, (prev[task.id] ?? 1) + 1) })); }}
                             className="w-7 h-7 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
                           >+</button>
                         </div>
-                        <span className="text-[12px] text-zinc-400 font-mono">/ {remaining}</span>
+                        <span className="text-[12px] text-zinc-400 font-mono">/ {bakeTarget}</span>
                       </div>
                     </div>
                   );
                 })}
               </div>
             )}
-            {selectedForBaking.size > 0 && (
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => setStep(2)}
-                  className="rounded-xl bg-zinc-900 px-6 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 shadow-sm transition-all"
-                >
-                  Proceed to Withdraw Ingredients ({selectedForBaking.size} product{selectedForBaking.size > 1 ? "s" : ""}) →
-                </button>
-              </div>
-            )}
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setStep(2)}
+                disabled={selectedForBaking.size === 0}
+                className="rounded-xl bg-zinc-900 px-4 py-2 sm:px-6 sm:py-3 text-[14px] font-medium text-white hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Next →
+              </button>
+            </div>
           </div>
         )}
 
@@ -701,8 +866,21 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, newItem]);
                   db.upsertFreezerItems([newItem]).catch(console.error);
 
-                  // Mark production task as completed
-                  onCompleteTask(task.id);
+                  // Mark production task(s) as completed
+                  const prodTasks = production.filter(p => p.product === task.product && p.assignedTo === "baker");
+                  if (prodTasks.length > 0) {
+                    prodTasks.forEach(pt => onCompleteTask(pt.id));
+                  } else {
+                    // Virtual task (no production record yet) — persist directly
+                    db.upsertProduction([{
+                      id: `PRD-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                      product: task.product,
+                      target: task.target,
+                      completed: Math.min(task.target, bakeQty),
+                      assignedTo: "baker",
+                      status: "completed",
+                    }]).catch(console.error);
+                  }
                   setBakedCompleted(prev => new Set(prev).add(task.id));
                 });
 
@@ -748,7 +926,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         <div className="flex items-center justify-between mt-6 pt-4 border-t border-zinc-100">
           <button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0} className="rounded-xl border border-zinc-300 px-4 py-2 sm:px-6 sm:py-3 text-[14px] font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-30 disabled:cursor-not-allowed">← Back</button>
           <div className="text-[14px] text-zinc-400">Step {step + 1} of {steps.length}</div>
-          <button onClick={() => setStep(Math.min(steps.length - 1, step + 1))} disabled={step === steps.length - 1} className="rounded-xl bg-zinc-900 px-4 py-2 sm:px-6 sm:py-3 text-[14px] font-medium text-white hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed">Next →</button>
+          <div className="w-24" />
         </div>
       </div>
     </div>
