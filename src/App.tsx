@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Role, InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, ProductRecipe, ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog } from "./types";
+import type { Role, InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, ProductRecipe, ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage } from "./types";
 import AdminDashboard from "./components/AdminDashboard";
 import BakerDashboard from "./components/BakerDashboard";
 import DecoDashboard from "./components/DecoDashboard";
@@ -69,6 +69,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   pastry: [
     { id: "dashboard", label: "My Tasks", icon: "◼" },
     { id: "freezer", label: "Freezer", icon: "◇" },
+    { id: "promos", label: "Promos", icon: "★" },
   ],
 };
 
@@ -285,6 +286,7 @@ export default function App() {
   const [billsAndDues, setBillsAndDues] = useState<BillDue[]>([]);
   const [revenue, setRevenue] = useState<Revenue[]>([]);
   const [wasteLog, setWasteLog] = useState<WasteLog[]>([]);
+  const [promosPackages, setPromosPackages] = useState<PromoPackage[]>([]);
   const [now, setNow] = useState(new Date());
   const prevDayRef = useRef(getPHToday());
   const [dosNotifs, setDosNotifs] = useState<{ id: string; message: string }[]>([]);
@@ -298,7 +300,7 @@ export default function App() {
   async function loadAllData(): Promise<DOSItem[]> {
     setDataLoading(true);
     try {
-      const [inv, dos, prod, del, audit, catalog, rec, pricing, freezer, fHistory, purch, bills, rev, waste] = await Promise.all([
+      const [inv, dos, prod, del, audit, catalog, rec, pricing, freezer, fHistory, purch, bills, rev, waste, promos] = await Promise.all([
         db.fetchAllInventory(),
         db.fetchDOS(),
         db.fetchProduction(),
@@ -313,6 +315,7 @@ export default function App() {
         db.fetchBillsAndDues(),
         db.fetchRevenue(),
         db.fetchWasteLog(),
+        db.fetchPromosPackages(),
       ]);
       if (inv.length > 0) setInventory(inv);
       if (dos.length > 0) setDosItems(dos);
@@ -351,6 +354,18 @@ export default function App() {
         const seen = new Set<string>();
         setWasteLog(waste.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
       } else { setWasteLog(waste); }
+      setPromosPackages(promos);
+
+      // Auto-expire promos past their end date
+      const today = new Date().toISOString().slice(0, 10);
+      const expiredPromos = promos.filter(p => p.status === "active" && p.endDate && today > p.endDate);
+      if (expiredPromos.length > 0) {
+        const updated = promos.map(p => (p.status === "active" && p.endDate && today > p.endDate) ? { ...p, status: "expired" as const } : p);
+        setPromosPackages(updated);
+        expiredPromos.forEach(p => {
+          db.upsertPromoPackage({ ...p, status: "expired" }).catch(console.error);
+        });
+      }
       return dos;
     } catch (err) {
       console.error("Failed to load data:", err);
@@ -979,6 +994,8 @@ export default function App() {
                 onUpdateRevenue={setRevenue}
                 wasteLog={wasteLog}
                 onUpdateWasteLog={setWasteLog}
+                promosPackages={promosPackages}
+                onUpdatePromosPackages={setPromosPackages}
               />
             )}
             {role === "baker" && ["dashboard", "assembly", "freezer", "filling"].includes(activeTab) && (
@@ -999,8 +1016,8 @@ export default function App() {
                 onSubmitSales={handleSalesSubmit}
               />
             )}
-            {role === "pastry" && ["dashboard", "freezer"].includes(activeTab) && (
-              <PastryDashboard dosItems={dosItems} activeTab={activeTab} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} />
+            {role === "pastry" && ["dashboard", "freezer", "promos"].includes(activeTab) && (
+              <PastryDashboard dosItems={dosItems} activeTab={activeTab} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} promosPackages={promosPackages} />
             )}
           </div>
         </main>
@@ -1017,6 +1034,7 @@ export default function App() {
           }}
           hasTodayItems={dosItems.some(i => i.status !== "scheduled")}
           scheduledDates={new Set(dosItems.filter(i => i.status === "scheduled" && i.scheduledDate).map(i => i.scheduledDate!))}
+          promosPackages={promosPackages}
         />
       )}
 

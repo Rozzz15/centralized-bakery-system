@@ -40,6 +40,8 @@ type Props = {
   onUpdateRevenue: (cb: Revenue[] | ((prev: Revenue[]) => Revenue[])) => void;
   wasteLog: WasteLog[];
   onUpdateWasteLog: (cb: WasteLog[] | ((prev: WasteLog[]) => WasteLog[])) => void;
+  promosPackages: PromoPackage[];
+  onUpdatePromosPackages: (cb: PromoPackage[] | ((prev: PromoPackage[]) => PromoPackage[])) => void;
 };
 
 export default function AdminDashboard({
@@ -76,6 +78,8 @@ export default function AdminDashboard({
   onUpdateRevenue,
   wasteLog,
   onUpdateWasteLog,
+  promosPackages,
+  onUpdatePromosPackages,
 }: Props) {
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -192,7 +196,6 @@ export default function AdminDashboard({
   const [renamingProduct, setRenamingProduct] = useState("");
   const [activeProductSubTab, setActiveProductSubTab] = useState("Products");
   const [recipeSearch, setRecipeSearch] = useState("");
-  const [promosPackages, setPromosPackages] = useState<PromoPackage[]>([]);
   const [showPromoModal, setShowPromoModal] = useState(false);
   const [editingPromo, setEditingPromo] = useState<PromoPackage | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
@@ -229,7 +232,6 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
       db.fetchDeliveryValidations().then(setValidations).catch(() => {}),
       db.fetchBakerIngredientRequests().then(setBakerReqs).catch(() => {}),
       db.fetchMaterialRequests().then(setDecoReqs).catch(() => {}),
-      db.fetchPromosPackages().then(setPromosPackages).catch(() => {}),
     ]);
   }, []);
 
@@ -291,6 +293,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             {activeProductSubTab === "Products" && <button onClick={async () => { setNewCategoryName(""); setEditingCategory(null); setRenamingCategory(""); const cats = await db.fetchCategories().catch(() => []); setCategories(cats); const map = await db.fetchProductCategories().catch(() => ({})); setProductCategoryMap(map); setShowCategoryManager(true); }} className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 shadow-sm">Manage Category</button>}
             {activeProductSubTab === "Recipes" ? (
               <button onClick={() => { setRecipeProduct(""); setShowRecipe(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Recipe</button>
+            ) : activeProductSubTab === "Promo/Package" ? (
+              <button onClick={() => { setEditingPromo(null); setShowPromoModal(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Promo/Package</button>
             ) : (
               <button onClick={() => setShowAddProduct(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Product</button>
             )}
@@ -441,47 +445,79 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           {/* Promo/Package Tab */}
           {activeProductSubTab === "Promo/Package" && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-[13px] text-zinc-500">Create and manage promos and package deals.</p>
-                <button onClick={() => { setEditingPromo(null); setShowPromoModal(true); }} className="rounded-xl bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">+ Add Promo/Package</button>
-              </div>
+              <p className="text-[13px] text-zinc-500">Create and manage promos and package deals.</p>
               {promosPackages.length === 0 ? (
                 <div className="rounded-[24px] border border-dashed border-zinc-200 bg-white p-12 text-center">
                   <p className="text-[14px] text-zinc-400">No promos or packages yet.</p>
                   <p className="text-[12px] text-zinc-500 mt-1">Click "Add Promo/Package" to create one.</p>
                 </div>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {promosPackages.map(item => (
-                    <div key={item.id} className={`rounded-[24px] border bg-white p-5 shadow-sm ${item.type === "promo" ? "border-amber-200" : "border-blue-200"}`}>
-                      <div className="flex items-start justify-between mb-3">
-                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${item.type === "promo" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>{item.type}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.status === "active" ? "bg-emerald-100 text-emerald-700" : item.status === "inactive" ? "bg-zinc-100 text-zinc-500" : "bg-red-100 text-red-700"}`}>{item.status}</span>
-                      </div>
-                      <h3 className="text-[16px] font-semibold text-zinc-900 mb-1">{item.name}</h3>
-                      {item.description && <p className="text-[12px] text-zinc-500 mb-3 line-clamp-2">{item.description}</p>}
-                      <div className="space-y-1.5 mb-3">
-                        {item.items.map((it, i) => (
-                          <div key={i} className="flex items-center justify-between text-[12px]">
-                            <span className="text-zinc-600">{it.productName}</span>
-                            <span className="text-zinc-400 font-mono">x{it.qty}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="border-t border-zinc-100 pt-3 flex items-center justify-between">
-                        <div>
-                          {item.originalPrice > 0 && <span className="text-[12px] text-zinc-400 line-through mr-2">₱{item.originalPrice.toFixed(2)}</span>}
-                          <span className="text-[16px] font-bold text-zinc-900">₱{item.promoPrice.toFixed(2)}</span>
+                <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                  {promosPackages.map(item => {
+                    const today = new Date().toISOString().slice(0, 10);
+                    const isNotStarted = item.status === "active" && item.startDate && today < item.startDate;
+                    const isExpired = item.status === "expired" || (item.status === "active" && item.endDate && today > item.endDate);
+                    const displayStatus = isNotStarted ? "not started" : isExpired ? "expired" : item.status;
+                    const savings = item.originalPrice > 0 && item.promoPrice > 0 ? Math.round(((item.originalPrice - item.promoPrice) / item.originalPrice) * 100) : 0;
+                    const isPromo = item.type === "promo";
+                    return (
+                    <div key={item.id} className={`group rounded-3xl bg-white shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border ${isPromo ? "border-amber-100" : "border-blue-100"}`}>
+                      <div className={`relative px-6 pt-5 pb-4 ${isPromo ? "bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-50" : "bg-gradient-to-br from-blue-50 via-blue-50/80 to-indigo-50"}`}>
+                        <div className={`absolute top-0 right-0 w-24 h-24 rounded-bl-[60px] opacity-[0.07] ${isPromo ? "bg-amber-600" : "bg-blue-600"}`} />
+                        <div className="flex items-start justify-between mb-3">
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${isPromo ? "bg-amber-200/70 text-amber-800" : "bg-blue-200/70 text-blue-800"}`}>
+                            <span className="text-[13px]">{isPromo ? "%" : "◆"}</span>
+                            {item.type}
+                          </span>
+                          <span className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${displayStatus === "active" ? "bg-emerald-100 text-emerald-700" : displayStatus === "not started" ? "bg-amber-100 text-amber-700" : displayStatus === "inactive" ? "bg-zinc-100 text-zinc-500" : "bg-red-100 text-red-700"}`}>{displayStatus}</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => { setEditingPromo(item); setShowPromoModal(true); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50">Edit</button>
-                          <button onClick={() => { if (confirm(`Delete "${item.name}"?`)) { setPromosPackages(prev => prev.filter(p => p.id !== item.id)); db.deletePromoPackage(item.id).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del</button>
+                        <h3 className="text-[20px] font-bold text-zinc-900 tracking-tight">{item.name}</h3>
+                        {item.description && <p className="text-[13px] text-zinc-500 mt-1.5 line-clamp-2 leading-relaxed">{item.description}</p>}
+                      </div>
+
+                      <div className="px-6 py-4">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Includes</span>
+                          <div className="flex-1 h-px bg-zinc-100" />
+                        </div>
+                        <div className="space-y-2.5 mb-4">
+                          {item.items.map((it, i) => (
+                            <div key={i} className="flex items-center justify-between text-[13px]">
+                              <span className="text-zinc-700 font-medium">{it.productName}</span>
+                              <span className="inline-flex items-center justify-center min-w-[32px] rounded-lg bg-zinc-100 px-2 py-0.5 text-[12px] font-bold text-zinc-600">x{it.qty}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="border-t border-zinc-100 pt-4">
+                          <div className="flex items-end justify-between mb-3">
+                            <div>
+                              <div className="flex items-baseline gap-2">
+                                {item.originalPrice > 0 && <span className="text-[14px] text-zinc-400 line-through">{"\u20B1"}{item.originalPrice.toFixed(2)}</span>}
+                                <span className="text-[22px] font-extrabold text-zinc-900 tracking-tight">{"\u20B1"}{item.promoPrice.toFixed(2)}</span>
+                              </div>
+                              {savings > 0 && <span className="inline-flex items-center mt-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">Save {savings}%</span>}
+                            </div>
+                            {(item.startDate || item.endDate) && (
+                              <div className="text-right">
+                                <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-0.5">Valid</div>
+                                <div className="text-[12px] text-zinc-600 font-medium">
+                                  {item.startDate ? new Date(item.startDate + "T00:00:00").toLocaleDateString("en-GB") : "\u2014"} {"\u2013"} {item.endDate ? new Date(item.endDate + "T00:00:00").toLocaleDateString("en-GB") : "\u2014"}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => { setEditingPromo(item); setShowPromoModal(true); }} className="flex-1 rounded-xl border border-zinc-200 bg-white py-2.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300 transition-all">Edit</button>
+                            <button onClick={() => { if (confirm("Delete \"" + item.name + "\"?")) { onUpdatePromosPackages(prev => prev.filter(p => p.id !== item.id)); db.deletePromoPackage(item.id).catch(console.error); } }} className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-[12px] font-semibold text-red-500 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              )}
+                )}
             </div>
           )}
 
@@ -653,9 +689,9 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                             </>
                           )}
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
+                </div>
                 )}
               </div>
             </div>
@@ -667,7 +703,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
               item={editingPromo}
               productCatalog={productCatalog}
               onSave={async (item) => {
-                setPromosPackages(prev => {
+                onUpdatePromosPackages(prev => {
                   const exists = prev.find(p => p.id === item.id);
                   if (exists) return prev.map(p => p.id === item.id ? item : p);
                   return [...prev, item];
@@ -1263,6 +1299,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             hasTodayItems={todayDOS.length > 0}
             presetDate={scheduledAddDate}
             scheduledDates={new Set(dosItems.filter(i => i.status === "scheduled" && i.scheduledDate).map(i => i.scheduledDate!))}
+            promosPackages={promosPackages}
           />
 )}
 {todayAddOpen && (
@@ -1274,6 +1311,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     hasTodayItems={todayDOS.length > 0}
             presetDate={new Date().toISOString().split("T")[0]}
             scheduledDates={new Set(dosItems.filter(i => i.status === "scheduled" && i.scheduledDate).map(i => i.scheduledDate!))}
+            promosPackages={promosPackages}
           />
         )}
       </div>
@@ -4057,6 +4095,7 @@ function PromoPackageModal({ item, productCatalog, onSave, onClose }: { item: Pr
 
   const handleSubmit = () => {
     if (!name.trim()) return;
+    if (startDate && endDate && endDate < startDate) { alert("End date cannot be before start date."); return; }
     const validItems = items.filter(it => it.productName && it.qty > 0);
     onSave({
       id: item?.id || `PROMO-${Date.now()}`,
@@ -4137,9 +4176,12 @@ function PromoPackageModal({ item, productCatalog, onSave, onClose }: { item: Pr
             </div>
             <div>
               <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">End Date</label>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+              <input type="date" value={endDate} min={startDate || undefined} onChange={e => setEndDate(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
             </div>
           </div>
+          {startDate && endDate && endDate < startDate && (
+            <p className="text-[11px] text-red-500 font-medium">⚠ End date cannot be before start date.</p>
+          )}
         </div>
         <div className="flex gap-2 mt-6">
           <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>

@@ -1,5 +1,5 @@
 import { useState, Fragment } from "react";
-import type { DOSItem, ProductRecipe, FreezerItem, FreezerHistory, InventoryItem } from "../types";
+import type { DOSItem, ProductRecipe, FreezerItem, FreezerHistory, InventoryItem, PromoPackage } from "../types";
 import * as db from "../lib/db";
 
 type Props = {
@@ -13,6 +13,7 @@ type Props = {
   freezerHistory?: FreezerHistory[];
   inventory?: InventoryItem[];
   onUpdateInventory?: (cb: InventoryItem[] | ((prev: InventoryItem[]) => InventoryItem[])) => void;
+  promosPackages?: PromoPackage[];
 };
 
 const workflowSteps = [
@@ -22,7 +23,7 @@ const workflowSteps = [
   { id: "done", label: "Done", icon: "✅" },
 ];
 
-export default function PastryDashboard({ dosItems, activeTab, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], inventory = [] }: Props) {
+export default function PastryDashboard({ dosItems, activeTab, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], inventory = [], promosPackages = [] }: Props) {
   const [step, setStep] = useState(0);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [selectedDOS, setSelectedDOS] = useState<DOSItem | null>(null);
@@ -601,6 +602,127 @@ export default function PastryDashboard({ dosItems, activeTab, recipes, newDOSId
                 }} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800">Save Changes</button>
               </div>
             </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ── Promos Tab ── */
+  if (activeTab === "promos") {
+    const fmtDate = (d?: string) => {
+      if (!d) return null;
+      const [y, m, day] = d.split("-");
+      return `${day}/${m}/${y}`;
+    };
+    const today = new Date().toISOString().slice(0, 10);
+    const isDateValid = (p: PromoPackage) => {
+      if (p.startDate && today < p.startDate) return false;
+      if (p.endDate && today > p.endDate) return false;
+      return true;
+    };
+    const activePromos = promosPackages.filter(p => p.status === "active" && isDateValid(p));
+    const dateOutOfRange = promosPackages.filter(p => p.status === "active" && !isDateValid(p));
+    const inactivePromos = promosPackages.filter(p => p.status !== "active");
+
+    const renderPromoCard = (promo: PromoPackage, displayStatus: string, opacityClass: string = "") => {
+      const isPromo = promo.type === "promo";
+      const savings = promo.originalPrice > 0 && promo.promoPrice > 0 ? Math.round(((promo.originalPrice - promo.promoPrice) / promo.originalPrice) * 100) : 0;
+      return (
+        <div key={promo.id} className={`group rounded-3xl bg-white shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border ${isPromo ? "border-amber-100" : "border-blue-100"} ${opacityClass}`}>
+          <div className={`relative px-6 pt-5 pb-4 ${isPromo ? "bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-50" : "bg-gradient-to-br from-blue-50 via-blue-50/80 to-indigo-50"}`}>
+            <div className={`absolute top-0 right-0 w-24 h-24 rounded-bl-[60px] opacity-[0.07] ${isPromo ? "bg-amber-600" : "bg-blue-600"}`} />
+            <div className="flex items-start justify-between mb-3">
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${isPromo ? "bg-amber-200/70 text-amber-800" : "bg-blue-200/70 text-blue-800"}`}>
+                <span className="text-[13px]">{isPromo ? "%" : "\u25C6"}</span>
+                {promo.type}
+              </span>
+              <span className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${displayStatus === "active" ? "bg-emerald-100 text-emerald-700" : displayStatus === "not started" ? "bg-amber-100 text-amber-700" : displayStatus === "inactive" ? "bg-zinc-100 text-zinc-500" : "bg-red-100 text-red-700"}`}>{displayStatus}</span>
+            </div>
+            <h3 className="text-[20px] font-bold text-zinc-900 tracking-tight">{promo.name}</h3>
+            {promo.description && <p className="text-[13px] text-zinc-500 mt-1.5 line-clamp-2 leading-relaxed">{promo.description}</p>}
+          </div>
+
+          <div className="px-6 py-4">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Includes</span>
+              <div className="flex-1 h-px bg-zinc-100" />
+            </div>
+            <div className="space-y-2.5 mb-4">
+              {promo.items.map((item, i) => (
+                <div key={i} className="flex items-center justify-between text-[13px]">
+                  <span className="text-zinc-700 font-medium">{item.productName}</span>
+                  <span className="inline-flex items-center justify-center min-w-[32px] rounded-lg bg-zinc-100 px-2 py-0.5 text-[12px] font-bold text-zinc-600">x{item.qty}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="border-t border-zinc-100 pt-4">
+              <div className="flex items-end justify-between mb-1">
+                <div>
+                  <div className="flex items-baseline gap-2">
+                    {promo.originalPrice > 0 && <span className="text-[14px] text-zinc-400 line-through">{"\u20B1"}{promo.originalPrice.toFixed(2)}</span>}
+                    {promo.promoPrice > 0 && <span className="text-[22px] font-extrabold text-zinc-900 tracking-tight">{"\u20B1"}{promo.promoPrice.toFixed(2)}</span>}
+                  </div>
+                  {savings > 0 && <span className="inline-flex items-center mt-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">Save {savings}%</span>}
+                </div>
+                {(promo.startDate || promo.endDate) && (
+                  <div className="text-right">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-0.5">Valid</div>
+                    <div className="text-[12px] text-zinc-600 font-medium">
+                      {fmtDate(promo.startDate) || "\u2014"} {"\u2013"} {fmtDate(promo.endDate) || "\u2014"}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-6">
+        <h1 className="text-[24px] font-semibold">Promos & Packages</h1>
+        <p className="text-[13px] text-zinc-500">View active promos and package deals.</p>
+
+        {promosPackages.length === 0 ? (
+          <div className="rounded-[24px] border border-dashed border-zinc-200 bg-white p-12 text-center">
+            <div className="text-[40px] mb-3">★</div>
+            <p className="text-[14px] font-medium text-zinc-600">No promos or packages yet</p>
+            <p className="text-[12px] text-zinc-400 mt-1">Promos created by admin will appear here.</p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {activePromos.length > 0 && (
+              <div>
+                <h2 className="text-[14px] font-semibold text-zinc-800 mb-4">Currently Active</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {activePromos.map(promo => renderPromoCard(promo, "active"))}
+                </div>
+              </div>
+            )}
+
+            {dateOutOfRange.length > 0 && (
+              <div>
+                <h2 className="text-[14px] font-semibold text-amber-700 mb-4">Upcoming / Expired Dates</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {dateOutOfRange.map(promo => {
+                    const isUpcoming = promo.startDate && today < promo.startDate;
+                    return renderPromoCard(promo, isUpcoming ? "not started" : "expired", "opacity-75");
+                  })}
+                </div>
+              </div>
+            )}
+
+            {inactivePromos.length > 0 && (
+              <div>
+                <h2 className="text-[14px] font-semibold text-zinc-800 mb-4">Inactive</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {inactivePromos.map(promo => renderPromoCard(promo, promo.status, "opacity-50"))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DOSItem, ProductionTask } from "../types";
+import type { DOSItem, ProductionTask, PromoPackage } from "../types";
 
 type Props = {
   onClose: () => void;
@@ -9,6 +9,7 @@ type Props = {
   hasTodayItems?: boolean;
   presetDate?: string;
   scheduledDates?: Set<string>;
+  promosPackages?: PromoPackage[];
 };
 
 type Row = { product: string; qty: number; roles: Set<"baker" | "pastry" | "deco"> };
@@ -17,7 +18,7 @@ function defaultRow(): Row {
   return { product: "", qty: 0, roles: new Set(["baker"]) };
 }
 
-export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAddToCatalog, hasTodayItems, presetDate, scheduledDates }: Props) {
+export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAddToCatalog, hasTodayItems, presetDate, scheduledDates, promosPackages = [] }: Props) {
   const [rows, setRows] = useState<Row[]>([defaultRow()]);
   const [priority, setPriority] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
   const [productSearch, setProductSearch] = useState<Record<number, string>>({});
@@ -167,7 +168,7 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                       }}
                       onFocus={() => setShowSuggestions(prev => ({ ...prev, [i]: true }))}
                       onBlur={() => setTimeout(() => setShowSuggestions(prev => ({ ...prev, [i]: false })), 200)}
-                      placeholder="Search product…"
+                      placeholder="Search product or promo…"
                       className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300"
                     />
                     {showSuggestions[i] && (() => {
@@ -175,24 +176,53 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                       const filtered = search
                         ? productCatalog.filter(p => p.toLowerCase().includes(search))
                         : productCatalog;
+                      const filteredPromos = search
+                        ? promosPackages.filter(p => p.name.toLowerCase().includes(search))
+                        : promosPackages;
                       const exactMatch = search && productCatalog.some(p => p.toLowerCase() === search);
-                      const showNew = search && !exactMatch;
-                      if (!search && filtered.length === 0) return null;
+                      const exactPromoMatch = search && promosPackages.some(p => p.name.toLowerCase() === search);
+                      const showNew = search && !exactMatch && !exactPromoMatch;
+                      if (!search && filtered.length === 0 && filteredPromos.length === 0) return null;
                       return (
                         <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-zinc-200 bg-white shadow-lg z-10 max-h-48 overflow-y-auto">
-                          {filtered.length > 0 && filtered.map(p => (
-                            <button
-                              key={p}
-                              onMouseDown={() => {
-                                updateRow(i, "product", p);
-                                setProductSearch(prev => ({ ...prev, [i]: p }));
-                                setShowSuggestions(prev => ({ ...prev, [i]: false }));
-                              }}
-                              className={`w-full text-left px-3 py-2 text-[13px] hover:bg-zinc-50 transition-colors ${row.product === p ? 'bg-zinc-100 font-medium' : ''}`}
-                            >
-                              {p}
-                            </button>
-                          ))}
+                          {filteredPromos.length > 0 && (
+                            <>
+                              <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 border-b border-amber-100">Promos / Packages</div>
+                              {filteredPromos.map(p => (
+                                <button
+                                  key={`promo-${p.id}`}
+                                  onMouseDown={() => {
+                                    updateRow(i, "product", p.name);
+                                    setRows(prev => prev.map((r, idx) => idx === i ? { ...r, roles: new Set<"baker" | "pastry" | "deco">(["pastry"]) } : r));
+                                    setProductSearch(prev => ({ ...prev, [i]: p.name }));
+                                    setShowSuggestions(prev => ({ ...prev, [i]: false }));
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-[13px] hover:bg-amber-50 transition-colors flex items-center justify-between ${row.product === p.name ? 'bg-amber-50 font-medium' : ''}`}
+                                >
+                                  <span>{p.name}</span>
+                                  <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${p.type === "promo" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>{p.type}</span>
+                                </button>
+                              ))}
+                            </>
+                          )}
+                          {filtered.length > 0 && (
+                            <>
+                              {filteredPromos.length > 0 && <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-50 border-b border-zinc-100">Products</div>}
+                              {filtered.map(p => (
+                                <button
+                                  key={p}
+                                  onMouseDown={() => {
+                                    updateRow(i, "product", p);
+                                    setProductSearch(prev => ({ ...prev, [i]: p }));
+                                    setShowSuggestions(prev => ({ ...prev, [i]: false }));
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-[13px] hover:bg-zinc-50 transition-colors ${row.product === p ? 'bg-zinc-100 font-medium' : ''}`}
+                                >
+                                  {p}
+                                </button>
+                              ))}
+                            </>
+                          )}
                           {showNew && (
                             <button
                               onMouseDown={() => {
@@ -224,12 +254,17 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                       style={{ fontFamily: "Fragment Mono, monospace" }}
                     />
                   </div>
-                  {(["baker", "pastry", "deco"] as const).map(role => (
+                  {(["baker", "pastry", "deco"] as const).map(role => {
+                    const isPromoRow = promosPackages.some(p => p.name === row.product);
+                    const isDisabled = isPromoRow && role !== "pastry";
+                    return (
                     <div key={role} className="col-span-1 flex justify-center">
                       <button
                         type="button"
+                        disabled={isDisabled}
                         onClick={() => toggleRowRole(i, role)}
                         className={`grid h-6 w-6 place-items-center rounded-md border text-[10px] font-bold transition-all ${
+                          isDisabled ? "border-zinc-100 bg-zinc-50 text-zinc-200 cursor-not-allowed opacity-40" :
                           row.roles.has(role)
                             ? role === "baker" ? "border-stone-500 bg-stone-600 text-white"
                               : role === "pastry" ? "border-amber-500 bg-amber-600 text-white"
@@ -240,7 +275,8 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                         {row.roles.has(role) ? "✓" : ""}
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                   <div className="col-span-1" />
                   <div className="col-span-1 text-right">
                     {rows.length > 1 && (
