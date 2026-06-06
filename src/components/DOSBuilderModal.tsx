@@ -11,21 +11,14 @@ type Props = {
   scheduledDates?: Set<string>;
 };
 
-const assignRoles = [
-  { id: "baker" as const, label: "Baker", color: "from-stone-600 to-neutral-700" },
-  { id: "pastry" as const, label: "Pastry", color: "from-amber-600 to-yellow-700" },
-  { id: "deco" as const, label: "Deco", color: "from-rose-600 to-pink-600" },
-];
-
-type Row = { product: string; qty: number };
+type Row = { product: string; qty: number; roles: Set<"baker" | "pastry" | "deco"> };
 
 function defaultRow(): Row {
-  return { product: "", qty: 0 };
+  return { product: "", qty: 0, roles: new Set(["baker"]) };
 }
 
 export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAddToCatalog, hasTodayItems, presetDate, scheduledDates }: Props) {
   const [rows, setRows] = useState<Row[]>([defaultRow()]);
-  const [selectedRoles, setSelectedRoles] = useState<Set<"baker" | "pastry" | "deco">>(new Set(["baker", "pastry", "deco"]));
   const [priority, setPriority] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
   const [productSearch, setProductSearch] = useState<Record<number, string>>({});
   const [showSuggestions, setShowSuggestions] = useState<Record<number, boolean>>({});
@@ -36,13 +29,14 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
   const dayAfterStr = (() => { const t = new Date(); t.setDate(t.getDate() + 2); return t.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]; })();
   const tomorrowStr = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]; })();
 
-  const toggleRole = (role: "baker" | "pastry" | "deco") => {
-    setSelectedRoles(prev => {
-      const next = new Set(prev);
+  const toggleRowRole = (index: number, role: "baker" | "pastry" | "deco") => {
+    setRows(prev => prev.map((r, i) => {
+      if (i !== index) return r;
+      const next = new Set(r.roles);
       if (next.has(role)) next.delete(role);
       else next.add(role);
-      return next;
-    });
+      return { ...r, roles: next };
+    }));
   };
 
   const updateRow = (index: number, field: keyof Row, value: string | number) => {
@@ -64,7 +58,7 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
   const dateUnavailable = isDateOccupied(scheduledDate);
 
   const handleCreate = () => {
-    if (validRows.length === 0 || selectedRoles.size === 0 || dateUnavailable) return;
+    if (validRows.length === 0 || dateUnavailable) return;
     const ts = Date.now();
     const dosId = `DOS-${ts}`;
     const items: DOSItem[] = rows.map((val, idx) => ({
@@ -74,12 +68,12 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
       priority: priority,
       status: isFuture ? "scheduled" : "pending",
       scheduledDate: isFuture ? scheduledDate : undefined,
-      roles: Array.from(selectedRoles),
+      roles: Array.from(val.roles),
     }));
 
     const tasksMap = new Map<string, { product: string; role: "baker" | "pastry" | "deco" | "kitchen"; target: number; itemIdx: number }>();
     items.forEach((item, itemIdx) => {
-      [...selectedRoles].forEach((role) => {
+      [...(rows[itemIdx].roles)].forEach((role) => {
         const key = `${item.product}|${role}`;
         if (tasksMap.has(key)) {
           tasksMap.get(key)!.target += item.qty;
@@ -112,35 +106,8 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
 
         <div className="mt-6 space-y-5">
           {/* Configuration row */}
-          <div className="grid grid-cols-5 gap-4">
-            <div className="col-span-2">
-              <label className="block text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5">Production Team</label>
-              <div className="flex gap-2">
-                {assignRoles.map(role => {
-                  const on = selectedRoles.has(role.id);
-                  return (
-                    <button
-                      key={role.id}
-                      type="button"
-                      onClick={() => toggleRole(role.id)}
-                      className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[13px] font-medium transition-all flex-1 justify-center ${
-                        on
-                          ? `bg-gradient-to-br ${role.color} text-white border-transparent shadow-sm`
-                          : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400"
-                      }`}
-                    >
-                      <span className={`grid h-5 w-5 place-items-center rounded-full border text-[10px] font-bold transition-all ${
-                        on ? "border-white/40 bg-white/20" : "border-zinc-300"
-                      }`}>
-                        {on ? "✓" : ""}
-                      </span>
-                      {role.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="col-span-1">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
               <label className="block text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5">Priority</label>
               <select value={priority} onChange={e => setPriority(e.target.value as typeof priority)} className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-900">
                 <option value="HIGH">High Priority</option>
@@ -172,17 +139,20 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
           {/* Products table */}
           <div className="rounded-2xl border border-zinc-200">
             <div className="overflow-visible">
-              <div className="min-w-[500px]">
-                <div className="grid grid-cols-12 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-              <div className="col-span-5">Product</div>
-              <div className="col-span-3 text-right">Total Qty</div>
-              <div className="col-span-2" />
-              <div className="col-span-2" />
+              <div className="min-w-[600px]">
+                <div className="grid grid-cols-11 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+              <div className="col-span-4">Product</div>
+              <div className="col-span-2 text-right">Qty</div>
+              <div className="col-span-1 text-center">Baker</div>
+              <div className="col-span-1 text-center">Pastry</div>
+              <div className="col-span-1 text-center">Deco</div>
+              <div className="col-span-1" />
+              <div className="col-span-1" />
             </div>
             <div className="divide-y divide-zinc-100">
               {rows.map((row, i) => (
-                <div key={i} className="grid grid-cols-12 items-center gap-2 px-3 py-2">
-                  <div className="col-span-5 relative">
+                <div key={i} className="grid grid-cols-11 items-center gap-2 px-3 py-2">
+                  <div className="col-span-4 relative">
                     <input
                       value={productSearch[i] ?? row.product}
                       onChange={e => {
@@ -243,7 +213,7 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                       );
                     })()}
                   </div>
-                  <div className="col-span-3">
+                  <div className="col-span-2">
                     <input
                       type="number"
                       min="0"
@@ -254,8 +224,25 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                       style={{ fontFamily: "Fragment Mono, monospace" }}
                     />
                   </div>
-                  <div className="col-span-2" />
-                  <div className="col-span-2 text-right">
+                  {(["baker", "pastry", "deco"] as const).map(role => (
+                    <div key={role} className="col-span-1 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => toggleRowRole(i, role)}
+                        className={`grid h-6 w-6 place-items-center rounded-md border text-[10px] font-bold transition-all ${
+                          row.roles.has(role)
+                            ? role === "baker" ? "border-stone-500 bg-stone-600 text-white"
+                              : role === "pastry" ? "border-amber-500 bg-amber-600 text-white"
+                              : "border-rose-500 bg-rose-600 text-white"
+                            : "border-zinc-200 bg-white text-zinc-300 hover:border-zinc-400"
+                        }`}
+                      >
+                        {row.roles.has(role) ? "✓" : ""}
+                      </button>
+                    </div>
+                  ))}
+                  <div className="col-span-1" />
+                  <div className="col-span-1 text-right">
                     {rows.length > 1 && (
                       <button onClick={() => removeRow(i)} className="text-[14px] text-zinc-400 hover:text-red-500">✕</button>
                     )}
@@ -283,15 +270,15 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                 <span className="font-semibold text-zinc-900">{totalQty} pcs</span>
               </div>
 
-              {selectedRoles.size > 0 && (
-                <>
-                  <span className="text-zinc-200">|</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-zinc-400 font-medium">Team</span>
-                    <span className="font-semibold text-zinc-900">{[...selectedRoles].map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(", ")}</span>
-                  </div>
-                </>
-              )}
+              <span className="text-zinc-200">|</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-zinc-400 font-medium">Team</span>
+                <span className="font-semibold text-zinc-900">{(() => {
+                  const allRoles = new Set<"baker" | "pastry" | "deco">();
+                  validRows.forEach(r => r.roles.forEach(role => allRoles.add(role)));
+                  return allRoles.size > 0 ? [...allRoles].map(r => r.charAt(0).toUpperCase() + r.slice(1)).join(", ") : "None";
+                })()}</span>
+              </div>
               <span className="text-zinc-200">|</span>
               <div className="flex items-center gap-1.5">
                 <span className="text-zinc-400 font-medium">Date</span>
@@ -305,7 +292,7 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
             <button onClick={onClose} className="rounded-xl border border-zinc-300 px-4 py-2 text-[13px] font-medium hover:bg-zinc-50">Cancel</button>
             <button
               onClick={handleCreate}
-              disabled={validRows.length === 0 || selectedRoles.size === 0 || dateUnavailable}
+              disabled={validRows.length === 0 || dateUnavailable || validRows.some(r => r.roles.size === 0)}
               className="rounded-xl bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isFuture ? "Schedule" : "Create"} DOS ({validRows.length} product{validRows.length !== 1 ? "s" : ""})

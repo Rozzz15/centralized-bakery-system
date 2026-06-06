@@ -97,23 +97,27 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     )
   );
 
-  const bakerDOS = todayDOS;
+  const bakerDOS = todayDOS.filter(d => (d.roles ?? []).includes("baker"));
   const decoProductSet = new Set(decoProductionItems.map(i => i.productName));
   // Total DOS qty per product (for display)
   const dosQtyMap = new Map<string, number>();
   bakerDOS.forEach(d => { dosQtyMap.set(d.product, (dosQtyMap.get(d.product) || 0) + d.qty); });
   // Already baked qty per product (from freezer items — survives refresh)
   const bakedQtyMap = new Map<string, number>();
-  freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored").forEach(i => {
+  freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.notes !== "Production Recipe (Assembled)").forEach(i => {
     bakedQtyMap.set(i.productName, (bakedQtyMap.get(i.productName) || 0) + i.qty);
   });
 
-  // Only show products that exist in BOTH DOS and Deco Production Recipe
-  // Baker bakes the Deco PR qty; DOS remaining = DOS - Deco PR
+  // Show all today's DOS products for the baker
+  // UI handles Complete / No Stock / Normal states visually
   const myTasks = (() => {
     const seen = new Set<string>();
     return bakerDOS
-      .filter(d => decoProductSet.has(d.product) && !seen.has(d.product) && seen.add(d.product))
+      .filter(d => {
+        if (seen.has(d.product)) return false;
+        seen.add(d.product);
+        return true;
+      })
       .map((d, idx) => {
         const decoQty = decoProductionItems
           .filter(i => i.productName === d.product)
@@ -239,13 +243,15 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               {bakerDOS
                 .filter(d => !assemblySearch || d.product.toLowerCase().includes(assemblySearch.toLowerCase()))
                 .map(dos => {
-                  const r = recipes.find(r => r.productName === dos.product || r.linkedProduct?.includes(dos.product));
-                  const recipeName = r?.productName || dos.product;
-                  const recipeLinked = r?.linkedProduct || [];
+                  const matchedRecipes = recipes.filter(r => r.productName === dos.product || r.linkedProduct?.includes(dos.product));
+                  const allRecipeNames = matchedRecipes.map(r => r.productName);
+                  const allRecipeLinked = [...new Set(matchedRecipes.flatMap(r => r.linkedProduct ?? []))];
                   const matchingPremix = decoPremixItems.filter(p =>
-                    p.productName === recipeName || recipeLinked.includes(p.productName)
+                    allRecipeNames.includes(p.productName) ||
+                    allRecipeLinked.includes(p.productName) ||
+                    p.productName === dos.product
                   );
-                  const done = assemblyTasks.filter(t => t.status === "completed" && t.dosId === dos.id).reduce((s, t) => s + t.qtyAssembled, 0);
+                  const done = (bakedQtyMap.get(dos.product) || 0) + freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.notes === "Production Recipe (Assembled)" && i.productName === dos.product).reduce((s, i) => s + i.qty, 0);
                   const left = dos.qty - done;
                   const premixByProduct = new Map<string, number>();
                   matchingPremix.forEach(p => premixByProduct.set(p.productName, (premixByProduct.get(p.productName) || 0) + p.qty));
@@ -256,7 +262,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                       <div className="flex items-start justify-between mb-2">
                         <div>
                           <h3 className="text-[14px] font-semibold text-zinc-900">{dos.product}</h3>
-                          <p className="text-[11px] text-zinc-400 mt-0.5">Recipe: {recipeName}</p>
+                          <p className="text-[11px] text-zinc-400 mt-0.5">Recipe: {allRecipeNames.length > 0 ? allRecipeNames.join(", ") : dos.product}</p>
                         </div>
                         {matchingPremix.length > 0 ? (
                           <span className="shrink-0 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-medium text-emerald-700">Ready</span>
@@ -276,7 +282,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                           onChange={e => setAssembleQtys(prev => ({ ...prev, [dos.id]: e.target.value }))}
                           className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-[12px] text-center outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-200" />
                         <button onClick={() => {
-                          const qty = Number(assembleQtys[dos.id]) || 0;
+                          const qty = Number(assembleQtys[dos.id] ?? "1") || 0;
                           if (qty <= 0) return;
                           // Find one premix per unique linked recipe
                           const uniqueProducts = [...new Set(matchingPremix.map(p => p.productName))];
@@ -302,38 +308,59 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         </div>
 
         {/* Recipes from Advanced Premix (bottom, cards) */}
-        <div>
-          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-zinc-400 mb-2">Recipes</h2>
-          {decoPremixItems.length === 0 ? (
-            <div className="text-center py-10 text-[13px] text-zinc-400">No premix from Deco yet.</div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {[...new Set(decoPremixItems.map(p => p.productName))]
-                .filter(n => !assemblySearch || n.toLowerCase().includes(assemblySearch.toLowerCase()))
-                .map(name => {
-                  const items = decoPremixItems.filter(p => p.productName === name);
-                  const total = items.reduce((s, p) => s + p.qty, 0);
-                  return (
-                    <div key={name} className="rounded-[20px] border border-[#E8E0D5] bg-white shadow-sm flex flex-col overflow-hidden">
-                      <div className="px-4 pt-4 pb-3 border-b border-zinc-100">
-                        <div className="flex items-start justify-between">
-                          <h2 className="text-[16px] font-semibold text-zinc-900 leading-tight">{name}</h2>
-                          <span className="shrink-0 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">{total} batch{total !== 1 ? 'es' : ''}</span>
+        {(() => {
+          // Compute which premix names match at least one DOS product's recipe
+          const premixMatchesDOS = new Set<string>();
+          bakerDOS.forEach(dos => {
+            const matchedRecipes = recipes.filter(r => r.productName === dos.product || r.linkedProduct?.includes(dos.product));
+            const allRecipeNames = matchedRecipes.map(r => r.productName);
+            const allRecipeLinked = [...new Set(matchedRecipes.flatMap(r => r.linkedProduct ?? []))];
+            decoPremixItems.forEach(p => {
+              if (allRecipeNames.includes(p.productName) || allRecipeLinked.includes(p.productName) || p.productName === dos.product) {
+                premixMatchesDOS.add(p.productName);
+              }
+            });
+          });
+          return (
+            <div>
+              <h2 className="text-[13px] font-semibold uppercase tracking-wider text-zinc-400 mb-2">Recipes</h2>
+              {decoPremixItems.length === 0 ? (
+                <div className="text-center py-10 text-[13px] text-zinc-400">No premix from Deco yet.</div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {[...new Set(decoPremixItems.map(p => p.productName))]
+                    .filter(n => !assemblySearch || n.toLowerCase().includes(assemblySearch.toLowerCase()))
+                    .map(name => {
+                      const items = decoPremixItems.filter(p => p.productName === name);
+                      const total = items.reduce((s, p) => s + p.qty, 0);
+                      const isRelevant = premixMatchesDOS.has(name);
+                      return (
+                        <div key={name} className={`rounded-[20px] border shadow-sm flex flex-col overflow-hidden ${isRelevant ? 'border-[#E8E0D5] bg-white' : 'border-dashed border-zinc-300 bg-zinc-50/30'}`}>
+                          <div className="px-4 pt-4 pb-3 border-b border-zinc-100">
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-2">
+                                <h2 className="text-[16px] font-semibold text-zinc-900 leading-tight">{name}</h2>
+                                {!isRelevant && (
+                                  <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[9px] font-medium text-zinc-500">No DOS match</span>
+                                )}
+                              </div>
+                              <span className="shrink-0 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">{total} batch{total !== 1 ? 'es' : ''}</span>
+                            </div>
+                          </div>
+                          <div className="px-4 py-3 bg-zinc-50/50">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Total Qty</span>
+                              <span className="text-[22px] font-bold text-zinc-800">{total}</span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div className="px-4 py-3 bg-zinc-50/50">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Total Qty</span>
-                          <span className="text-[22px] font-bold text-zinc-800">{total}</span>
-                        </div>
-                      </div>
-
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* Assembly History */}
         {assemblyTasks.some(t => t.status === "completed") && (
@@ -529,7 +556,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
 
   /* ── Freezer Tab ── */
   if (activeTab === "freezer") {
-    const bakerItems = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored");
+    const bakerItems = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.notes !== "Production Recipe (Assembled)");
     const bakerAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"));
     const decoItems = freezerItems.filter(i => i.status === "stored" && i.qty > 0 && (
       i.producedBy === "deco" ||
@@ -661,7 +688,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                           </span>
                         </td>
                         <td className="px-5 py-3.5 text-right">
-                          <span className="text-[11px] text-zinc-400">View only</span>
+                          <button onClick={() => { if (confirm(`Delete ALL batches of ${productName}?`)) { const ids = new Set(g.items.map(x => x.id)); const updated = freezerItems.filter(f => !ids.has(f.id)); onUpdateFreezer?.(updated); ids.forEach(id => db.deleteFreezerItem(id).catch(console.error)); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del All</button>
                         </td>
                       </tr>
                     );
@@ -927,12 +954,12 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   const decoQty = task.target;
                   const bakeTarget = Math.max(0, decoQty);
                   const dosRemaining = Math.max(0, dosQty - alreadyBaked);
-                  const defaultBake = Math.min(bakeTarget, Math.max(1, dosRemaining));
+                  const maxBake = Math.min(bakeTarget, dosRemaining);
+                  const defaultBake = Math.max(1, maxBake);
                   const bakeQty = bakerBakeQty[task.id] ?? defaultBake;
                   const isComplete = dosQty > 0 && alreadyBaked >= dosQty;
                   const noStock = bakeTarget <= 0;
                   const remaining = noStock ? dosRemaining : Math.max(0, dosRemaining - bakeQty);
-                  const maxBake = bakeTarget;
                   const pct = dosQty > 0 ? Math.min(100, Math.round(((alreadyBaked + bakeQty) / dosQty) * 100)) : 0;
                   return (
                     <div
@@ -971,7 +998,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                             <span className="text-zinc-500">DOS: <strong className="text-zinc-800">{dosQty}</strong> pcs</span>
                             <span className="text-rose-600">Deco PR: <strong>{decoQty}</strong> pcs</span>
                             <span className="text-zinc-500">Already baked: <strong className="text-zinc-800">{alreadyBaked}</strong> pcs</span>
-                            <span className="text-amber-600">{noStock ? "Unbaked:" : "After baking:"} <strong>{remaining}</strong> pcs remaining</span>
+                            <span className="text-amber-600">{noStock ? "Unbaked:" : "Still needed:"} <strong>{remaining}</strong> pcs</span>
                           </div>
                           <div className="mt-3"><div className="h-2 rounded-full bg-zinc-100"><div className="h-full rounded-full bg-stone-500" style={{ width: `${pct}%` }} /></div></div>
                           {noStock && <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-center text-[12px] font-medium text-amber-700">No Deco stock — await restock</div>}
@@ -982,18 +1009,18 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                         <label className="text-[12px] text-zinc-600 font-medium">Bake this batch:</label>
                         <div className="flex items-center gap-1.5">
                           <button
-                            onClick={e => { e.stopPropagation(); setBakerBakeQty(prev => ({ ...prev, [task.id]: Math.max(isComplete ? dosQty : 1, (prev[task.id] ?? 1) - 1) })); }}
-                            disabled={isComplete && bakeQty <= dosQty}
+                            onClick={e => { e.stopPropagation(); setBakerBakeQty(prev => ({ ...prev, [task.id]: Math.max(1, (prev[task.id] ?? 1) - 1) })); }}
+                            disabled={bakeQty <= 1}
                             className="w-7 h-7 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center disabled:opacity-30"
                           >−</button>
                           <input
                             type="number"
-                            min={isComplete ? dosQty : 1}
-                            max={bakeTarget}
+                            min={1}
+                            max={maxBake}
                             value={bakeQty}
                             onClick={e => e.stopPropagation()}
                             onChange={e => {
-                              const v = Math.min(bakeTarget, Math.max(isComplete ? dosQty : 1, Number(e.target.value) || 1));
+                              const v = Math.min(maxBake, Math.max(1, Number(e.target.value) || 1));
                               setBakerBakeQty(prev => ({ ...prev, [task.id]: v }));
                               if (!selectedForBaking.has(task.id)) {
                                 setSelectedForBaking(prev => new Set(prev).add(task.id));
@@ -1002,11 +1029,12 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                             className="w-16 text-center rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[13px] font-mono font-semibold outline-none focus:border-zinc-400"
                           />
                           <button
-                            onClick={e => { e.stopPropagation(); setBakerBakeQty(prev => ({ ...prev, [task.id]: Math.min(bakeTarget, (prev[task.id] ?? 1) + 1) })); }}
-                            className="w-7 h-7 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
+                            onClick={e => { e.stopPropagation(); setBakerBakeQty(prev => ({ ...prev, [task.id]: Math.min(maxBake, (prev[task.id] ?? 1) + 1) })); }}
+                            disabled={bakeQty >= maxBake}
+                            className="w-7 h-7 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center disabled:opacity-30"
                           >+</button>
                         </div>
-                        <span className="text-[12px] text-zinc-400 font-mono">/ {bakeTarget}</span>
+                        <span className="text-[12px] text-zinc-400 font-mono">/ {maxBake}</span>
                       </div>}
                     </div>
                   );

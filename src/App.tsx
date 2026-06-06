@@ -68,7 +68,6 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   ],
   pastry: [
     { id: "dashboard", label: "My Tasks", icon: "◼" },
-    { id: "queue", label: "Production Queue", icon: "⬢" },
     { id: "freezer", label: "Freezer", icon: "◇" },
   ],
 };
@@ -547,7 +546,7 @@ export default function App() {
             setDosItems(dos);
           } else {
             const newItems = dos.filter(d => !seenDOS.current.has(d.id));
-            if (newItems.length > 0 && (role === "baker" || role === "deco")) {
+            if (newItems.length > 0 && (role === "baker" || role === "deco" || role === "pastry")) {
               const myTasks = prod.filter(p => p.assignedTo === role);
               const relevant = newItems.filter(n => n.status !== "scheduled" && myTasks.some(t => t.product === n.product));
               if (relevant.length > 0) {
@@ -734,7 +733,11 @@ export default function App() {
 
   const handleDeleteDOS = async (id: string) => {
     const item = dosItems.find(d => d.id === id);
-    try { await db.deleteDOSItem(id); } catch (err) { console.error("DOS delete failed:", err); }
+    try {
+      // Delete related assembly tasks first to avoid foreign key conflict
+      await db.deleteBakerAssemblyTasksByDOSId(id);
+      await db.deleteDOSItem(id);
+    } catch (err) { console.error("DOS delete failed:", err); }
     setDosItems(prev => prev.filter(d => d.id !== id));
     if (item) logAudit("DOS_DELETED", `${item.product} — ${item.id}`);
   };
@@ -996,8 +999,8 @@ export default function App() {
                 onSubmitSales={handleSalesSubmit}
               />
             )}
-            {role === "pastry" && ["dashboard", "queue", "freezer"].includes(activeTab) && (
-              <PastryDashboard production={production} dosItems={dosItems} activeTab={activeTab} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} />
+            {role === "pastry" && ["dashboard", "freezer"].includes(activeTab) && (
+              <PastryDashboard dosItems={dosItems} activeTab={activeTab} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} />
             )}
           </div>
         </main>

@@ -277,3 +277,22 @@ export type WasteLog = {
   date: string;
   createdAt?: string;
 };
+
+export type PromoPackageItem = {
+  productName: string;
+  qty: number;
+};
+
+export type PromoPackage = {
+  id: string;
+  name: string;
+  description: string;
+  type: "promo" | "package";
+  items: PromoPackageItem[];
+  originalPrice: number;
+  promoPrice: number;
+  status: "active" | "inactive" | "expired";
+  startDate?: string;
+  endDate?: string;
+  createdAt?: string;
+};

@@ -5,6 +5,7 @@ import type {
   StockTransaction, DeliveryValidation, VerificationResult,
   BranchBatch, DeliveryReport, KitchenFeedback, DecoSubTask, DecoQCResult,
   ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog,
+  PromoPackage,
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
@@ -38,10 +39,14 @@ const INVENTORY_TABLES: Record<string, string> = {
 };
 
 function parseInventoryItem(d: any, group: string): InventoryItem {
-  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: group as InventoryItem["group"], expiryDate: d.expiry_date || undefined, accessRoles: d.access_roles || [], source: d.source || undefined };
+  const raw = d.access_roles;
+  let accessRoles: string[] = [];
+  if (Array.isArray(raw)) accessRoles = raw;
+  else if (typeof raw === "string" && raw.startsWith("[")) { try { accessRoles = JSON.parse(raw); } catch { accessRoles = []; } }
+  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: group as InventoryItem["group"], expiryDate: d.expiry_date || undefined, accessRoles, source: d.source || undefined };
 }
 function toInventoryRow(i: InventoryItem) {
-  return { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: i.onHand, threshold: i.threshold, cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category, expiry_date: i.expiryDate || null, access_roles: i.accessRoles ?? [], source: i.source ?? null };
+  return { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: Math.round(i.onHand), threshold: Math.round(i.threshold), cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category, expiry_date: i.expiryDate || null, access_roles: i.accessRoles ?? [], source: i.source ?? null };
 }
 
 export async function fetchInventoryByGroup(group: string): Promise<InventoryItem[]> {
@@ -87,11 +92,11 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
   const table = group ? INVENTORY_TABLES[group] : null;
   if (!table) throw new Error(`Cannot update — group is required`);
   const row: any = {};
-  if ("onHand" in updates) row.on_hand = updates.onHand;
+  if ("onHand" in updates) row.on_hand = Math.round(updates.onHand);
   if ("name" in updates) row.name = updates.name;
   if ("sku" in updates) row.sku = updates.sku;
   if ("unit" in updates) row.unit = updates.unit;
-  if ("threshold" in updates) row.threshold = updates.threshold;
+  if ("threshold" in updates) row.threshold = Math.round(updates.threshold);
   if ("cost" in updates) row.cost = updates.cost;
   if ("supplier" in updates) row.supplier = updates.supplier;
   if ("lastIn" in updates) row.last_in = updates.lastIn;
@@ -169,6 +174,11 @@ export async function updateProduction(id: string, updates: Partial<ProductionTa
 
 export async function deleteProductionTask(id: string) {
   const { error } = await supabase.from("production_tasks").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function clearProductionTasksByAssignee(assignedTo: string) {
+  const { error } = await supabase.from("production_tasks").delete().eq("assigned_to", assignedTo);
   if (error) throw error;
 }
 
@@ -834,6 +844,8 @@ export async function upsertFreezerItems(items: FreezerItem[]) {
 }
 export async function deleteFreezerItem(id: string) {
   try {
+    // Delete related assembly tasks first to avoid foreign key conflict
+    await supabase.from("baker_assembly_tasks").delete().eq("premix_item_id", id);
     const { error } = await supabase.from("freezer_items").delete().eq("id", id);
     if (error) throw error;
   } catch (e) {
@@ -1017,11 +1029,57 @@ export async function deleteBakerAssemblyTask(id: string) {
   if (error) throw error;
 }
 
+export async function deleteBakerAssemblyTasksByDOSId(dosId: string) {
+  const { error } = await supabase.from("baker_assembly_tasks").delete().eq("dos_id", dosId);
+  if (error) throw error;
+}
+
+export async function deleteBakerAssemblyTasksByPremixItemId(premixItemId: string) {
+  const { error } = await supabase.from("baker_assembly_tasks").delete().eq("premix_item_id", premixItemId);
+  if (error) throw error;
+}
+
 export async function upsertWasteLog(items: WasteLog[]) {
   const { error } = await supabase.from("waste_log").upsert(items.map(w => ({
     id: w.id, product: w.product, qty_rejected: w.qtyRejected, unit_cost: w.unitCost,
     total_cost: w.totalCost, reason: w.reason, source: w.source,
     reference_id: w.referenceId, date: w.date,
   })), { onConflict: "id" });
+  if (error) throw error;
+}
+
+// ─── Promos & Packages ───
+function parsePromoPackage(d: any): PromoPackage {
+  return {
+    id: d.id, name: d.name, description: d.description || "",
+    type: d.type, items: d.items || [],
+    originalPrice: d.original_price || 0, promoPrice: d.promo_price || 0,
+    status: d.status, startDate: d.start_date || undefined,
+    endDate: d.end_date || undefined, createdAt: d.created_at || undefined,
+  };
+}
+
+function toPromoPackageRow(p: PromoPackage) {
+  return {
+    id: p.id, name: p.name, description: p.description,
+    type: p.type, items: p.items, original_price: p.originalPrice,
+    promo_price: p.promoPrice, status: p.status,
+    start_date: p.startDate || null, end_date: p.endDate || null,
+  };
+}
+
+export async function fetchPromosPackages(): Promise<PromoPackage[]> {
+  const { data, error } = await supabase.from("promos_packages").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(parsePromoPackage);
+}
+
+export async function upsertPromoPackage(item: PromoPackage) {
+  const { error } = await supabase.from("promos_packages").upsert(toPromoPackageRow(item), { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deletePromoPackage(id: string) {
+  const { error } = await supabase.from("promos_packages").delete().eq("id", id);
   if (error) throw error;
 }
