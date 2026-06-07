@@ -205,6 +205,10 @@ export default function AdminDashboard({
   const [renamingCategory, setRenamingCategory] = useState("");
 const [productCategoryMap, setProductCategoryMap] = useState<Record<string, string>>({});
   const [productSort, setProductSort] = useState<"a-z" | "z-a" | "category">("a-z");
+  const [viewingProduct, setViewingProduct] = useState<string | null>(null);
+  const [viewingRecipe, setViewingRecipe] = useState<string | null>(null);
+  const [deletingProduct, setDeletingProduct] = useState<string | null>(null);
+  const [deletingRecipe, setDeletingRecipe] = useState<string | null>(null);
   const categoriesLoaded = useRef(false);
 
   // Toasts
@@ -326,7 +330,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Linked Recipes</th><th className="px-4 py-3">Categories</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-36" /></tr>
+                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Linked Recipe</th><th className="px-4 py-3">Categories</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-36" /></tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 text-[13px]">
                 {[...filteredProducts].sort((a, b) => {
@@ -338,19 +342,19 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   }).map(product => {
                   const recipe = recipes.find(r => r.productName === product);
                   return (
-                    <tr key={product} className="hover:bg-zinc-50/60">
+                    <tr key={product} className="hover:bg-zinc-50/60 cursor-pointer" onClick={() => setViewingProduct(product)}>
                       <td className="px-4 py-3">
                         <div className="font-medium text-zinc-900">{product}</div>
                       </td>
                       <td className="px-4 py-3">
-                        {recipe?.linkedProduct && recipe.linkedProduct.length > 0 && (
+                        {recipe?.linkedIngredients && recipe.linkedIngredients.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
-                            {recipe.linkedProduct.map(lp => (
+                            {recipe.linkedIngredients.map(lp => (
                               <span key={lp} className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700">{lp}</span>
                             ))}
                           </div>
                         )}
-                        {!recipe?.linkedProduct || recipe.linkedProduct.length === 0 && <span className="text-[12px] text-zinc-400 italic">—</span>}
+                        {!recipe?.linkedIngredients || recipe.linkedIngredients.length === 0 && <span className="text-[12px] text-zinc-400 italic">—</span>}
                       </td>
                       <td className="px-4 py-3">
                         {productCategoryMap[product] ? (
@@ -375,8 +379,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center gap-1 justify-end">
-                          <button onClick={() => { setEditingProduct(product); setRenamingProduct(product); setCategories(prev => prev); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
-                          <button onClick={() => { if (confirm(`Delete "${product}"?`)) { onUpdateProductCatalog(prev => prev.filter(p => p !== product)); db.removeFromCatalog(product).catch(console.error); const existingRecipe = recipes.find(r => r.productName === product); if (existingRecipe) { onUpdateRecipes(prev => prev.filter(r => r.productName !== product)); db.deleteRecipe(product).catch(console.error); } } }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                          <button onClick={e => { e.stopPropagation(); setEditingProduct(product); setRenamingProduct(product); setCategories(prev => prev); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
+                          <button onClick={e => { e.stopPropagation(); setDeletingProduct(product); }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
                         </div>
                       </td>
                     </tr>
@@ -412,7 +416,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                         <tr>
                           <th className="px-4 py-3">Recipe</th>
                           <th className="px-4 py-3">Items</th>
-                          <th className="px-4 py-3">Linked Product</th>
+                          <th className="px-4 py-3">Group</th>
                           <th className="px-4 py-3">Notes</th>
                           <th className="px-4 py-3 text-right">Cost</th>
                           <th className="px-4 py-3 w-32" />
@@ -420,16 +424,22 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
                         {filteredRecipes.map(recipe => (
-                          <tr key={recipe.productName} className="hover:bg-zinc-50/60">
+                          <tr key={recipe.productName} className="hover:bg-zinc-50/60 cursor-pointer" onClick={() => setViewingRecipe(recipe.productName)}>
                             <td className="px-4 py-3 font-medium text-zinc-900">{recipe.productName}</td>
                             <td className="px-4 py-3 text-zinc-600">{recipe.ingredients.length} items</td>
-                            <td className="px-4 py-3 text-zinc-600">{recipe.linkedProduct || "-"}</td>
+                            <td className="px-4 py-3">
+                              {recipe.group === "filling" ? (
+                                <span className="inline-block rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">Filling</span>
+                              ) : (
+                                <span className="text-[12px] text-zinc-400 italic">—</span>
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-zinc-600">{recipe.notes || "-"}</td>
                             <td className="px-4 py-3 text-right font-medium text-zinc-900">₱{computeRecipeCost(recipe).toFixed(2)}</td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center gap-1 justify-end">
-                                <button onClick={() => { setRecipeProduct(recipe.productName); setShowRecipe(true); }} className="text-zinc-500 hover:text-zinc-900">Edit</button>
-                                <button onClick={() => { if (confirm(`Delete recipe for "${recipe.productName}"?`)) { onUpdateRecipes(prev => prev.filter(r => r.productName !== recipe.productName)); db.deleteRecipe(recipe.productName).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                                <button onClick={e => { e.stopPropagation(); setRecipeProduct(recipe.productName); setShowRecipe(true); }} className="text-zinc-500 hover:text-zinc-900">Edit</button>
+                                <button onClick={e => { e.stopPropagation(); setDeletingRecipe(recipe.productName); }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
                               </div>
                             </td>
                           </tr>
@@ -527,16 +537,18 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
               inventory={inventory}
               recipes={recipes}
               categories={categories}
-              onSave={async (name, packagingMaterials, decorationSupplies, linkedProduct, category) => {
+              onSave={async (name, packagingMaterials, decorationSupplies, linkedIngredients, category) => {
                 onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]);
                 await db.addToCatalog(name).catch(console.error);
-                const recipe: ProductRecipe = { productId: name, productName: name, ingredients: [], packagingMaterials, decorationSupplies, notes: "", linkedProduct };
-                onUpdateRecipes(prev => {
-                  const idx = prev.findIndex(p => p.productId === recipe.productId);
-                  if (idx >= 0) { const next = [...prev]; next[idx] = recipe; return next; }
-                  return [...prev, recipe];
-                });
-                await db.upsertRecipe(recipe).catch(console.error);
+                if (packagingMaterials && packagingMaterials.length > 0 || decorationSupplies && decorationSupplies.length > 0 || (linkedIngredients && linkedIngredients.length > 0)) {
+                  const recipe: ProductRecipe = { productId: name, productName: name, ingredients: [], packagingMaterials: packagingMaterials || [], decorationSupplies: decorationSupplies || [], notes: "", linkedIngredients: linkedIngredients || [] };
+                  onUpdateRecipes(prev => {
+                    const idx = prev.findIndex(p => p.productId === recipe.productId);
+                    if (idx >= 0) { const next = [...prev]; next[idx] = recipe; return next; }
+                    return [...prev, recipe];
+                  });
+                  await db.upsertRecipe(recipe).catch(console.error);
+                }
                 await db.saveProductCategory(name, category || null).catch(console.error);
                 setProductCategoryMap(prev => ({ ...prev, [name]: category || "" }));
                 setShowAddProduct(false);
@@ -574,7 +586,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             inventory={inventory}
             categories={categories}
             initialCategory={productCategoryMap[editingProduct] || ""}
-            onSave={async (originalName, newName, ingredients, packagingMaterials, decorationSupplies, linkedProduct, category) => {
+            onSave={async (originalName, newName, ingredients, packagingMaterials, decorationSupplies, linkedIngredients, category) => {
               if (originalName !== newName) {
                 onUpdateProductCatalog(prev => {
                   const next = prev.filter(p => p !== originalName);
@@ -583,25 +595,29 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 await db.removeFromCatalog(originalName).catch(console.error);
                 await db.addToCatalog(newName).catch(console.error);
               }
-              const recipe: ProductRecipe = {
-                productId: newName,
-                productName: newName,
-                ingredients,
-                packagingMaterials,
-                decorationSupplies,
-                notes: recipes.find(r => r.productName === originalName)?.notes || "",
-                linkedProduct,
-              };
-              onUpdateRecipes(prev => {
-                const idx = prev.findIndex(p => p.productName === originalName);
-                if (idx >= 0) {
-                  const next = [...prev];
-                  next[idx] = recipe;
-                  return next;
-                }
-                return [...prev, recipe];
-              });
-              db.upsertRecipe(recipe).catch(console.error);
+              const hasRecipeData = (ingredients && ingredients.length > 0) || (packagingMaterials && packagingMaterials.length > 0) || (decorationSupplies && decorationSupplies.length > 0) || (linkedIngredients && linkedIngredients.length > 0);
+              const existingRecipe = recipes.find(r => r.productName === originalName);
+              if (hasRecipeData || existingRecipe) {
+                const recipe: ProductRecipe = {
+                  productId: newName,
+                  productName: newName,
+                  ingredients: ingredients || [],
+                  packagingMaterials: packagingMaterials || [],
+                  decorationSupplies: decorationSupplies || [],
+                  notes: existingRecipe?.notes || "",
+                  linkedIngredients: linkedIngredients || [],
+                };
+                onUpdateRecipes(prev => {
+                  const idx = prev.findIndex(p => p.productName === originalName);
+                  if (idx >= 0) {
+                    const next = [...prev];
+                    next[idx] = recipe;
+                    return next;
+                  }
+                  return [...prev, recipe];
+                });
+                db.upsertRecipe(recipe).catch(console.error);
+              }
               await db.saveProductCategory(newName, category || null).then(() => {
                 console.log("Category saved successfully");
               }).catch(err => {
@@ -715,6 +731,192 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
               onClose={() => { setShowPromoModal(false); setEditingPromo(null); }}
             />
           )}
+
+          {/* Product Detail Modal */}
+          {viewingProduct && (() => {
+            const product = viewingProduct;
+            const recipe = recipes.find(r => r.productName === product);
+            const category = productCategoryMap[product];
+            return (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setViewingProduct(null)}>
+                <div className="w-full max-w-[520px] max-h-[90vh] overflow-y-auto rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-5">
+                    <div>
+                      <h3 className="text-[16px] font-semibold">{product}</h3>
+                      {category && <span className="mt-1 inline-block rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{category}</span>}
+                    </div>
+                    <button onClick={() => setViewingProduct(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button>
+                  </div>
+
+                  {/* Linked Recipe */}
+                  {recipe?.linkedIngredients && recipe.linkedIngredients.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Linked Recipe</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {recipe.linkedIngredients.map(lp => (
+                          <span key={lp} className="rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-medium text-sky-700">{lp}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Packaging */}
+                  {recipe?.packagingMaterials && recipe.packagingMaterials.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Packaging Materials</h4>
+                      <div className="space-y-1">
+                        {recipe.packagingMaterials.map(item => (
+                          <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                            <span className="text-[12px] font-medium text-zinc-900">{item.name}</span>
+                            <span className="text-[11px] text-zinc-500">{item.qtyPerBatch} {item.unit}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Decoration */}
+                  {recipe?.decorationSupplies && recipe.decorationSupplies.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Decoration Supplies</h4>
+                      <div className="space-y-1">
+                        {recipe.decorationSupplies.map(item => (
+                          <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                            <span className="text-[12px] font-medium text-zinc-900">{item.name}</span>
+                            <span className="text-[11px] text-zinc-500">{item.qtyPerBatch} {item.unit}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!recipe && (
+                    <p className="text-[13px] text-zinc-400 italic text-center py-4">No recipe linked yet.</p>
+                  )}
+
+                  <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
+                    <button onClick={() => setViewingProduct(null)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Close</button>
+                    <button onClick={() => { setViewingProduct(null); setEditingProduct(product); setRenamingProduct(product); }} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">Edit Product</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Recipe Detail Modal */}
+          {viewingRecipe && (() => {
+            const recipe = recipes.find(r => r.productName === viewingRecipe);
+            if (!recipe) return null;
+            const totalCost = recipe.ingredients.reduce((sum, ing) => {
+              const inv = inventory.find(i => i.id === ing.inventoryId);
+              return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+            }, 0);
+            return (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setViewingRecipe(null)}>
+                <div className="w-full max-w-[520px] max-h-[90vh] overflow-y-auto rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-5">
+                    <div>
+                      <h3 className="text-[16px] font-semibold">{recipe.productName}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        {recipe.group === "filling" && <span className="inline-block rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">Filling</span>}
+                        <span className="text-[11px] text-zinc-400">{recipe.ingredients.length} ingredients</span>
+                      </div>
+                    </div>
+                    <button onClick={() => setViewingRecipe(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button>
+                  </div>
+
+                  {/* Ingredients */}
+                  {recipe.ingredients.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Ingredients</h4>
+                      <div className="space-y-1">
+                        {recipe.ingredients.map(item => {
+                          const inv = inventory.find(i => i.id === item.inventoryId);
+                          const cost = inv ? inv.cost * item.qtyPerBatch : 0;
+                          return (
+                            <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                              <span className="text-[12px] font-medium text-zinc-900 flex-1">{item.name}</span>
+                              <span className="text-[11px] text-zinc-500 w-16 text-right">{item.qtyPerBatch} {item.unit}</span>
+                              <span className="text-[11px] font-mono text-zinc-500 w-16 text-right">₱{cost.toFixed(2)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  {recipe.notes && (
+                    <div className="mb-4">
+                      <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Notes</h4>
+                      <p className="text-[13px] text-zinc-600 rounded-lg border border-zinc-100 bg-zinc-50 p-3">{recipe.notes}</p>
+                    </div>
+                  )}
+
+                  {/* Total Cost */}
+                  <div className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-3 mb-4">
+                    <div className="flex items-center justify-between text-[12px]">
+                      <span className="text-zinc-600">Total Cost</span>
+                      <span className="font-medium text-zinc-800" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{totalCost.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
+                    <button onClick={() => setViewingRecipe(null)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Close</button>
+                    <button onClick={() => { setViewingRecipe(null); setRecipeProduct(recipe.productName); setShowRecipe(true); }} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">Edit Recipe</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Delete Product Confirmation Modal */}
+          {deletingProduct && (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setDeletingProduct(null)}>
+              <div className="w-full max-w-[400px] rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="text-center mb-5">
+                  <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-red-100 text-red-600 text-[20px]">✕</div>
+                  <h3 className="text-[16px] font-semibold text-zinc-900">Delete Product</h3>
+                  <p className="mt-1 text-[13px] text-zinc-500">Are you sure you want to delete <strong>{deletingProduct}</strong>? This will also remove its linked recipe.</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setDeletingProduct(null)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                  <button onClick={() => {
+                    onUpdateProductCatalog(prev => prev.filter(p => p !== deletingProduct));
+                    db.removeFromCatalog(deletingProduct).catch(console.error);
+                    const existingRecipe = recipes.find(r => r.productName === deletingProduct);
+                    if (existingRecipe) {
+                      onUpdateRecipes(prev => prev.filter(r => r.productName !== deletingProduct));
+                      db.deleteRecipe(deletingProduct).catch(console.error);
+                    }
+                    setDeletingProduct(null);
+                  }} className="flex-1 rounded-xl bg-red-600 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-red-700">Delete</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Recipe Confirmation Modal */}
+          {deletingRecipe && (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setDeletingRecipe(null)}>
+              <div className="w-full max-w-[400px] rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="text-center mb-5">
+                  <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-red-100 text-red-600 text-[20px]">✕</div>
+                  <h3 className="text-[16px] font-semibold text-zinc-900">Delete Recipe</h3>
+                  <p className="mt-1 text-[13px] text-zinc-500">Are you sure you want to delete the recipe for <strong>{deletingRecipe}</strong>?</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setDeletingRecipe(null)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                  <button onClick={() => {
+                    onUpdateRecipes(prev => prev.filter(r => r.productName !== deletingRecipe));
+                    db.deleteRecipe(deletingRecipe).catch(console.error);
+                    setDeletingRecipe(null);
+                  }} className="flex-1 rounded-xl bg-red-600 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-red-700">Delete</button>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       );
     }
@@ -845,55 +1047,90 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             </div>
           ) : (
             <>
-{/* Items filtered by group */}
-              <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-[16px] font-semibold text-white">{sidebarItems.find(s => s.key === warehouseSection)?.label}</h2>
+{/* Items filtered by group — redesigned card layout */}
+              <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-[18px] font-semibold text-zinc-900">{sidebarItems.find(s => s.key === warehouseSection)?.label}</h2>
                   <div className="flex items-center gap-2">
-                    <div className="relative max-w-[220px]">
-                      <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
-                      <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search items..." className="w-full rounded-xl border border-zinc-700 bg-zinc-800 py-2 pl-8 pr-3 text-[12px] text-white outline-none focus:border-zinc-500" />
+                    <div className="relative w-56">
+                      <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+                      <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search items..." className="w-full rounded-xl border border-zinc-200 bg-white py-2.5 pl-9 pr-3 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-400" />
                     </div>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <div className="min-w-[500px] space-y-2">
+                  <div className="min-w-[600px] space-y-3">
                   {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).map(item => {
                     const pct = Math.min(100, (item.onHand / item.threshold) * 100);
                     const isCritical = item.onHand < item.threshold;
                     const isExpired = item.expiryDate && item.expiryDate < todayStr;
                     const isExpiring = item.expiryDate && item.expiryDate >= todayStr && new Date(item.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000;
                     return (
-                      <div key={item.id} className="flex items-center gap-4 rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 hover:bg-zinc-700/60">
-                        <div className="min-w-[160px]">
-                          <div className="text-[13px] font-medium text-white">{item.name}</div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[11px] text-zinc-400">{item.sku} · {item.category}</span>
-                            {isExpired && <span className="rounded-full bg-purple-900 px-1.5 py-0.5 text-[9px] font-medium text-purple-200">Expired</span>}
-                            {isExpiring && <span className="rounded-full bg-amber-900 px-1.5 py-0.5 text-[9px] font-medium text-amber-200">Expiring</span>}
-                          </div>
-                          {warehouseSection === "ingredients" && item.accessRoles && item.accessRoles.length > 0 && (
-                            <div className="flex items-center gap-1 mt-1">
-                              {item.accessRoles.map(r => (
-                                <span key={r} className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider ${r === "baker" ? "bg-stone-800 text-stone-300" : r === "pastry" ? "bg-amber-900 text-amber-300" : r === "deco" ? "bg-rose-900 text-rose-300" : "bg-zinc-700 text-zinc-300"}`}>{r}</span>
-                              ))}
+                      <div key={item.id} className="rounded-2xl border border-zinc-100 bg-white p-5 shadow-sm hover:shadow-md hover:border-zinc-200 transition-all duration-200 odd:bg-zinc-50/30">
+                        <div className="flex items-start justify-between gap-4">
+                          {/* Left: Item info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <h3 className="text-[15px] font-semibold text-zinc-900">{item.name}</h3>
+                              <span className="text-[12px] text-zinc-400 font-mono">{item.sku}</span>
+                              <span className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium text-zinc-600">{item.category}</span>
+                              {isExpired && <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-[11px] font-semibold text-purple-700">Expired</span>}
+                              {isExpiring && <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">Expiring</span>}
                             </div>
-                          )}
-                        </div>
-                        <div className="flex-1"><div className="h-2 rounded-full bg-zinc-700"><div className={`h-full rounded-full ${isExpired ? "bg-purple-500" : isCritical ? "bg-red-500" : item.onHand < item.threshold * 1.5 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} /></div></div>
-                        <div className="text-right min-w-[80px]"><div className={`text-[13px] font-semibold ${isCritical ? "text-red-400" : "text-white"}`}>{item.onHand} <span className="text-[11px] font-normal text-zinc-500">/ {item.threshold}</span></div><div className="text-[11px] text-zinc-400">{item.unit}</div></div>
-                        <div className="text-[12px] text-zinc-400 min-w-[120px] text-right">{item.supplier}{item.expiryDate ? <span className="block text-[11px] text-zinc-500">Exp: {item.expiryDate}</span> : <span className="block text-[11px] text-zinc-600">No expiry</span>}</div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button onClick={() => setEditingInvItem(item)} className="rounded-lg border border-zinc-600 bg-zinc-700 px-2.5 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-zinc-600 hover:border-zinc-500 transition-all">Edit</button>
-                          <button onClick={async () => { if (confirm(`Delete "${item.name}"?`)) { await db.deleteInventoryItem(item.id, item.group); onUpdateInventory(inventory.filter(i => i.id !== item.id)); onAddAuditLog?.("INVENTORY_DELETED", `${item.name} removed from ${item.group}`); } }} className="rounded-lg border border-red-800 bg-red-900/30 px-2.5 py-1.5 text-[11px] font-medium text-red-300 hover:bg-red-900/50 hover:border-red-700 transition-all">Del</button>
+                            <div className="flex items-center gap-3 mt-2.5 flex-wrap">
+                              <div className="flex items-center gap-1.5">
+                                <svg className="h-3.5 w-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                                <span className="text-[13px] text-zinc-600">{item.supplier || "No supplier"}</span>
+                              </div>
+                              {item.expiryDate ? (
+                                <div className="flex items-center gap-1.5">
+                                  <svg className="h-3.5 w-3.5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                  <span className="text-[13px] text-zinc-600">Exp: {item.expiryDate}</span>
+                                </div>
+                              ) : (
+                                <span className="text-[12px] text-zinc-400 italic">No expiry</span>
+                              )}
+                            </div>
+                            {warehouseSection === "ingredients" && item.accessRoles && item.accessRoles.length > 0 && (
+                              <div className="flex items-center gap-1.5 mt-2.5">
+                                <span className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider">Access:</span>
+                                {item.accessRoles.map(r => (
+                                  <span key={r} className={'inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ' + (r === "baker" ? "bg-stone-100 text-stone-700 border border-stone-200" : r === "pastry" ? "bg-amber-50 text-amber-700 border border-amber-200" : r === "deco" ? "bg-rose-50 text-rose-700 border border-rose-200" : "bg-zinc-100 text-zinc-600 border border-zinc-200")}>{r}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Right: Stock and actions */}
+                          <div className="flex flex-col items-end gap-3 shrink-0">
+                            {/* Stock level */}
+                            <div className="text-right">
+                              <div className={'text-[22px] font-bold tracking-tight ' + (isExpired ? "text-purple-500" : isCritical ? "text-red-600" : item.onHand < item.threshold * 1.5 ? "text-amber-600" : "text-emerald-600")}>
+                                {item.onHand}
+                                <span className="text-[14px] font-normal text-zinc-400"> / {item.threshold}</span>
+                              </div>
+                              <div className="text-[12px] text-zinc-500 mt-0.5">{item.unit}</div>
+                            </div>
+                            {/* Progress bar */}
+                            <div className="w-32 h-2.5 rounded-full bg-zinc-100 overflow-hidden">
+                              <div className={'h-full rounded-full transition-all duration-500 ' + (isExpired ? "bg-purple-400" : isCritical ? "bg-red-500" : item.onHand < item.threshold * 1.5 ? "bg-amber-400" : "bg-emerald-500")} style={{ width: pct + '%' }} />
+                            </div>
+                            {/* Actions */}
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => setEditingInvItem(item)} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300 transition-all shadow-sm">Edit</button>
+                              <button onClick={async () => { if (confirm('Delete "' + item.name + '"?')) { await db.deleteInventoryItem(item.id, item.group); onUpdateInventory(inventory.filter(i => i.id !== item.id)); onAddAuditLog?.("INVENTORY_DELETED", item.name + ' removed from ' + item.group); } }} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 hover:border-red-300 transition-all shadow-sm">Del</button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
                   })}
-                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).length === 0 && <div className="text-center py-10 text-[14px] text-zinc-400">{invSearch ? "No items match your search." : "No items in this group yet."}</div>}
+                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).length === 0 && <div className="text-center py-12 text-[15px] text-zinc-400">{invSearch ? "No items match your search." : "No items in this group yet."}</div>}
                   </div>
                 </div>
               </div>
+
+
 
               {/* Pending Material Requests */}
               {(bakerReqs.filter(r => r.status === "pending-approval" || r.status === "approved").length > 0 ||
@@ -936,12 +1173,12 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                           });
                           onUpdateInventory(newInv);
                           await db.upsertInventory(newInv).catch(console.error);
-                          const tx: StockTransaction = { id: `TX-${Date.now()}`, type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: `Released to Baker`, timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "baker", group: "ingredients" };
+                          const tx: StockTransaction = { id: 'TX-' + Date.now(), type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: "Released to Baker", timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "baker", group: "ingredients" };
                           setTransactions(prev => [...prev, tx]);
                           await db.insertStockTransaction(tx).catch(console.error);
                         }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700">Release</button>
                       )}
-                      {req.status === "released" && <span className="text-[11px] text-emerald-600 font-medium">✓ Released</span>}
+                      {req.status === "released" && <span className="text-[11px] text-emerald-600 font-medium">{"✓"} Released</span>}
                     </div>
                   </div>
                 </div>
@@ -981,12 +1218,12 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                           });
                           onUpdateInventory(newInv);
                           await db.upsertInventory(newInv).catch(console.error);
-                          const tx: StockTransaction = { id: `TX-${Date.now()}`, type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: `Released to Deco`, timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: "decoration-supplies" };
+                          const tx: StockTransaction = { id: 'TX-' + Date.now(), type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: "Released to Deco", timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: "decoration-supplies" };
                           setTransactions(prev => [...prev, tx]);
                           await db.insertStockTransaction(tx).catch(console.error);
                         }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700">Release</button>
                       )}
-                      {req.status === "released" && <span className="text-[11px] text-emerald-600 font-medium">✓ Released</span>}
+                      {req.status === "released" && <span className="text-[11px] text-emerald-600 font-medium">{"✓"} Released</span>}
                     </div>
                   </div>
                 </div>
@@ -996,7 +1233,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         )}
         </>)}
 
-        {/* Receive Modal */}
+{/* Receive Modal */}
         {showReceive && <ReceiveModal inventory={inventory} onUpdateInventory={onUpdateInventory} onTransaction={async (tx) => { setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); onAddAuditLog?.("STOCK_RECEIVED", `${tx.itemName} x${tx.qty} ${tx.unit} — ${tx.reference}`); }} onClose={() => setShowReceive(false)} />}
         {editingInvItem && <EditInventoryModal item={editingInvItem} onSave={async (updated) => { try { const exists = inventory.some(i => i.id === updated.id); if (exists) { const old = inventory.find(i => i.id === updated.id); onUpdateInventory(inventory.map(i => i.id === updated.id ? updated : i)); onAddAuditLog?.("INVENTORY_EDITED", `${updated.name} (${updated.sku}) updated`); if (old && old.onHand !== updated.onHand) { const diff = updated.onHand - old.onHand; const tx: StockTransaction = { id: `STX-${Date.now()}`, type: diff > 0 ? "in" : "out", itemName: updated.name, itemId: updated.id, qty: Math.abs(diff), unit: updated.unit, reference: "Manual adjustment", timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), group: updated.group }; setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); } } else { onUpdateInventory([...inventory, updated]); onAddAuditLog?.("INVENTORY_ADDED", `${updated.name} (${updated.sku}) added to ${updated.group}`); } } catch (err) { console.error("Save inventory failed:", err); alert("Failed to save item"); } setEditingInvItem(null); }} onClose={() => setEditingInvItem(null)} />}
 
@@ -1053,10 +1290,13 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             {auditLogs.length === 0 ? (
               <p className="text-[13px] text-zinc-500 text-center py-8">No audit logs yet. Activity will appear here as you use the system.</p>
             ) : auditLogs.map(log => (
-              <div key={log.id} className="flex items-start gap-3 border-b border-zinc-100 pb-3 last:border-0">
-                <div className="mt-0.5 text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{log.timestamp}</div>
-                <div className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${log.role === "admin" ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700"}`}>{log.role}</div>
-                <div className="flex-1"><div className="text-[13px] font-medium text-zinc-900">{log.action.replace("_", " ")}</div><div className="text-[12px] text-zinc-600">{log.details} — {log.userName}</div></div>
+              <div key={log.id} className="flex items-start gap-3 border-b border-zinc-700/60 pb-3 last:border-0 cursor-pointer hover:bg-zinc-800/40 rounded-lg px-2 -mx-2 transition-colors" onClick={() => setSelectedLog(log)}>
+                <div className="mt-0.5 text-[11px] text-zinc-400 font-mono whitespace-nowrap" style={{ fontFamily: "Fragment Mono, monospace" }}>{log.timestamp}</div>
+                <div className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${log.role === "admin" ? "bg-zinc-600 text-zinc-100" : "bg-zinc-700 text-zinc-300"}`}>{log.role}</div>
+                <div className="flex-1">
+                  <div className="text-[13px] font-medium text-zinc-100">{log.action.replace(/_/g, " ")}</div>
+                  <div className="text-[12px] text-zinc-400">{log.details} — {log.userName}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -3196,7 +3436,7 @@ dosItems.forEach(d => rows.push([d.id, d.product, String(d.qty), d.priority, d.s
               <button onClick={() => setSelectedLog(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button>
             </div>
             <div className="mt-5 space-y-3">
-              <div className="flex items-center justify-between rounded-xl bg-zinc-50 px-4 py-2.5"><span className="text-[12px] text-zinc-500">User</span><span className="text-[13px] font-medium text-zinc-900">{selectedLog.user}</span></div>
+              <div className="flex items-center justify-between rounded-xl bg-zinc-50 px-4 py-2.5"><span className="text-[12px] text-zinc-500">User</span><span className="text-[13px] font-medium text-zinc-900">{selectedLog.userName}</span></div>
               <div className="flex items-center justify-between rounded-xl bg-zinc-50 px-4 py-2.5"><span className="text-[12px] text-zinc-500">Role</span><span className="text-[13px] font-medium capitalize text-zinc-900">{selectedLog.role}</span></div>
               <div className="flex items-center justify-between rounded-xl bg-zinc-50 px-4 py-2.5"><span className="text-[12px] text-zinc-500">Time</span><span className="text-[13px] font-medium text-zinc-900" style={{ fontFamily: "Fragment Mono, monospace" }}>{selectedLog.timestamp}</span></div>
               <div className="rounded-xl bg-zinc-50 px-4 py-3"><div className="text-[12px] text-zinc-500 mb-1">Details</div><div className="text-[13px] leading-relaxed text-zinc-900">{selectedLog.details}</div></div>
@@ -3232,6 +3472,7 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
   const [recipeName, setRecipeName] = useState(isNew ? "" : product);
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(isNew ? [] : (existing?.ingredients || []));
   const [notes, setNotes] = useState(isNew ? "" : (existing?.notes || ""));
+  const [group, setGroup] = useState<string>(existing?.group || "");
   const [showPicker, setShowPicker] = useState(false);
   const [ingredientSearch, setIngredientSearch] = useState("");
 
@@ -3271,6 +3512,13 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
         <div className="mb-4">
           <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Recipe Name</label>
           <input value={recipeName} onChange={e => setRecipeName(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. Pandesal" />
+        </div>
+
+        <div className="mb-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={group === "filling"} onChange={e => setGroup(e.target.checked ? "filling" : "")} className="rounded border-zinc-300 w-4 h-4" />
+            <span className="text-[13px] font-medium text-zinc-700">Filling Recipe</span>
+          </label>
         </div>
 
         <div className="mb-3 relative">
@@ -3331,7 +3579,7 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
 
         <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
           <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-          <button onClick={() => onSave({ id: existing?.id, productId: isNew ? recipeName : product, productName: recipeName, ingredients, notes, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [] })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
+          <button onClick={() => onSave({ id: existing?.id, productId: isNew ? recipeName : product, productName: recipeName, ingredients, notes, group, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [] })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
         </div>
       </div>
     </div>
@@ -3364,18 +3612,19 @@ function CompactTaskCard({ task, color }: { task: ProductionTask; color: string 
 }
 
 function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onClose }: {
-  inventory: InventoryItem[]; recipes: ProductRecipe[]; categories: string[]; onSave: (name: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedProduct: string[], category: string) => void; onClose: () => void;
+  inventory: InventoryItem[]; recipes: ProductRecipe[]; categories: string[]; onSave: (name: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedIngredients: string[], category: string) => void; onClose: () => void;
 }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [packagingItems, setPackagingItems] = useState<RecipeIngredient[]>([]);
   const [decorationItems, setDecorationItems] = useState<RecipeIngredient[]>([]);
   const [recipeSearch, setRecipeSearch] = useState("");
+  const [showRecipePicker, setShowRecipePicker] = useState(false);
   const [showPackagingPicker, setShowPackagingPicker] = useState(false);
   const [showDecorationPicker, setShowDecorationPicker] = useState(false);
   const [packagingSearch, setPackagingSearch] = useState("");
   const [decorationSearch, setDecorationSearch] = useState("");
-  const [linkedProduct, setLinkedProduct] = useState<string[]>([]);
+  const [linkedIngredients, setLinkedIngredients] = useState<string[]>([]);
 
   function addPackaging(inv: InventoryItem) {
     if (packagingItems.some(i => i.inventoryId === inv.id)) return;
@@ -3392,7 +3641,7 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
   const availableDecoration = inventory.filter(i => i.group === "decoration-supplies" && !decorationItems.some(ing => ing.inventoryId === i.id) && (i.name.toLowerCase().includes(decorationSearch.toLowerCase()) || decorationSearch === ""));
 
   function toggleRecipe(r: string) {
-    setLinkedProduct(prev => prev.includes(r) ? prev.filter(p => p !== r) : [...prev, r]);
+    setLinkedIngredients(prev => prev.includes(r) ? prev.filter(p => p !== r) : [...prev, r]);
   }
 
   const filteredRecipes = recipes.filter(r => r.productName.toLowerCase().includes(recipeSearch.toLowerCase()) || recipeSearch === "");
@@ -3400,7 +3649,7 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(name.trim(), packagingItems, decorationItems, linkedProduct, category);
+    onSave(name.trim(), packagingItems, decorationItems, linkedIngredients, category);
   }
 
   return (
@@ -3425,10 +3674,10 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
           </div>
 
           <div className="mb-4">
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Link Recipes</label>
-            {linkedProduct.length > 0 && (
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Link Recipe</label>
+            {linkedIngredients.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
-                {linkedProduct.map(r => (
+                {linkedIngredients.map(r => (
                   <span key={r} className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-700">
                     {r}
                     <button type="button" onClick={() => toggleRecipe(r)} className="text-zinc-400 hover:text-red-500 ml-0.5">×</button>
@@ -3437,16 +3686,16 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
               </div>
             )}
             <div className="relative">
-              <input value={recipeSearch} onChange={e => setRecipeSearch(e.target.value)} placeholder="Search recipes..." className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-900 transition-colors" />
-              {recipeSearch && (
+              <input value={recipeSearch} onChange={e => setRecipeSearch(e.target.value)} onFocus={() => setShowRecipePicker(true)} placeholder="Search recipes..." className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-900 transition-colors" />
+              {showRecipePicker && recipeSearch && (
                 <>
-                  <div className="fixed inset-0 z-0" onClick={() => setRecipeSearch("")} />
+                  <div className="fixed inset-0 z-0" onClick={() => { setShowRecipePicker(false); setRecipeSearch(""); }} />
                   <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-40 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
                     {filteredRecipes.length === 0 ? (
                       <p className="px-3 py-2 text-[12px] text-zinc-400">No recipes found.</p>
                     ) : filteredRecipes.map(r => (
                       <label key={r.productName} className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 cursor-pointer text-[12px]">
-                        <input type="checkbox" checked={linkedProduct.includes(r.productName)} onChange={() => { toggleRecipe(r.productName); setRecipeSearch(""); }} className="rounded border-zinc-300" />
+                        <input type="checkbox" checked={linkedIngredients.includes(r.productName)} onChange={() => { toggleRecipe(r.productName); setRecipeSearch(""); }} className="rounded border-zinc-300" />
                         <span className="text-zinc-900">{r.productName}</span>
                         <span className="text-zinc-400 ml-auto">{r.ingredients.length} ingredients</span>
                       </label>

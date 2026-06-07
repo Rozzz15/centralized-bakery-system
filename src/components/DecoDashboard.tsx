@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, Fragment } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog } from "../types";
 import * as db from "../lib/db";
 
@@ -117,7 +117,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
       const dos = dosForDeco.find(d => d.id === dosId);
       if (!dos) return;
       const directRecipe = recipes.find(r => r.productName === dos.product);
-      const linkedRecipes = (directRecipe?.linkedProduct ?? [])
+      const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
         .map(name => recipes.find(r => r.productName === name))
         .filter(Boolean)
         .filter(r => r!.productName !== dos.product);
@@ -190,8 +190,10 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [expandedHistoryIds, setExpandedHistoryIds] = useState<Set<string>>(new Set());
 
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+
   const [summaryModal, setSummaryModal] = useState<"products" | "ingredients" | "packaging" | "deco" | null>(null);
+  const [preMixInDashboard, setPreMixInDashboard] = useState(false);
+  const [viewingDOSRecipe, setViewingDOSRecipe] = useState<{ recipe: ProductRecipe; totalQty: number } | null>(null);
   const [selectedRecipeModal, setSelectedRecipeModal] = useState<{ recipe: ProductRecipe; dosProduct: string; dosId: string; maxQty: number } | null>(null);
   const [selectedQty, setSelectedQty] = useState(1);
   const [selectedRecipes, setSelectedRecipes] = useState<Set<string>>(new Set());
@@ -463,12 +465,12 @@ defer(() => onUpdateInventory(prevInv => {
 
   const getRecipesForProduct = (product: string) => {
     const direct = recipes.filter(r => r.productName === product);
-    // Recipes that explicitly link TO this product (via their linkedProduct field)
-    const linked = recipes.filter(r => (r.linkedProduct ?? []).includes(product) && r.productName !== product);
-    // Recipes that are linked FROM this product's own linkedProduct field
+    // Recipes that explicitly link TO this product (via their linkedIngredients field)
+    const linked = recipes.filter(r => (r.linkedIngredients ?? []).includes(product) && r.productName !== product);
+    // Recipes that are linked FROM this product's own linkedIngredients field
     const productRecipe = recipes.find(r => r.productName === product);
     const fromLinks = productRecipe
-      ? ((productRecipe.linkedProduct ?? [])
+      ? ((productRecipe.linkedIngredients ?? [])
           .map(name => recipes.find(r => r.productName === name))
           .filter((r): r is ProductRecipe => r !== undefined && r.productName !== product))
       : [];
@@ -483,7 +485,7 @@ defer(() => onUpdateInventory(prevInv => {
 
   const totalNeeded = dosForDeco.reduce((s, d) => {
     const directRecipe = recipes.find(r => r.productName === d.product);
-    const linkedRecipes = (directRecipe?.linkedProduct ?? [])
+    const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
       .map(name => recipes.find(r => r.productName === name))
       .filter(Boolean)
       .filter(r => r!.productName !== d.product);
@@ -494,7 +496,6 @@ defer(() => onUpdateInventory(prevInv => {
 
   const workflowSteps = [
     { id: "dashboard", label: "DOS Received" },
-    { id: "pre-mix", label: "Pre-Mix" },
     { id: "advanced-premix", label: "Advanced Premix" },
     { id: "deco-queue", label: "Decoration Queue" },
     { id: "freezer", label: "Finished Products" },
@@ -506,7 +507,7 @@ defer(() => onUpdateInventory(prevInv => {
   if (activeTab === "dashboard") {
     const totalPkg = dosForDeco.reduce((s, d) => {
       const directRecipe = recipes.find(r => r.productName === d.product);
-      const linkedRecipes = (directRecipe?.linkedProduct ?? [])
+      const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
         .map(name => recipes.find(r => r.productName === name))
         .filter(Boolean)
         .filter(r => r!.productName !== d.product);
@@ -517,7 +518,7 @@ defer(() => onUpdateInventory(prevInv => {
     }, 0);
     const totalDecoItems = dosForDeco.reduce((s, d) => {
       const directRecipe = recipes.find(r => r.productName === d.product);
-      const linkedRecipes = (directRecipe?.linkedProduct ?? [])
+      const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
         .map(name => recipes.find(r => r.productName === name))
         .filter(Boolean)
         .filter(r => r!.productName !== d.product);
@@ -529,7 +530,339 @@ defer(() => onUpdateInventory(prevInv => {
 
 return (
       <div className="max-w-5xl mx-auto space-y-6">
-        <div className="rounded-2xl bg-zinc-900 p-6 shadow-sm">
+        {/* Pre-Mix Sub-View inside Dashboard */}
+        {preMixInDashboard ? (
+          <div className="space-y-6">
+            <div className="flex items-center gap-3">
+              <button onClick={() => setPreMixInDashboard(false)} className="flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">
+                <span className="text-[14px]">←</span> Back to DOS Received
+              </button>
+            </div>
+
+            <div>
+              <h1 className="text-[28px] font-semibold tracking-tight">Production Preparation</h1>
+              <p className="mt-1 text-[13px] text-zinc-500">Tap a recipe card to view and adjust ingredients, then save to freezer.</p>
+            </div>
+
+            {dosForDeco.length === 0 ? (
+              <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No DOS items assigned for today.</p></div>
+            ) : (
+              <div className="space-y-6">
+                {dosForDeco.map(d => {
+                  const directRecipe = recipes.find(r => r.productName === d.product);
+                  const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
+                    .map(name => recipes.find(r => r.productName === name))
+                    .filter(Boolean)
+                    .filter(r => r!.productName !== d.product);
+                  const allRecipes = linkedRecipes;
+                  if (allRecipes.length === 0) return null;
+                  const remaining = (productQty[d.id] ?? d.qty);
+                  if (remaining <= 0) return null;
+
+                  return (
+                    <div key={d.id}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                          <button
+                            onClick={() => toggleProduct(d.id, allRecipes)}
+                            className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all shrink-0 ${
+                              selectedProducts.has(d.id)
+                                ? "border-emerald-500 bg-emerald-500 text-white"
+                                : "border-zinc-300 bg-white text-transparent hover:border-zinc-400"
+                            }`}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                          </button>
+                          <h2 className="text-[14px] font-semibold text-zinc-700">{d.product}</h2>
+                        </div>
+                          {selectedProducts.has(d.id) ? (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => setSaveAmounts(prev => ({ ...prev, [d.id]: Math.max(1, (prev[d.id] ?? remaining) - 1) }))}
+                                className="w-6 h-6 rounded border border-zinc-200 bg-white text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
+                              >−</button>
+                              <input
+                                type="number"
+                                min={1}
+                                max={remaining}
+                                value={saveAmounts[d.id] ?? remaining}
+                                onChange={e => {
+                                  const raw = e.target.value;
+                                  if (raw === "") {
+                                    setSaveAmounts(prev => ({ ...prev, [d.id]: 1 }));
+                                    return;
+                                  }
+                                  const v = parseInt(raw, 10);
+                                  if (isNaN(v)) return;
+                                  setSaveAmounts(prev => ({ ...prev, [d.id]: Math.max(1, Math.min(remaining, v)) }));
+                                }}
+                                className="w-14 text-center font-mono text-[13px] font-semibold text-zinc-900 rounded border border-zinc-200 bg-white px-1 py-0.5 outline-none focus:border-emerald-500"
+                              />
+                              <button
+                                onClick={() => setSaveAmounts(prev => ({ ...prev, [d.id]: Math.min(remaining, (prev[d.id] ?? remaining) + 1) }))}
+                                className="w-6 h-6 rounded border border-zinc-200 bg-white text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
+                              >+</button>
+                              <span className="text-[11px] text-zinc-400 font-mono">/ {d.qty}</span>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-zinc-400 font-mono">×{remaining} / {d.qty} · {allRecipes.length} recipe{allRecipes.length > 1 ? "s" : ""}</span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {allRecipes.map(r => {
+                          const isPrepared = preMixPrepared.has(`${d.id}:::${r!.productName.toLowerCase()}`);
+                          const ingCount = r!.ingredients.length;
+                          const pkgCount = (r!.packagingMaterials ?? []).length;
+                          const decoCount = (r!.decorationSupplies ?? []).length;
+
+                          return (
+                            <div
+                              key={r!.productName}
+                              className={`rounded-2xl border p-4 transition-all ${
+                                isPrepared
+                                  ? "border-emerald-200 bg-emerald-50/50"
+                                  : "border-zinc-200 bg-white"
+                              }`}
+                            >
+                              <button
+                                onClick={() => {
+                                  setSelectedRecipeModal({ recipe: r!, dosProduct: d.product, dosId: d.id, maxQty: d.qty });
+                                  const initialDraft: Record<string, number> = {};
+                                  r!.ingredients.forEach(ing => { initialDraft[ing.name] = ing.qtyPerBatch; });
+                                  setRecipeModalDraft(initialDraft);
+                                }}
+                                className="text-left w-full"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <h3 className="text-[14px] font-semibold text-zinc-900 truncate">{r!.productName}</h3>
+                                  {isPrepared && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-medium text-emerald-700">Done</span>}
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                  {ingCount > 0 && <span className="text-[10px] bg-amber-50 border border-amber-200 text-amber-700 rounded px-1.5 py-0.5">{ingCount} ingredients</span>}
+                                  {pkgCount > 0 && <span className="text-[10px] bg-blue-50 border border-blue-200 text-blue-700 rounded px-1.5 py-0.5">{pkgCount} packaging</span>}
+                                  {decoCount > 0 && <span className="text-[10px] bg-purple-50 border border-purple-200 text-purple-700 rounded px-1.5 py-0.5">{decoCount} deco</span>}
+                                </div>
+                                <div className="text-[10px] text-zinc-400 mt-3">Tap to view recipe →</div>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Freezer Action Bar for Pre-Mix in Dashboard */}
+            {selectedRecipes.size > 0 && (
+              <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-zinc-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+                <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+                  <span className="text-[13px] font-medium text-zinc-700 shrink-0">{selectedRecipes.size} recipe{selectedRecipes.size > 1 ? "s" : ""} selected</span>
+                  <div className="flex-1" />
+                  <button
+                    onClick={() => {
+                      const batchRef = `DEC-${Date.now()}`;
+                      const allItems: FreezerItem[] = [];
+                      const newQty = { ...productQty };
+                      let workingInv: InventoryItem[] = inventory;
+                      const allDeductions: string[] = [];
+                      const allSkipped: string[] = [];
+                      selectedProducts.forEach(dosId => {
+                        const dos = dosForDeco.find(dd => dd.id === dosId);
+                        if (!dos) return;
+                        const dosQty = saveAmounts[dos.id] ?? (productQty[dos.id] ?? dos.qty);
+                        const existingItem = freezerItems.find(fi => fi.productName === dos.product && fi.producedBy === "deco" && fi.notes?.startsWith("Production Recipe"));
+                        if (existingItem) {
+                          const updatedItem = { ...existingItem, qty: existingItem.qty + dosQty };
+                          onUpdateFreezer?.(prev => prev.map(fi => fi.id === updatedItem.id ? updatedItem : fi));
+                          db.upsertFreezerItems([updatedItem]).catch(err => console.error("Freezer update failed:", err));
+                        } else {
+                          allItems.push({
+                            id: `FRZ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                            productName: dos.product,
+                            batchRef,
+                            qty: dosQty,
+                            unit: "pcs",
+                            status: "stored" as const,
+                            producedBy: "deco",
+                            dateProduced: new Date().toISOString(),
+                            notes: `Production Recipe`,
+                          });
+                        }
+                        newQty[dos.id] = Math.max(0, (productQty[dos.id] ?? dos.qty) - dosQty);
+                        const linkedRecipes = (recipes.find(r => r.productName === dos.product)?.linkedIngredients ?? [])
+                          .map(name => recipes.find(r => r.productName === name))
+                          .filter(Boolean);
+                        linkedRecipes.forEach(r => {
+                          const preparedKey = `${dos.id}:::${r!.productName.toLowerCase()}`;
+                          setPreMixPrepared(prev => new Set(prev).add(preparedKey));
+                        });
+                        const productRecipes = getRecipesForProduct(dos.product);
+                        const findInventoryMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
+                          if (ingredient.inventoryId) {
+                            const direct = workingInv.find(i => i.id === ingredient.inventoryId);
+                            if (direct) return direct;
+                          }
+                          const ingLower = ingredient.name.toLowerCase().trim();
+                          let match = workingInv.find(i => i.name.toLowerCase().trim() === ingLower);
+                          if (match) return match;
+                          match = workingInv.find(i => i.name.toLowerCase().includes(ingLower) || ingLower.includes(i.name.toLowerCase()));
+                          if (match) return match;
+                          if (ingredient.sku) match = workingInv.find(i => i.sku === ingredient.sku);
+                          return match;
+                        };
+                        productRecipes.forEach(recipe => {
+                          (recipe.ingredients ?? []).forEach(ing => {
+                            const match = findInventoryMatch(ing);
+                            if (!match) {
+                              const invNames = workingInv.map(i => i.name).slice(0, 8).join(", ");
+                              allSkipped.push(`${ing.name} (no inventory link — available: ${invNames}${workingInv.length > 8 ? "..." : ""})`);
+                              return;
+                            }
+                            const idx = workingInv.findIndex(i => i.id === match.id);
+                            const needed = ing.qtyPerBatch * dosQty;
+                            const before = workingInv[idx].onHand;
+                            workingInv = workingInv.map((it, i) => i === idx ? { ...it, onHand: Math.max(0, before - needed) } : it);
+                            const actualDeducted = before - workingInv[idx].onHand;
+                            allDeductions.push(`Ing: ${ing.name} -${actualDeducted}${ing.unit}`);
+                          });
+                        });
+                      });
+                      setProductQty(newQty);
+                      setSaveAmounts({});
+                      if (onUpdateFreezer && allItems.length > 0) {
+                        onUpdateFreezer(prev => [...prev, ...allItems]);
+                        db.upsertFreezerItems(allItems).catch(err => {
+                          console.error("Freezer save failed:", err);
+                          onAddAuditLog?.("FREEZER_ERROR", `Failed to save ${allItems.length} items: ${err.message}`);
+                        });
+                      }
+                      if (allDeductions.length > 0 || allSkipped.length > 0) {
+                        onUpdateInventory?.(workingInv);
+                        const changedItems = workingInv.filter(item => {
+                          const orig = inventory.find(o => o.id === item.id);
+                          return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
+                        });
+                        if (changedItems.length > 0) db.upsertInventory(changedItems).catch(err => console.error("Inventory deduction save failed:", err));
+                        if (allDeductions.length > 0) onAddAuditLog?.("INGREDIENTS_DEDUCTED", `Put in Production Recipe: ${allDeductions.join(", ")}`);
+                        if (allSkipped.length > 0) onAddAuditLog?.("DEDUCTION_SKIPPED", `Put in Production Recipe: ${allSkipped.join(", ")}`);
+                      }
+                      onAddAuditLog?.("FREEZER_ADDED", `Items saved to Production Recipe freezer`);
+                      setSelectedRecipes(new Set());
+                      setSelectedProducts(new Set());
+                    }}
+                    className="rounded-xl bg-emerald-600 px-4 py-2.5 text-[12px] font-medium text-white hover:bg-emerald-700 transition-all"
+                  >Put in Production Recipe</button>
+                  <button
+                    onClick={() => {
+                      const allNewItems: InventoryItem[] = [];
+                      const allUpdatedItems: InventoryItem[] = [];
+                      const newQty = { ...productQty };
+                      let workingInv: InventoryItem[] = inventory;
+                      const allDeductions: string[] = [];
+                      const allSkipped: string[] = [];
+                      selectedProducts.forEach(dosId => {
+                        const dos = dosForDeco.find(dd => dd.id === dosId);
+                        if (!dos) return;
+                        const dosQty = saveAmounts[dos.id] ?? (productQty[dos.id] ?? dos.qty);
+                        const existingItem = workingInv.find(i => i.name === dos.product && i.accessRoles?.includes("deco"));
+                        if (existingItem) {
+                          const updatedItem = { ...existingItem, onHand: existingItem.onHand + dosQty, source: "production-prep" as const };
+                          const idx = workingInv.indexOf(existingItem);
+                          workingInv = [...workingInv.slice(0, idx), updatedItem, ...workingInv.slice(idx + 1)];
+                          allUpdatedItems.push(updatedItem);
+                        } else {
+                          const newItem: InventoryItem = {
+                            id: `INV-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                            name: dos.product,
+                            sku: `DECO-${dos.product.substring(0, 8).toUpperCase()}-${Date.now()}`,
+                            unit: "pcs",
+                            onHand: dosQty,
+                            threshold: 0,
+                            cost: 0,
+                            supplier: "",
+                            lastIn: new Date().toISOString(),
+                            category: "dry" as const,
+                            group: "ingredients" as const,
+                            accessRoles: ["deco"] as Role[],
+                            source: "production-prep" as const,
+                          };
+                          workingInv = [...workingInv, newItem];
+                          allNewItems.push(newItem);
+                        }
+                        newQty[dos.id] = Math.max(0, (productQty[dos.id] ?? dos.qty) - dosQty);
+                        const linkedRecipes = (recipes.find(r => r.productName === dos.product)?.linkedIngredients ?? [])
+                          .map(name => recipes.find(r => r.productName === name))
+                          .filter(Boolean);
+                        linkedRecipes.forEach(r => {
+                          const preparedKey = `${dos.id}:::${r!.productName.toLowerCase()}`;
+                          setPreMixPrepared(prev => new Set(prev).add(preparedKey));
+                        });
+                        const productRecipes = getRecipesForProduct(dos.product);
+                        const findInventoryMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
+                          if (ingredient.inventoryId) {
+                            const direct = workingInv.find(i => i.id === ingredient.inventoryId);
+                            if (direct) return direct;
+                          }
+                          const ingLower = ingredient.name.toLowerCase().trim();
+                          let match = workingInv.find(i => i.name.toLowerCase().trim() === ingLower);
+                          if (match) return match;
+                          match = workingInv.find(i => i.name.toLowerCase().includes(ingLower) || ingLower.includes(i.name.toLowerCase()));
+                          if (match) return match;
+                          if (ingredient.sku) match = workingInv.find(i => i.sku === ingredient.sku);
+                          return match;
+                        };
+                        productRecipes.forEach(recipe => {
+                          (recipe.ingredients ?? []).forEach(ing => {
+                            const match = findInventoryMatch(ing);
+                            if (!match) {
+                              const invNames = workingInv.map(i => i.name).slice(0, 8).join(", ");
+                              allSkipped.push(`${ing.name} (no inventory link — available: ${invNames}${workingInv.length > 8 ? "..." : ""})`);
+                              return;
+                            }
+                            const idx = workingInv.findIndex(i => i.id === match.id);
+                            const needed = ing.qtyPerBatch * dosQty;
+                            const before = workingInv[idx].onHand;
+                            workingInv = workingInv.map((it, i) => i === idx ? { ...it, onHand: Math.max(0, before - needed) } : it);
+                            const actualDeducted = before - workingInv[idx].onHand;
+                            allDeductions.push(`Ing: ${ing.name} -${actualDeducted}${ing.unit}`);
+                          });
+                        });
+                      });
+                      setProductQty(newQty);
+                      setSaveAmounts({});
+                      onUpdateInventory?.(workingInv);
+                      const persistIds = new Set([...allUpdatedItems.map(i => i.id), ...allNewItems.map(i => i.id)]);
+                      const changedByDeduction = workingInv.filter(item => {
+                        if (persistIds.has(item.id)) return false;
+                        const orig = inventory.find(o => o.id === item.id);
+                        return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
+                      });
+                      const allToPersist = [...allUpdatedItems, ...allNewItems, ...changedByDeduction];
+                      if (allToPersist.length > 0) db.upsertInventory(allToPersist).catch(err => console.error("Inventory save failed:", err));
+                      if (allDeductions.length > 0) onAddAuditLog?.("INGREDIENTS_DEDUCTED", `Put in My Inventory: ${allDeductions.join(", ")}`);
+                      if (allSkipped.length > 0) onAddAuditLog?.("DEDUCTION_SKIPPED", `Put in My Inventory: ${allSkipped.join(", ")}`);
+                      onAddAuditLog?.("INVENTORY_ADDED", `Items added to My Inventory`);
+                      setSelectedRecipes(new Set());
+                      setSelectedProducts(new Set());
+                    }}
+                    className="rounded-xl bg-blue-600 px-4 py-2.5 text-[12px] font-medium text-white hover:bg-blue-700 transition-all"
+                  >Put in My Inventory</button>
+                </div>
+              </div>
+            )}
+
+            {/* Workflow Nav inside Pre-Mix */}
+            <div className="flex items-center justify-between pt-4 border-t border-zinc-200">
+              <div className="text-[12px] text-zinc-400">Step 2 of 4</div>
+              <button onClick={() => setActiveTab("advanced-premix")} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
+                Next: Advanced Premix →
+              </button>
+            </div>
+          </div>
+        ) : (<>
+          <div className="rounded-2xl bg-zinc-900 p-6 shadow-sm">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-[28px] font-semibold tracking-tight text-white">DOS Received</h1>
@@ -570,118 +903,100 @@ return (
 
         {dosForDeco.length === 0 ? (
           <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center"><p className="text-[14px] text-zinc-400">No DOS items assigned for today.</p></div>
-        ) : (
+        ) : (() => {
+          const recipeMap = new Map<string, { recipe: ProductRecipe; totalQty: number }>();
+          dosForDeco.forEach(d => {
+            const directRecipe = recipes.find(r => r.productName === d.product);
+            const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
+              .map(name => recipes.find(r => r.productName === name))
+              .filter(Boolean)
+              .filter(r => r!.productName !== d.product);
+            linkedRecipes.forEach(r => {
+              const key = r!.productName.toLowerCase();
+              if (recipeMap.has(key)) {
+                recipeMap.get(key)!.totalQty += d.qty;
+              } else {
+                recipeMap.set(key, { recipe: r!, totalQty: d.qty });
+              }
+            });
+          });
+          const mergedRecipes = [...recipeMap.values()];
+          if (mergedRecipes.length === 0) {
+            return <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center"><p className="text-[14px] text-zinc-400">No recipes linked to DOS items.</p></div>;
+          }
+          return (
           <div className="overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-zinc-700 bg-zinc-800 text-left text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
-                  <th className="px-2 py-2.5">Product</th>
-                  <th className="px-2 py-2.5">Priority</th>
-                  <th className="px-2 py-2.5 text-right">Total</th>
-                  <th className="w-14 px-3 py-2.5 text-right">Status</th>
+                  <th className="px-3 py-2.5">Recipe</th>
+                  <th className="px-3 py-2.5 text-right">Total Qty</th>
+                  <th className="px-3 py-2.5 text-right">Ingredients</th>
                 </tr>
               </thead>
               <tbody>
-                {dosForDeco.map(d => {
-                  const directRecipe = recipes.find(r => r.productName === d.product);
-                  const linkedRecipes = (directRecipe?.linkedProduct ?? [])
-                    .map(name => recipes.find(r => r.productName === name))
-                    .filter(Boolean)
-                    .filter(r => r!.productName !== d.product);
-                  const allRecipes = linkedRecipes;
-                  const hasDetails = allRecipes.length > 0;
-                  const isExpanded = expandedRows.has(d.id);
-                  const pColor = d.priority === "HIGH" ? "bg-red-900/60 text-red-300" : d.priority === "MEDIUM" ? "bg-amber-900/60 text-amber-300" : "bg-zinc-700 text-zinc-400";
-                  const sDot = d.status === "completed" ? "bg-emerald-500" : d.status === "in-progress" ? "bg-amber-500" : "bg-zinc-500";
-                  return (
-                    <Fragment key={d.id}>
-                      <tr className="border-b border-zinc-800 text-[13px] hover:bg-zinc-800/50 transition-colors">
-                        <td className="px-2 py-2.5">
-                          {hasDetails ? (
-                            <button onClick={() => setExpandedRows(prev => { const n = new Set(prev); if (n.has(d.id)) n.delete(d.id); else n.add(d.id); return n; })} className="inline-flex items-center gap-1.5 font-medium text-zinc-100 hover:text-white transition-colors text-left w-full cursor-pointer">
-                              <span className={`text-[10px] transition-transform ${isExpanded ? "rotate-90" : ""} text-zinc-500`}>▸</span>
-                              {d.product}
-                            </button>
-                          ) : (
-                            <span className="font-medium text-zinc-100">{d.product}</span>
-                          )}
-                          {newDOSIds?.has(d.id) && <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-900/60 px-1.5 py-0.5 text-[9px] font-bold text-blue-300 uppercase tracking-wider">New</span>}
-                        </td>
-                        <td className="px-2 py-2.5"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${pColor}`}>{d.priority}</span></td>
-                        <td className="px-2 py-2.5 text-right font-mono text-zinc-300">{d.qty}</td>
-                        <td className="px-3 py-2.5 text-right"><span className={`inline-flex items-center gap-1.5 ${d.status === "completed" ? "text-emerald-400" : d.status === "in-progress" ? "text-amber-400" : "text-zinc-400"}`}><span className={`h-1.5 w-1.5 rounded-full ${sDot}`} />{d.status === "in-progress" ? "In Progress" : d.status === "completed" ? "Completed" : "Pending"}</span></td>
-                      </tr>
-                      {isExpanded && hasDetails && (
-                        <tr key={`${d.id}-detail`}>
-                          <td colSpan={4} className="px-3 pb-3">
-                            <div className="bg-zinc-800 rounded-xl p-3 space-y-2 mt-1">
-                              {linkedRecipes.length > 0 && (
-                                <div>
-                                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Linked Recipes</div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {linkedRecipes.map(r => (
-                                      <span key={r!.productName} className="rounded-lg bg-rose-900/50 border border-rose-700 px-2 py-1 text-[11px] text-rose-200">{r!.productName}</span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {(() => {
-                                const pkgMap = new Map<string, { name: string; qty: number; unit: string }>();
-                                const decoMap = new Map<string, { name: string; qty: number; unit: string }>();
-                                allRecipes.forEach(r => {
-                                  (r!.packagingMaterials ?? []).forEach(p => {
-                                    const pk = p.name.toLowerCase();
-                                    if (!pkgMap.has(pk)) pkgMap.set(pk, { name: p.name, qty: 0, unit: p.unit });
-                                    const e = pkgMap.get(pk)!;
-                                    e.qty += p.qtyPerBatch;
-                                  });
-                                  (r!.decorationSupplies ?? []).forEach(s => {
-                                    const dk = s.name.toLowerCase();
-                                    if (!decoMap.has(dk)) decoMap.set(dk, { name: s.name, qty: 0, unit: s.unit });
-                                    const e = decoMap.get(dk)!;
-                                    e.qty += s.qtyPerBatch;
-                                  });
-                                });
-                                const pkgItems = [...pkgMap.values()];
-                                const decoItems = [...decoMap.values()];
-                                return (
-                                  <>
-                                    {pkgItems.length > 0 && (
-                                      <div>
-                                        <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Packaging</div>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {pkgItems.map((p, i) => (
-                                            <span key={`pkg-${i}`} className="rounded-lg bg-zinc-700 border border-blue-800 px-2 py-1 text-[11px] text-blue-300">
-                                              {p.name} {p.qty}{p.unit}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {decoItems.length > 0 && (
-                                      <div>
-                                        <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium mb-1">Decoration</div>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {decoItems.map((s, i) => (
-                                            <span key={`deco-${i}`} className="rounded-lg bg-zinc-700 border border-purple-800 px-2 py-1 text-[11px] text-purple-300">
-                                              {s.name} {s.qty}{s.unit}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
+                {mergedRecipes.map(({ recipe, totalQty }) => (
+                  <tr key={recipe.productName} onClick={() => setViewingDOSRecipe({ recipe, totalQty })} className="border-b border-zinc-800 text-[13px] hover:bg-zinc-800/50 transition-colors cursor-pointer">
+                    <td className="px-3 py-2.5 font-medium text-zinc-100">{recipe.productName}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-zinc-300">{totalQty}</td>
+                    <td className="px-3 py-2.5 text-right text-zinc-500">{recipe.ingredients.length}</td>
+                  </tr>
+                ))}
               </tbody>
-</table>
+            </table>
+          </div>
+          );
+        })()}
+
+        {/* DOS Recipe Detail Modal */}
+        {viewingDOSRecipe && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setViewingDOSRecipe(null)}>
+            <div className="w-full max-w-[480px] max-h-[85vh] rounded-[24px] bg-zinc-900 border border-zinc-700 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+                <div>
+                  <h3 className="text-[16px] font-semibold text-white">{viewingDOSRecipe.recipe.productName}</h3>
+                  <p className="text-[12px] text-zinc-400 mt-0.5">{viewingDOSRecipe.recipe.ingredients.length} ingredients · {viewingDOSRecipe.totalQty} total qty</p>
+                </div>
+                <button onClick={() => setViewingDOSRecipe(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors">✕</button>
+              </div>
+              <div className="overflow-y-auto px-5 py-4 space-y-2">
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Ingredients</div>
+                {viewingDOSRecipe.recipe.ingredients.map((ing, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
+                    <div>
+                      <span className="text-[13px] font-medium text-zinc-200">{ing.name}</span>
+                      <span className="text-[11px] text-zinc-500 ml-2">{ing.unit}</span>
+                    </div>
+                    <span className="text-[13px] font-mono font-semibold text-zinc-300">{ing.qtyPerBatch * viewingDOSRecipe.totalQty}</span>
+                  </div>
+                ))}
+                {(viewingDOSRecipe.recipe.packagingMaterials ?? []).length > 0 && (
+                  <>
+                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium pt-2">Packaging</div>
+                    {viewingDOSRecipe.recipe.packagingMaterials.map((mat, i) => (
+                      <div key={`pkg-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
+                        <span className="text-[13px] font-medium text-zinc-200">{mat.name}</span>
+                        <span className="text-[12px] font-mono text-zinc-400">{mat.qtyPerBatch * viewingDOSRecipe.totalQty} {mat.unit}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {(viewingDOSRecipe.recipe.decorationSupplies ?? []).length > 0 && (
+                  <>
+                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium pt-2">Decoration</div>
+                    {viewingDOSRecipe.recipe.decorationSupplies.map((sup, i) => (
+                      <div key={`deco-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
+                        <span className="text-[13px] font-medium text-zinc-200">{sup.name}</span>
+                        <span className="text-[12px] font-mono text-zinc-400">{sup.qtyPerBatch * viewingDOSRecipe.totalQty} {sup.unit}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+              <div className="px-5 py-3 border-t border-zinc-800">
+                <button onClick={() => setViewingDOSRecipe(null)} className="w-full rounded-xl bg-zinc-800 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-700 transition-all">Close</button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -705,7 +1020,7 @@ return (
                 ))}
                 {summaryModal === "ingredients" && dosForDeco.map(d => {
                   const directRecipe = recipes.find(r => r.productName === d.product);
-                  const linkedRecipes = (directRecipe?.linkedProduct ?? [])
+                  const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
                     .map(name => recipes.find(r => r.productName === name))
                     .filter(Boolean)
                     .filter(r => r!.productName !== d.product);
@@ -726,7 +1041,7 @@ return (
                 })}
                 {summaryModal === "packaging" && dosForDeco.flatMap(d => {
                   const directRecipe = recipes.find(r => r.productName === d.product);
-                  const linkedRecipes = (directRecipe?.linkedProduct ?? [])
+                  const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
                     .map(name => recipes.find(r => r.productName === name))
                     .filter(Boolean)
                     .filter(r => r!.productName !== d.product);
@@ -754,7 +1069,7 @@ return (
                 ))}
                 {summaryModal === "deco" && dosForDeco.flatMap(d => {
                   const directRecipe = recipes.find(r => r.productName === d.product);
-                  const linkedRecipes = (directRecipe?.linkedProduct ?? [])
+                  const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
                     .map(name => recipes.find(r => r.productName === name))
                     .filter(Boolean)
                     .filter(r => r!.productName !== d.product);
@@ -790,484 +1105,15 @@ return (
 
         {/* Workflow Nav */}
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
-          <div className="text-[12px] text-zinc-400">Step {currentStepIdx + 1} of {workflowSteps.length}</div>
-          {nextStep && (
-            <button onClick={() => setActiveTab(nextStep.id)} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
-              Next: {nextStep.label} →
-            </button>
-          )}
+          <div className="text-[12px] text-zinc-400">Step 1 of 4</div>
+          <button
+            onClick={() => setPreMixInDashboard(true)}
+            className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all"
+          >
+            Next: Pre-Mix →
+          </button>
         </div>
-      </div>
-    );
-  }
-
-  /* ── Production Prep ── */
-  if (activeTab === "pre-mix") {
-    const updateIngredientQty = (recipeName: string, ingredientName: string, newQty: number) => {
-      if (!onUpdateRecipes) return;
-      onUpdateRecipes(prev => {
-        const idx = prev.findIndex(r => r.productName === recipeName);
-        if (idx < 0) return prev;
-        const nextRecipes = [...prev];
-        const recipe = { ...nextRecipes[idx] };
-        recipe.ingredients = recipe.ingredients.map(i => i.name === ingredientName ? { ...i, qtyPerBatch: newQty } : i);
-        nextRecipes[idx] = recipe;
-        return nextRecipes;
-      });
-    };
-
-    function toggleProduct(dosId: string, productRecipes: (ProductRecipe | undefined)[]) {
-      const keys = productRecipes.map(r => `${dosId}:::${r!.productName.toLowerCase()}`);
-      setSelectedProducts(prev => {
-        const next = new Set(prev);
-        if (next.has(dosId)) {
-          next.delete(dosId);
-          setSelectedRecipes(prevR => {
-            const nextR = new Set(prevR);
-            keys.forEach(k => nextR.delete(k));
-            return nextR;
-          });
-        } else {
-          next.add(dosId);
-          setSelectedRecipes(prevR => {
-            const nextR = new Set(prevR);
-            keys.forEach(k => nextR.add(k));
-            return nextR;
-          });
-        }
-        return next;
-      });
-    }
-
-    return (
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-[28px] font-semibold tracking-tight">Production Preparation</h1>
-          <p className="mt-1 text-[13px] text-zinc-500">Tap a recipe card to view and adjust ingredients, then save to freezer.</p>
-        </div>
-
-        {dosForDeco.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No DOS items assigned for today.</p></div>
-        ) : (
-          <div className="space-y-6">
-            {dosForDeco.map(d => {
-              const directRecipe = recipes.find(r => r.productName === d.product);
-              const linkedRecipes = (directRecipe?.linkedProduct ?? [])
-                .map(name => recipes.find(r => r.productName === name))
-                .filter(Boolean)
-                .filter(r => r!.productName !== d.product);
-              const allRecipes = linkedRecipes;
-              if (allRecipes.length === 0) return null;
-              const remaining = (productQty[d.id] ?? d.qty);
-              if (remaining <= 0) return null;
-
-              return (
-                <div key={d.id}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2.5">
-                      <button
-                        onClick={() => toggleProduct(d.id, allRecipes)}
-                        className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all shrink-0 ${
-                          selectedProducts.has(d.id)
-                            ? "border-emerald-500 bg-emerald-500 text-white"
-                            : "border-zinc-300 bg-white text-transparent hover:border-zinc-400"
-                        }`}
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                      </button>
-                      <h2 className="text-[14px] font-semibold text-zinc-700">{d.product}</h2>
-                    </div>
-                      {selectedProducts.has(d.id) ? (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setSaveAmounts(prev => ({ ...prev, [d.id]: Math.max(1, (prev[d.id] ?? remaining) - 1) }))}
-                            className="w-6 h-6 rounded border border-zinc-200 bg-white text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
-                          >−</button>
-                          <input
-                            type="number"
-                            min={1}
-                            max={remaining}
-                            value={saveAmounts[d.id] ?? remaining}
-                            onChange={e => {
-                              const raw = e.target.value;
-                              if (raw === "") {
-                                setSaveAmounts(prev => ({ ...prev, [d.id]: 1 }));
-                                return;
-                              }
-                              const v = parseInt(raw, 10);
-                              if (isNaN(v)) return;
-                              setSaveAmounts(prev => ({ ...prev, [d.id]: Math.max(1, Math.min(remaining, v)) }));
-                            }}
-                            className="w-14 text-center font-mono text-[13px] font-semibold text-zinc-900 rounded border border-zinc-200 bg-white px-1 py-0.5 outline-none focus:border-emerald-500"
-                          />
-                          <button
-                            onClick={() => setSaveAmounts(prev => ({ ...prev, [d.id]: Math.min(remaining, (prev[d.id] ?? remaining) + 1) }))}
-                            className="w-6 h-6 rounded border border-zinc-200 bg-white text-[12px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center"
-                          >+</button>
-                          <span className="text-[11px] text-zinc-400 font-mono">/ {d.qty}</span>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-zinc-400 font-mono">×{remaining} / {d.qty} · {allRecipes.length} recipe{allRecipes.length > 1 ? "s" : ""}</span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {allRecipes.map(r => {
-                      const isPrepared = preMixPrepared.has(`${d.id}:::${r!.productName.toLowerCase()}`);
-                      const ingCount = r!.ingredients.length;
-                      const pkgCount = (r!.packagingMaterials ?? []).length;
-                      const decoCount = (r!.decorationSupplies ?? []).length;
-                      const dosQty = productQty[d.id] ?? d.qty;
-
-                      return (
-                        <div
-                          key={r!.productName}
-                          className={`rounded-2xl border p-4 transition-all ${
-                            isPrepared
-                              ? "border-emerald-200 bg-emerald-50/50"
-                              : "border-zinc-200 bg-white"
-                          }`}
-                        >
-                          <button
-                            onClick={() => {
-                              setSelectedRecipeModal({ recipe: r!, dosProduct: d.product, dosId: d.id, maxQty: d.qty });
-                              const initialDraft: Record<string, number> = {};
-                              r!.ingredients.forEach(ing => { initialDraft[ing.name] = ing.qtyPerBatch; });
-                              setRecipeModalDraft(initialDraft);
-                            }}
-                            className="text-left w-full"
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <h3 className="text-[14px] font-semibold text-zinc-900 truncate">{r!.productName}</h3>
-                              {isPrepared && <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-medium text-emerald-700">Done</span>}
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              {ingCount > 0 && <span className="text-[10px] bg-amber-50 border border-amber-200 text-amber-700 rounded px-1.5 py-0.5">{ingCount} ingredients</span>}
-                              {pkgCount > 0 && <span className="text-[10px] bg-blue-50 border border-blue-200 text-blue-700 rounded px-1.5 py-0.5">{pkgCount} packaging</span>}
-                              {decoCount > 0 && <span className="text-[10px] bg-purple-50 border border-purple-200 text-purple-700 rounded px-1.5 py-0.5">{decoCount} deco</span>}
-                            </div>
-                            <div className="text-[10px] text-zinc-400 mt-3">Tap to view recipe →</div>
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Recipe Detail Modal */}
-        {selectedRecipeModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setSelectedRecipeModal(null)}>
-            <div className="w-full max-w-[520px] max-h-[90vh] rounded-[28px] border border-[#E8E0D5] bg-white shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
-                <div>
-                  <h3 className="text-[16px] font-semibold text-zinc-900">{selectedRecipeModal.recipe.productName}</h3>
-                  <p className="text-[12px] text-zinc-500 mt-0.5">for {selectedRecipeModal.dosProduct} × {(() => { const dos = dosForDeco.find(dd => dd.id === selectedRecipeModal.dosId); return saveAmounts[dos?.id ?? ""] ?? productQty[dos?.id ?? ""] ?? dos?.qty ?? 1; })()}</p>
-                </div>
-                <button onClick={() => setSelectedRecipeModal(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-all">✕</button>
-              </div>
-
-              <div className="overflow-y-auto px-6 py-4 space-y-3 flex-1">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium">Ingredients</div>
-                {(() => {
-                  const dos = dosForDeco.find(dd => dd.id === selectedRecipeModal.dosId);
-                  const dosQty = saveAmounts[dos?.id ?? ""] ?? productQty[dos?.id ?? ""] ?? dos?.qty ?? 1;
-                  return selectedRecipeModal.recipe.ingredients.map((ing, i) => {
-                    const baseQty = ing.qtyPerBatch;
-                    const totalQty = baseQty * dosQty;
-                    return (
-                      <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/60 px-4 py-3">
-                        <div className="flex-1">
-                          <span className="text-[13px] font-medium text-zinc-800">{ing.name}</span>
-                          <span className="text-[11px] text-zinc-400 ml-2">{ing.unit}</span>
-                          <div className="text-[10px] text-zinc-400 mt-0.5">{baseQty} per batch × {dosQty} = <span className="font-semibold text-zinc-600">{totalQty} {ing.unit} total</span></div>
-                        </div>
-                        <div className="w-20 text-center font-mono text-[15px] font-bold text-zinc-900">
-                          {totalQty}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-
-                {(selectedRecipeModal.recipe.packagingMaterials ?? []).length > 0 && (() => {
-                  const dos = dosForDeco.find(dd => dd.id === selectedRecipeModal.dosId);
-                  const dosQty = saveAmounts[dos?.id ?? ""] ?? productQty[dos?.id ?? ""] ?? dos?.qty ?? 1;
-                  return (
-                    <>
-                      <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium pt-2">Packaging</div>
-                      {selectedRecipeModal.recipe.packagingMaterials.map((mat, i) => (
-                        <div key={`pkg-${i}`} className="flex items-center justify-between rounded-xl border border-blue-100 bg-blue-50/30 px-4 py-2.5">
-                          <span className="text-[12px] font-medium text-zinc-700">{mat.name}</span>
-                          <span className="text-[11px] font-mono text-zinc-500">{mat.qtyPerBatch * dosQty} {mat.unit}</span>
-                        </div>
-                      ))}
-                    </>
-                  );
-                })()}
-                {(selectedRecipeModal.recipe.decorationSupplies ?? []).length > 0 && (() => {
-                  const dos = dosForDeco.find(dd => dd.id === selectedRecipeModal.dosId);
-                  const dosQty = saveAmounts[dos?.id ?? ""] ?? productQty[dos?.id ?? ""] ?? dos?.qty ?? 1;
-                  return (
-                    <>
-                      <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium pt-2">Decoration</div>
-                      {selectedRecipeModal.recipe.decorationSupplies.map((sup, i) => (
-                        <div key={`deco-${i}`} className="flex items-center justify-between rounded-xl border border-purple-100 bg-purple-50/30 px-4 py-2.5">
-                          <span className="text-[12px] font-medium text-zinc-700">{sup.name}</span>
-                          <span className="text-[11px] font-mono text-zinc-500">{sup.qtyPerBatch * dosQty} {sup.unit}</span>
-                        </div>
-                      ))}
-                    </>
-                  );
-                })()}
-              </div>
-
-              <div className="px-6 py-4 border-t border-zinc-100">
-                <button onClick={() => setSelectedRecipeModal(null)} className="w-full rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Freezer Action Bar */}
-        {selectedRecipes.size > 0 && (
-          <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-zinc-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
-            <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
-              <span className="text-[13px] font-medium text-zinc-700 shrink-0">{selectedRecipes.size} recipe{selectedRecipes.size > 1 ? "s" : ""} selected</span>
-              <div className="flex-1" />
-              <button
-                onClick={() => {
-                  const batchRef = `DEC-${Date.now()}`;
-                  const allItems: FreezerItem[] = [];
-                  const newQty = { ...productQty };
-                  // Working inventory for ingredient deductions
-                  let workingInv: InventoryItem[] = inventory;
-                  const allDeductions: string[] = [];
-                  const allSkipped: string[] = [];
-                  selectedProducts.forEach(dosId => {
-                    const dos = dosForDeco.find(dd => dd.id === dosId);
-                    if (!dos) return;
-                    const dosQty = saveAmounts[dos.id] ?? (productQty[dos.id] ?? dos.qty);
-                    const existingItem = freezerItems.find(fi => fi.productName === dos.product && fi.producedBy === "deco" && fi.notes?.startsWith("Production Recipe"));
-                    if (existingItem) {
-                      const updatedItem = { ...existingItem, qty: existingItem.qty + dosQty };
-                      onUpdateFreezer?.(prev => prev.map(fi => fi.id === updatedItem.id ? updatedItem : fi));
-                      db.upsertFreezerItems([updatedItem]).catch(err => {
-                        console.error("Freezer update failed:", err);
-                      });
-                    } else {
-                      allItems.push({
-                        id: `FRZ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                        productName: dos.product,
-                        batchRef,
-                        qty: dosQty,
-                        unit: "pcs",
-                        status: "stored" as const,
-                        producedBy: "deco",
-                        dateProduced: new Date().toISOString(),
-                        notes: `Production Recipe`,
-                      });
-                    }
-                    newQty[dos.id] = Math.max(0, (productQty[dos.id] ?? dos.qty) - dosQty);
-                    const linkedRecipes = (recipes.find(r => r.productName === dos.product)?.linkedProduct ?? [])
-                      .map(name => recipes.find(r => r.productName === name))
-                      .filter(Boolean);
-                    linkedRecipes.forEach(r => {
-                      const preparedKey = `${dos.id}:::${r!.productName.toLowerCase()}`;
-                      setPreMixPrepared(prev => new Set(prev).add(preparedKey));
-                    });
-                    // Deduct ingredients (with custom adjustment) from My Inventory
-                    const productRecipes = getRecipesForProduct(dos.product);
-                    const findInventoryMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
-                      // 1. Direct inventoryId
-                      if (ingredient.inventoryId) {
-                        const direct = workingInv.find(i => i.id === ingredient.inventoryId);
-                        if (direct) return direct;
-                      }
-                      // 2. Exact name match (case-insensitive, trimmed)
-                      const ingLower = ingredient.name.toLowerCase().trim();
-                      let match = workingInv.find(i => i.name.toLowerCase().trim() === ingLower);
-                      if (match) return match;
-                      // 3. Partial contains (either direction)
-                      match = workingInv.find(i =>
-                        i.name.toLowerCase().includes(ingLower) || ingLower.includes(i.name.toLowerCase())
-                      );
-                      if (match) return match;
-                      // 4. SKU match
-                      if (ingredient.sku) {
-                        match = workingInv.find(i => i.sku === ingredient.sku);
-                      }
-                      return match;
-                    };
-                    productRecipes.forEach(recipe => {
-                      (recipe.ingredients ?? []).forEach(ing => {
-                        const match = findInventoryMatch(ing);
-                        if (!match) {
-                          const invNames = workingInv.map(i => i.name).slice(0, 8).join(", ");
-                          allSkipped.push(`${ing.name} (no inventory link — available: ${invNames}${workingInv.length > 8 ? "..." : ""})`);
-                          return;
-                        }
-                        const idx = workingInv.findIndex(i => i.id === match.id);
-                        const needed = ing.qtyPerBatch * dosQty;
-                        const before = workingInv[idx].onHand;
-                        workingInv = workingInv.map((it, i) => i === idx ? { ...it, onHand: Math.max(0, before - needed) } : it);
-                        const actualDeducted = before - workingInv[idx].onHand;
-                        allDeductions.push(`Ing: ${ing.name} -${actualDeducted}${ing.unit}`);
-                      });
-                    });
-                  });
-                  setProductQty(newQty);
-                  setSaveAmounts({});
-                  if (onUpdateFreezer && allItems.length > 0) {
-                    onUpdateFreezer(prev => [...prev, ...allItems]);
-                    db.upsertFreezerItems(allItems).catch(err => {
-                      console.error("Freezer save failed:", err);
-                      onAddAuditLog?.("FREEZER_ERROR", `Failed to save ${allItems.length} items: ${err.message}`);
-                    });
-                  }
-                  // Persist ingredient deductions
-                  if (allDeductions.length > 0 || allSkipped.length > 0) {
-                    onUpdateInventory?.(workingInv);
-                    const changedItems = workingInv.filter(item => {
-                      const orig = inventory.find(o => o.id === item.id);
-                      return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
-                    });
-                    if (changedItems.length > 0) {
-                      db.upsertInventory(changedItems).catch(err => console.error("Inventory deduction save failed:", err));
-                    }
-                    if (allDeductions.length > 0) {
-                      onAddAuditLog?.("INGREDIENTS_DEDUCTED", `Put in Production Recipe: ${allDeductions.join(", ")}`);
-                    }
-                    if (allSkipped.length > 0) {
-                      onAddAuditLog?.("DEDUCTION_SKIPPED", `Put in Production Recipe: ${allSkipped.join(", ")}`);
-                    }
-                  }
-                  onAddAuditLog?.("FREEZER_ADDED", `Items saved to Production Recipe freezer`);
-                  setSelectedRecipes(new Set());
-                  setSelectedProducts(new Set());
-                }}
-                className="rounded-xl bg-emerald-600 px-4 py-2.5 text-[12px] font-medium text-white hover:bg-emerald-700 transition-all"
-              >Put in Production Recipe</button>
-              <button
-                onClick={() => {
-                  const allNewItems: InventoryItem[] = [];
-                  const allUpdatedItems: InventoryItem[] = [];
-                  const newQty = { ...productQty };
-                  // Working inventory: start with current, add product updates, then deduct ingredients
-                  let workingInv: InventoryItem[] = inventory;
-                  const allDeductions: string[] = [];
-                  const allSkipped: string[] = [];
-                  selectedProducts.forEach(dosId => {
-                    const dos = dosForDeco.find(dd => dd.id === dosId);
-                    if (!dos) return;
-                    const dosQty = saveAmounts[dos.id] ?? (productQty[dos.id] ?? dos.qty);
-                    const existingItem = workingInv.find(i => i.name === dos.product && i.accessRoles?.includes("deco"));
-                    if (existingItem) {
-                      const updatedItem = { ...existingItem, onHand: existingItem.onHand + dosQty, source: "production-prep" as const };
-                      const idx = workingInv.indexOf(existingItem);
-                      workingInv = [...workingInv.slice(0, idx), updatedItem, ...workingInv.slice(idx + 1)];
-                      allUpdatedItems.push(updatedItem);
-                    } else {
-                      const newItem: InventoryItem = {
-                        id: `INV-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                        name: dos.product,
-                        sku: `DECO-${dos.product.substring(0, 8).toUpperCase()}-${Date.now()}`,
-                        unit: "pcs",
-                        onHand: dosQty,
-                        threshold: 0,
-                        cost: 0,
-                        supplier: "",
-                        lastIn: new Date().toISOString(),
-                        category: "dry" as const,
-                        group: "ingredients" as const,
-                        accessRoles: ["deco"] as Role[],
-                        source: "production-prep" as const,
-                      };
-                      workingInv = [...workingInv, newItem];
-                      allNewItems.push(newItem);
-                    }
-                    newQty[dos.id] = Math.max(0, (productQty[dos.id] ?? dos.qty) - dosQty);
-                    const linkedRecipes = (recipes.find(r => r.productName === dos.product)?.linkedProduct ?? [])
-                      .map(name => recipes.find(r => r.productName === name))
-                      .filter(Boolean);
-                    linkedRecipes.forEach(r => {
-                      const preparedKey = `${dos.id}:::${r!.productName.toLowerCase()}`;
-                      setPreMixPrepared(prev => new Set(prev).add(preparedKey));
-                    });
-                    // Deduct ingredients (with custom adjustment) from My Inventory
-                    const productRecipes = getRecipesForProduct(dos.product);
-                    const findInventoryMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
-                      // 1. Direct inventoryId
-                      if (ingredient.inventoryId) {
-                        const direct = workingInv.find(i => i.id === ingredient.inventoryId);
-                        if (direct) return direct;
-                      }
-                      // 2. Exact name match (case-insensitive, trimmed)
-                      const ingLower = ingredient.name.toLowerCase().trim();
-                      let match = workingInv.find(i => i.name.toLowerCase().trim() === ingLower);
-                      if (match) return match;
-                      // 3. Partial contains (either direction)
-                      match = workingInv.find(i =>
-                        i.name.toLowerCase().includes(ingLower) || ingLower.includes(i.name.toLowerCase())
-                      );
-                      if (match) return match;
-                      // 4. SKU match
-                      if (ingredient.sku) {
-                        match = workingInv.find(i => i.sku === ingredient.sku);
-                      }
-                      return match;
-                    };
-                    productRecipes.forEach(recipe => {
-                      (recipe.ingredients ?? []).forEach(ing => {
-                        const match = findInventoryMatch(ing);
-                        if (!match) {
-                          const invNames = workingInv.map(i => i.name).slice(0, 8).join(", ");
-                          allSkipped.push(`${ing.name} (no inventory link — available: ${invNames}${workingInv.length > 8 ? "..." : ""})`);
-                          return;
-                        }
-                        const idx = workingInv.findIndex(i => i.id === match.id);
-                        const needed = ing.qtyPerBatch * dosQty;
-                        const before = workingInv[idx].onHand;
-                        workingInv = workingInv.map((it, i) => i === idx ? { ...it, onHand: Math.max(0, before - needed) } : it);
-                        const actualDeducted = before - workingInv[idx].onHand;
-                        allDeductions.push(`Ing: ${ing.name} -${actualDeducted}${ing.unit}`);
-                      });
-                    });
-                  });
-                  setProductQty(newQty);
-                  setSaveAmounts({});
-                  // Single setState for all inventory changes (product add/update + ingredient deductions)
-                  onUpdateInventory?.(workingInv);
-                  // Persist only changed items
-                  const persistIds = new Set([...allUpdatedItems.map(i => i.id), ...allNewItems.map(i => i.id)]);
-                  const changedByDeduction = workingInv.filter(item => {
-                    if (persistIds.has(item.id)) return false;
-                    const orig = inventory.find(o => o.id === item.id);
-                    return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
-                  });
-                  const allToPersist = [...allUpdatedItems, ...allNewItems, ...changedByDeduction];
-                  if (allToPersist.length > 0) {
-                    db.upsertInventory(allToPersist).catch(err => console.error("Inventory save failed:", err));
-                  }
-                  if (allDeductions.length > 0) {
-                    onAddAuditLog?.("INGREDIENTS_DEDUCTED", `Put in My Inventory: ${allDeductions.join(", ")}`);
-                  }
-                  if (allSkipped.length > 0) {
-                    onAddAuditLog?.("DEDUCTION_SKIPPED", `Put in My Inventory: ${allSkipped.join(", ")}`);
-                  }
-                  onAddAuditLog?.("INVENTORY_ADDED", `Items added to My Inventory`);
-                  setSelectedRecipes(new Set());
-                  setSelectedProducts(new Set());
-                }}
-                className="rounded-xl bg-blue-600 px-4 py-2.5 text-[12px] font-medium text-white hover:bg-blue-700 transition-all"
-              >Put in My Inventory</button>
-            </div>
-          </div>
-        )}
+        </>)}
       </div>
     );
   }
@@ -1498,6 +1344,7 @@ return (
                       ? "border-zinc-900 bg-white shadow-xl shadow-zinc-200" 
                       : "border-zinc-200 bg-white hover:border-zinc-400 hover:shadow-lg hover:shadow-zinc-100"
                   }`}
+                  style={{ alignItems: "flex-start" }}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -2480,23 +2327,6 @@ return (
             )}
           </div>
         </div>
-
-        {freezerHistory.filter(h => h.producedBy === "deco").length > 0 && (
-          <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-            <h2 className="text-[16px] font-semibold mb-3">Dispatch History</h2>
-            <div className="space-y-1.5">
-              {freezerHistory.filter(h => h.producedBy === "deco").map(h => (
-                <div key={h.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 bg-zinc-50/60 px-4 py-3">
-                  <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-medium">{h.action}</span>
-                  <span className="text-[13px] font-medium text-zinc-900">{h.productName}</span>
-                  <span className="text-[12px] text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{h.qtyChanged} pcs</span>
-                  <span className="text-[11px] text-zinc-400">{h.reference}</span>
-                  <span className="ml-auto text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{h.timestamp}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {showAddFreezer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddFreezer(false)}>

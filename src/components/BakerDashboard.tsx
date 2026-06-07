@@ -243,9 +243,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               {bakerDOS
                 .filter(d => !assemblySearch || d.product.toLowerCase().includes(assemblySearch.toLowerCase()))
                 .map(dos => {
-                  const matchedRecipes = recipes.filter(r => r.productName === dos.product || r.linkedProduct?.includes(dos.product));
+                  const matchedRecipes = recipes.filter(r => r.productName === dos.product || r.linkedIngredients?.includes(dos.product));
                   const allRecipeNames = matchedRecipes.map(r => r.productName);
-                  const allRecipeLinked = [...new Set(matchedRecipes.flatMap(r => r.linkedProduct ?? []))];
+                  const allRecipeLinked = [...new Set(matchedRecipes.flatMap(r => r.linkedIngredients ?? []))];
                   const matchingPremix = decoPremixItems.filter(p =>
                     allRecipeNames.includes(p.productName) ||
                     allRecipeLinked.includes(p.productName) ||
@@ -312,9 +312,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
           // Compute which premix names match at least one DOS product's recipe
           const premixMatchesDOS = new Set<string>();
           bakerDOS.forEach(dos => {
-            const matchedRecipes = recipes.filter(r => r.productName === dos.product || r.linkedProduct?.includes(dos.product));
+            const matchedRecipes = recipes.filter(r => r.productName === dos.product || r.linkedIngredients?.includes(dos.product));
             const allRecipeNames = matchedRecipes.map(r => r.productName);
-            const allRecipeLinked = [...new Set(matchedRecipes.flatMap(r => r.linkedProduct ?? []))];
+            const allRecipeLinked = [...new Set(matchedRecipes.flatMap(r => r.linkedIngredients ?? []))];
             decoPremixItems.forEach(p => {
               if (allRecipeNames.includes(p.productName) || allRecipeLinked.includes(p.productName) || p.productName === dos.product) {
                 premixMatchesDOS.add(p.productName);

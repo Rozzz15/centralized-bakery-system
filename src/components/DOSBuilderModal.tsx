@@ -193,7 +193,6 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                                   key={`promo-${p.id}`}
                                   onMouseDown={() => {
                                     updateRow(i, "product", p.name);
-                                    setRows(prev => prev.map((r, idx) => idx === i ? { ...r, roles: new Set<"baker" | "pastry" | "deco">(["pastry"]) } : r));
                                     setProductSearch(prev => ({ ...prev, [i]: p.name }));
                                     setShowSuggestions(prev => ({ ...prev, [i]: false }));
                                   }}
@@ -255,16 +254,12 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                     />
                   </div>
                   {(["baker", "pastry", "deco"] as const).map(role => {
-                    const isPromoRow = promosPackages.some(p => p.name === row.product);
-                    const isDisabled = isPromoRow && role !== "pastry";
                     return (
                     <div key={role} className="col-span-1 flex justify-center">
                       <button
                         type="button"
-                        disabled={isDisabled}
                         onClick={() => toggleRowRole(i, role)}
                         className={`grid h-6 w-6 place-items-center rounded-md border text-[10px] font-bold transition-all ${
-                          isDisabled ? "border-zinc-100 bg-zinc-50 text-zinc-200 cursor-not-allowed opacity-40" :
                           row.roles.has(role)
                             ? role === "baker" ? "border-stone-500 bg-stone-600 text-white"
                               : role === "pastry" ? "border-amber-500 bg-amber-600 text-white"

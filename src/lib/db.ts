@@ -434,7 +434,8 @@ export async function fetchRecipes(): Promise<ProductRecipe[]> {
     packagingMaterials: r.packaging_materials ?? [],
     decorationSupplies: r.decoration_supplies ?? [],
     notes: r.notes ?? "",
-    linkedProduct: (links ?? []).filter((l: any) => l.recipe_id === r.id).map((l: any) => l.product_name),
+    group: r.recipe_group || "",
+    linkedIngredients: (links ?? []).filter((l: any) => l.recipe_id === r.id).map((l: any) => l.product_name),
   }));
 }
 export async function upsertRecipe(recipe: ProductRecipe) {
@@ -444,18 +445,19 @@ export async function upsertRecipe(recipe: ProductRecipe) {
     packaging_materials: recipe.packagingMaterials ?? [],
     decoration_supplies: recipe.decorationSupplies ?? [],
     notes: recipe.notes ?? "",
+    recipe_group: recipe.group || "",
   }, { onConflict: "name" });
   if (error) {
     console.error("recipe upsert failed:", error);
     return;
   }
-  // Update product_recipe_links — save each linked product name
+  // Update product_recipe_links — save each linked ingredient name
   if (recipe.productName) {
     const { data: inserted } = await supabase.from("recipes").select("id").eq("name", recipe.productName).maybeSingle();
     if (inserted) {
       // Delete existing links for this recipe, then insert new ones
       await supabase.from("product_recipe_links").delete().eq("recipe_id", inserted.id);
-      const linked = recipe.linkedProduct ?? [];
+      const linked = recipe.linkedIngredients ?? [];
       if (linked.length > 0) {
         const { error: linkErr } = await supabase.from("product_recipe_links").insert(
           linked.map(product_name => ({ product_name, recipe_id: inserted.id }))
@@ -1037,6 +1039,56 @@ export async function deleteBakerAssemblyTasksByDOSId(dosId: string) {
 export async function deleteBakerAssemblyTasksByPremixItemId(premixItemId: string) {
   const { error } = await supabase.from("baker_assembly_tasks").delete().eq("premix_item_id", premixItemId);
   if (error) throw error;
+}
+
+// ─── Pastry Assembly Tasks ───
+export async function fetchPastryAssemblyTasks(): Promise<import("../types").PastryAssemblyTask[]> {
+  const { data, error } = await supabase.from("pastry_assembly_tasks").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((d: any) => ({
+    id: d.id,
+    dosId: d.dos_id || undefined,
+    promoId: d.promo_id || undefined,
+    productName: d.product_name,
+    promoType: d.promo_type ?? "package",
+    components: d.components ?? [],
+    targetQty: d.target_qty ?? 0,
+    assembledQty: d.assembled_qty ?? 0,
+    status: d.status ?? "pending",
+    assembledBy: d.assembled_by ?? "",
+    qcChecklist: d.qc_checklist ?? {},
+    notes: d.notes ?? "",
+    createdAt: d.created_at,
+    updatedAt: d.updated_at,
+  }));
+}
+
+export async function savePastryAssemblyTask(task: import("../types").PastryAssemblyTask) {
+  const { error } = await supabase.from("pastry_assembly_tasks").upsert({
+    id: task.id,
+    dos_id: task.dosId || null,
+    promo_id: task.promoId || null,
+    product_name: task.productName,
+    promo_type: task.promoType,
+    components: task.components,
+    target_qty: task.targetQty,
+    assembled_qty: task.assembledQty,
+    status: task.status,
+    assembled_by: task.assembledBy,
+    qc_checklist: task.qcChecklist ?? {},
+    notes: task.notes ?? "",
+  }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deletePastryAssemblyTask(id: string) {
+  const { error } = await supabase.from("pastry_assembly_tasks").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export function subscribePastryAssemblyTasks(onChange: () => void) {
+  const channel = supabase.channel("pastry-assembly-realtime").on("postgres_changes", { event: "*", schema: "public", table: "pastry_assembly_tasks" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
 }
 
 export async function upsertWasteLog(items: WasteLog[]) {

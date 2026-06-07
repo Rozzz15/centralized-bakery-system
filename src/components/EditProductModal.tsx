@@ -7,7 +7,7 @@ type Props = {
   inventory: InventoryItem[];
   categories: string[];
   initialCategory: string;
-  onSave: (originalName: string, newName: string, ingredients: RecipeIngredient[], packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedProduct: string[], category: string) => void;
+  onSave: (originalName: string, newName: string, ingredients: RecipeIngredient[], packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedIngredients: string[], category: string) => void;
   onClose: () => void;
 };
 
@@ -16,11 +16,12 @@ export default function EditProductModal({ productName, recipes, inventory, cate
 
   const [name, setName] = useState(productName);
   const [category, setCategory] = useState(initialCategory);
-  const [linkedProduct, setLinkedProduct] = useState<string[]>(existing?.linkedProduct || []);
+  const [linkedIngredients, setLinkedIngredients] = useState<string[]>(existing?.linkedIngredients || []);
   const [ingredientItems, setIngredientItems] = useState<RecipeIngredient[]>(existing?.ingredients || []);
   const [packagingItems, setPackagingItems] = useState<RecipeIngredient[]>(existing?.packagingMaterials || []);
   const [decorationItems, setDecorationItems] = useState<RecipeIngredient[]>(existing?.decorationSupplies || []);
   const [recipeSearch, setRecipeSearch] = useState("");
+  const [showRecipePicker, setShowRecipePicker] = useState(false);
   const [showPackagingPicker, setShowPackagingPicker] = useState(false);
   const [showDecorationPicker, setShowDecorationPicker] = useState(false);
   const [packagingSearch, setPackagingSearch] = useState("");
@@ -49,7 +50,7 @@ export default function EditProductModal({ productName, recipes, inventory, cate
   const availableDecoration = inventory.filter(i => i.group === "decoration-supplies" && !decorationItems.some(ing => ing.inventoryId === i.id) && (i.name.toLowerCase().includes(decorationSearch.toLowerCase()) || decorationSearch === ""));
 
   function toggleRecipe(r: string) {
-    setLinkedProduct(prev => prev.includes(r) ? prev.filter(p => p !== r) : [...prev, r]);
+    setLinkedIngredients(prev => prev.includes(r) ? prev.filter(p => p !== r) : [...prev, r]);
   }
 
   const filteredRecipes = recipes.filter(r => r.productName.toLowerCase().includes(recipeSearch.toLowerCase()) || recipeSearch === "");
@@ -57,7 +58,7 @@ export default function EditProductModal({ productName, recipes, inventory, cate
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(productName, name.trim(), ingredientItems, packagingItems, decorationItems, linkedProduct, category);
+    onSave(productName, name.trim(), ingredientItems, packagingItems, decorationItems, linkedIngredients, category);
   }
 
   return (
@@ -82,10 +83,10 @@ export default function EditProductModal({ productName, recipes, inventory, cate
           </div>
 
           <div className="mb-4">
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Link Recipes</label>
-            {linkedProduct.length > 0 && (
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Link Recipe</label>
+            {linkedIngredients.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
-                {linkedProduct.map(r => (
+                {linkedIngredients.map(r => (
                   <span key={r} className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-medium text-zinc-700">
                     {r}
                     <button type="button" onClick={() => toggleRecipe(r)} className="text-zinc-400 hover:text-red-500 ml-0.5">×</button>
@@ -94,16 +95,16 @@ export default function EditProductModal({ productName, recipes, inventory, cate
               </div>
             )}
             <div className="relative">
-              <input value={recipeSearch} onChange={e => setRecipeSearch(e.target.value)} placeholder="Search recipes..." className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-900 transition-colors" />
-              {recipeSearch && (
+              <input value={recipeSearch} onChange={e => setRecipeSearch(e.target.value)} onFocus={() => setShowRecipePicker(true)} placeholder="Search recipes..." className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-900 transition-colors" />
+              {showRecipePicker && recipeSearch && (
                 <>
-                  <div className="fixed inset-0 z-0" onClick={() => setRecipeSearch("")} />
+                  <div className="fixed inset-0 z-0" onClick={() => { setShowRecipePicker(false); setRecipeSearch(""); }} />
                   <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-40 overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
                     {filteredRecipes.length === 0 ? (
                       <p className="px-3 py-2 text-[12px] text-zinc-400">No recipes found.</p>
                     ) : filteredRecipes.map(r => (
                       <label key={r.productName} className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-50 cursor-pointer text-[12px]">
-                        <input type="checkbox" checked={linkedProduct.includes(r.productName)} onChange={() => { toggleRecipe(r.productName); setRecipeSearch(""); }} className="rounded border-zinc-300" />
+                        <input type="checkbox" checked={linkedIngredients.includes(r.productName)} onChange={() => { toggleRecipe(r.productName); setRecipeSearch(""); }} className="rounded border-zinc-300" />
                         <span className="text-zinc-900">{r.productName}</span>
                         <span className="text-zinc-400 ml-auto">{r.ingredients.length} ingredients</span>
                       </label>

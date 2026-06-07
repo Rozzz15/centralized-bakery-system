@@ -181,7 +181,8 @@ export type ProductRecipe = {
   packagingMaterials: RecipeIngredient[];
   decorationSupplies: RecipeIngredient[];
   notes?: string;
-  linkedProduct?: string[];
+  linkedIngredients?: string[];
+  group?: string;
 };
 
 export type ProductPricingVariant = {
@@ -295,4 +296,21 @@ export type PromoPackage = {
   startDate?: string;
   endDate?: string;
   createdAt?: string;
+};
+
+export type PastryAssemblyTask = {
+  id: string;
+  dosId?: string;
+  promoId?: string;
+  productName: string;
+  promoType: "promo" | "package" | "normal";
+  components: { productName: string; qty: number; sourceFreezerId: string }[];
+  targetQty: number;
+  assembledQty: number;
+  status: "pending" | "accepted" | "in_progress" | "completed" | "cancelled";
+  assembledBy: string;
+  qcChecklist?: Record<string, boolean>;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };

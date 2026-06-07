@@ -49,7 +49,6 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   ],
   deco: [
     { id: "dashboard", label: "Dashboard", icon: "" },
-    { id: "pre-mix", label: "Pre-Mix", icon: "" },
     { id: "advanced-premix", label: "Advanced Premix", icon: "" },
     { id: "deco-queue", label: "Decoration Queue", icon: "" },
     { id: "custom-orders", label: "Custom Orders", icon: "" },
@@ -68,6 +67,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   ],
   pastry: [
     { id: "dashboard", label: "My Tasks", icon: "◼" },
+    { id: "assembly", label: "Assembly", icon: "●" },
     { id: "freezer", label: "Freezer", icon: "◇" },
     { id: "promos", label: "Promos", icon: "★" },
   ],
@@ -92,7 +92,7 @@ async function seedIfEmpty() {
         ],
         packagingMaterials: [{ inventoryId: "dummy-bbs-1", name: "Bread Bags (Small)", qtyPerBatch: 500, unit: "pcs" }],
         decorationSupplies: [],
-        linkedProduct: [],
+        linkedIngredients: [],
         notes: "Standard pandesal recipe - yields ~500 pcs per batch",
       },
       {
@@ -107,7 +107,7 @@ async function seedIfEmpty() {
         ],
         packagingMaterials: [{ inventoryId: "dummy-bbl-1", name: "Bread Bags (Large)", qtyPerBatch: 200, unit: "pcs" }],
         decorationSupplies: [],
-        linkedProduct: [],
+        linkedIngredients: [],
         notes: "Classic loaf bread - yields ~200 loaves per batch",
       },
       {
@@ -124,7 +124,7 @@ async function seedIfEmpty() {
         ],
         packagingMaterials: [{ inventoryId: "dummy-cb-1", name: "Cake Boxes (8 in)", qtyPerBatch: 50, unit: "pcs" }],
         decorationSupplies: [{ inventoryId: "dummy-wc-1", name: "Whipping Cream", qtyPerBatch: 2, unit: "L" }],
-        linkedProduct: [],
+        linkedIngredients: [],
         notes: "Rich chocolate cake - yields ~50 cakes per batch",
       },
       {
@@ -140,7 +140,7 @@ async function seedIfEmpty() {
         ],
         packagingMaterials: [{ inventoryId: "dummy-cb-2", name: "Cake Boxes (8 in)", qtyPerBatch: 40, unit: "pcs" }],
         decorationSupplies: [{ inventoryId: "dummy-wc-2", name: "Whipping Cream", qtyPerBatch: 3, unit: "L" }],
-        linkedProduct: [],
+        linkedIngredients: [],
         notes: "Dense fudge sponge - yields ~40 cakes per batch",
       },
       {
@@ -155,7 +155,7 @@ async function seedIfEmpty() {
         ],
         packagingMaterials: [{ inventoryId: "dummy-pb-1", name: "Pastry Boxes", qtyPerBatch: 120, unit: "pcs" }],
         decorationSupplies: [{ inventoryId: "dummy-wc-3", name: "Whipping Cream", qtyPerBatch: 1, unit: "L" }],
-        linkedProduct: [],
+        linkedIngredients: [],
         notes: "Classic ensaymada - yields ~120 pcs per batch",
       },
     ];
@@ -273,6 +273,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [existingQuestion, setExistingQuestion] = useState("");
   const [existingAnswer, setExistingAnswer] = useState("");
   const userIdRef = useRef<string | null>(null);
@@ -660,7 +661,12 @@ export default function App() {
     setAuditLogs(prev => [{ ...entry, id: `AUD-${Date.now()}-${prev.length}` }, ...prev]);
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutConfirm(false);
     await authSignOut();
     setLoggedIn(false);
     setRole("admin");
@@ -1016,8 +1022,8 @@ export default function App() {
                 onSubmitSales={handleSalesSubmit}
               />
             )}
-            {role === "pastry" && ["dashboard", "freezer", "promos"].includes(activeTab) && (
-              <PastryDashboard dosItems={dosItems} activeTab={activeTab} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} promosPackages={promosPackages} />
+            {role === "pastry" && ["dashboard", "assembly", "freezer", "promos"].includes(activeTab) && (
+              <PastryDashboard dosItems={dosItems} activeTab={activeTab} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} promosPackages={promosPackages} recipes={recipes} productCatalog={productCatalog} />
             )}
           </div>
         </main>
@@ -1071,6 +1077,42 @@ export default function App() {
           }
         }}
       />}
+
+      {showLogoutConfirm && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" onClick={() => setShowLogoutConfirm(false)} />
+          <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[#E8E0D5] bg-white p-0 shadow-2xl shadow-black/15 overflow-hidden">
+            <div className="flex flex-col items-center px-8 pt-8 pb-6 text-center">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
+                <svg className="h-7 w-7 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+              </div>
+              <h3 className="text-[17px] font-semibold text-zinc-900">Log out of your account?</h3>
+              <p className="mt-2 text-[13px] leading-relaxed text-zinc-500">
+                You'll need to sign in again to access <span className="font-medium text-zinc-700">{role.charAt(0).toUpperCase() + role.slice(1)}</span> dashboard.
+              </p>
+            </div>
+            <div className="flex border-t border-zinc-100">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 px-4 py-3.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <div className="w-px bg-zinc-100" />
+              <button
+                onClick={confirmLogout}
+                className="flex-1 px-4 py-3.5 text-[13px] font-medium text-red-600 hover:bg-red-50 transition-colors"
+              >
+                Log out
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
