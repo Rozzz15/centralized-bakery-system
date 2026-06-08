@@ -5,7 +5,7 @@ import type {
   StockTransaction, DeliveryValidation, VerificationResult,
   BranchBatch, DeliveryReport, KitchenFeedback, DecoSubTask, DecoQCResult,
   ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog,
-  PromoPackage,
+  PromoPackage, ProductionPlan, BufferStockEntry,
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
@@ -435,6 +435,7 @@ export async function fetchRecipes(): Promise<ProductRecipe[]> {
     decorationSupplies: r.decoration_supplies ?? [],
     notes: r.notes ?? "",
     group: r.recipe_group || "",
+    yield: r.yield ?? undefined,
     linkedIngredients: (links ?? []).filter((l: any) => l.recipe_id === r.id).map((l: any) => l.product_name),
   }));
 }
@@ -446,6 +447,7 @@ export async function upsertRecipe(recipe: ProductRecipe) {
     decoration_supplies: recipe.decorationSupplies ?? [],
     notes: recipe.notes ?? "",
     recipe_group: recipe.group || "",
+    yield: recipe.yield ?? null,
   }, { onConflict: "name" });
   if (error) {
     console.error("recipe upsert failed:", error);
@@ -1133,5 +1135,114 @@ export async function upsertPromoPackage(item: PromoPackage) {
 
 export async function deletePromoPackage(id: string) {
   const { error } = await supabase.from("promos_packages").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ─── Production Plans ───
+function parseProductionPlan(d: any): ProductionPlan {
+  return {
+    id: d.id,
+    date: d.date,
+    dosItems: d.dos_items ?? [],
+    recipeDemands: d.recipe_demands ?? [],
+    batchCalculations: d.batch_calculations ?? [],
+    outputAllocations: d.output_allocations ?? [],
+    bufferStockCreated: d.buffer_stock_created ?? [],
+    bufferStockUsed: d.buffer_stock_used ?? [],
+    status: d.status,
+    createdBy: d.created_by ?? "",
+    createdAt: d.created_at ?? "",
+    confirmedAt: d.confirmed_at || undefined,
+  };
+}
+
+function toProductionPlanRow(p: ProductionPlan) {
+  return {
+    id: p.id,
+    date: p.date,
+    dos_items: p.dosItems,
+    recipe_demands: p.recipeDemands,
+    batch_calculations: p.batchCalculations,
+    output_allocations: p.outputAllocations,
+    buffer_stock_created: p.bufferStockCreated,
+    buffer_stock_used: p.bufferStockUsed,
+    status: p.status,
+    created_by: p.createdBy,
+    confirmed_at: p.confirmedAt || null,
+  };
+}
+
+export async function fetchProductionPlans(): Promise<ProductionPlan[]> {
+  const { data, error } = await supabase.from("production_plans").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(parseProductionPlan);
+}
+
+export async function fetchProductionPlanById(id: string): Promise<ProductionPlan | null> {
+  const { data, error } = await supabase.from("production_plans").select("*").eq("id", id).single();
+  if (error) return null;
+  return parseProductionPlan(data);
+}
+
+export async function upsertProductionPlan(plan: ProductionPlan) {
+  const { error } = await supabase.from("production_plans").upsert(toProductionPlanRow(plan), { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteProductionPlan(id: string) {
+  const { error } = await supabase.from("production_plans").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ─── Buffer Stock ───
+function parseBufferStock(d: any): BufferStockEntry {
+  return {
+    id: d.id,
+    recipeName: d.recipe_name,
+    productName: d.product_name || undefined,
+    qty: d.qty,
+    unit: d.unit,
+    source: d.source,
+    batchRef: d.batch_ref || undefined,
+    dateCreated: d.date_created,
+    status: d.status,
+    usedIn: d.used_in || undefined,
+  };
+}
+
+function toBufferStockRow(b: BufferStockEntry) {
+  return {
+    id: b.id,
+    recipe_name: b.recipeName,
+    product_name: b.productName ?? null,
+    qty: b.qty,
+    unit: b.unit,
+    source: b.source,
+    batch_ref: b.batchRef ?? null,
+    date_created: b.dateCreated,
+    status: b.status,
+    used_in: b.usedIn ?? null,
+  };
+}
+
+export async function fetchBufferStock(): Promise<BufferStockEntry[]> {
+  const { data, error } = await supabase.from("buffer_stock").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(parseBufferStock);
+}
+
+export async function fetchAvailableBufferStock(): Promise<BufferStockEntry[]> {
+  const { data, error } = await supabase.from("buffer_stock").select("*").eq("status", "available").gt("qty", 0);
+  if (error) throw error;
+  return (data ?? []).map(parseBufferStock);
+}
+
+export async function upsertBufferStock(items: BufferStockEntry[]) {
+  const { error } = await supabase.from("buffer_stock").upsert(items.map(toBufferStockRow), { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteBufferStockItem(id: string) {
+  const { error } = await supabase.from("buffer_stock").delete().eq("id", id);
   if (error) throw error;
 }

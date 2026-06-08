@@ -1007,7 +1007,7 @@ export default function App() {
             {role === "baker" && ["dashboard", "assembly", "freezer", "filling"].includes(activeTab) && (
               <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} />
             )}
-            {role === "deco" && ["dashboard", "pre-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer", "waste-adjustment"].includes(activeTab) && (
+            {role === "deco" && ["dashboard", "production-plan", "pre-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer", "waste-adjustment"].includes(activeTab) && (
               <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} wasteLog={wasteLog} onUpdateWasteLog={setWasteLog} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (

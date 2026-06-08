@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
-import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog } from "../types";
+import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog, RecipeDemand, BatchCalculation, OutputAllocation, BufferStockEntry, ProductionPlan } from "../types";
 import * as db from "../lib/db";
+import { aggregateRecipeDemand, calculateBatches, allocateOutput, createBufferStockEntries, getAvailableBuffer, sumIngredients, sumPackaging, sumDecoSupplies } from "../utils/production-calculation";
 
 type DecoProductionPrep = { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean };
 
@@ -27,6 +28,82 @@ type DecoTask = {
   sourceSnapshot?: InventoryItem;
   createdAt?: string;
 };
+
+function DOSRecipeDetailModal({ recipe, totalQty, onClose, onSaveYield }: {
+  recipe: ProductRecipe; totalQty: number; onClose: () => void;
+  onSaveYield: (yieldQty: number) => void;
+}) {
+  const [yieldInput, setYieldInput] = useState<number | "">(recipe.yield ?? "");
+  const currentYield = yieldInput === "" ? 1 : yieldInput;
+  const estTotal = currentYield * totalQty;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[480px] max-h-[85vh] rounded-[24px] bg-zinc-900 border border-zinc-700 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+          <div>
+            <h3 className="text-[16px] font-semibold text-white">{recipe.productName}</h3>
+            <p className="text-[12px] text-zinc-400 mt-0.5">{recipe.ingredients.length} ingredients · {totalQty} total qty</p>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors">✕</button>
+        </div>
+        <div className="overflow-y-auto px-5 py-4 space-y-3">
+          {/* Yield Editor */}
+          <div className="rounded-xl border border-amber-800 bg-amber-950/40 px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] uppercase tracking-wider text-amber-400 font-medium">Yield per Batch</span>
+              <span className="text-[11px] text-amber-500">EST Prod. Total: <span className="font-mono font-semibold text-amber-300">{estTotal}</span></span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setYieldInput(prev => Math.max(1, (prev === "" ? 1 : prev) - 1))} className="w-8 h-8 rounded-lg border border-amber-700 bg-amber-900/50 text-amber-300 hover:bg-amber-800/50 flex items-center justify-center text-[14px]">−</button>
+              <input type="number" min={1} value={yieldInput} onChange={e => { const v = e.target.value; setYieldInput(v === "" ? "" : Math.max(1, Number(v))); }} className="flex-1 text-center font-mono text-[16px] font-bold text-amber-200 bg-transparent outline-none" />
+              <button onClick={() => setYieldInput(prev => (prev === "" ? 1 : prev) + 1)} className="w-8 h-8 rounded-lg border border-amber-700 bg-amber-900/50 text-amber-300 hover:bg-amber-800/50 flex items-center justify-center text-[14px]">+</button>
+            </div>
+          </div>
+          {/* Ingredients */}
+          <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Ingredients</div>
+          {recipe.ingredients.map((ing, i) => (
+            <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
+              <div>
+                <span className="text-[13px] font-medium text-zinc-200">{ing.name}</span>
+                <span className="text-[11px] text-zinc-500 ml-2">{ing.unit}</span>
+              </div>
+              <span className="text-[13px] font-mono font-semibold text-zinc-300">{ing.qtyPerBatch * totalQty}</span>
+            </div>
+          ))}
+          {(recipe.packagingMaterials ?? []).length > 0 && (
+            <>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium pt-2">Packaging</div>
+              {recipe.packagingMaterials.map((mat, i) => (
+                <div key={`pkg-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
+                  <span className="text-[13px] font-medium text-zinc-200">{mat.name}</span>
+                  <span className="text-[12px] font-mono text-zinc-400">{mat.qtyPerBatch * totalQty} {mat.unit}</span>
+                </div>
+              ))}
+            </>
+          )}
+          {(recipe.decorationSupplies ?? []).length > 0 && (
+            <>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium pt-2">Decoration</div>
+              {recipe.decorationSupplies.map((sup, i) => (
+                <div key={`deco-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
+                  <span className="text-[13px] font-medium text-zinc-200">{sup.name}</span>
+                  <span className="text-[12px] font-mono text-zinc-400">{sup.qtyPerBatch * totalQty} {sup.unit}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t border-zinc-800 flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-xl bg-zinc-800 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-700 transition-all">Close</button>
+          {(yieldInput !== "" && yieldInput !== (recipe.yield ?? 1)) && (
+            <button onClick={() => onSaveYield(currentYield)} className="flex-1 rounded-xl bg-amber-600 py-2.5 text-[13px] font-medium text-white hover:bg-amber-700 transition-all">Save Yield</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Props = {
   production: ProductionTask[];
@@ -76,7 +153,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
   });
   const decoTaskProducts = new Set(production.filter(p => p.assignedTo === "deco").map(t => t.product));
-  const dosForDeco = todayDOS.filter(d => (d.roles ?? []).includes("deco") && decoTaskProducts.has(d.product));
+  const dosForDeco = todayDOS.filter(d => (d.roles ?? []).includes("deco"));
 
   useEffect(() => {
     if ((activeTab === "dashboard" || activeTab === "deco-queue") && dosForDeco.length > 0 && newDOSIds && onMarkDOSSeen) {
@@ -87,6 +164,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   const [editingRecipe, setEditingRecipe] = useState<string | null>(null);
   const [recipeDraft, setRecipeDraft] = useState<{ inventoryId: string; name: string; qtyPerBatch: number; unit: string }[]>([]);
+  const [recipeDraftYield, setRecipeDraftYield] = useState<number>(1);
   const [preMixPrepared, setPreMixPrepared] = useState<Set<string>>(new Set());
   const [preMixDone, setPreMixDone] = useState<Set<string>>(new Set());
   const [productQty, setProductQty] = useState<Record<string, number>>({});
@@ -150,7 +228,8 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [newBatch, setNewBatch] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [freezerSearch, setFreezerSearch] = useState("");
-  const [freezerTab, setFreezerTab] = useState<"Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory">("Display Cakes");
+  const [freezerTab, setFreezerTab] = useState<"Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory" | "Buffer Stock">("Display Cakes");
+  const [bufferStockItems, setBufferStockItems] = useState<BufferStockEntry[]>([]);
 
   const [customOrders, setCustomOrders] = useState<CustomOrder[]>([
     { id: "CO-001", customer: "Anna Santos", product: "Chocolate Cake", request: "Pink ribbon + gold topper + #21 candle", status: "pending", createdAt: "May 28, 10:30 AM" },
@@ -204,6 +283,45 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [wasteSource, setWasteSource] = useState("my-inventory");
   const [wasteItemId, setWasteItemId] = useState<string>("");
   const [wasteQty, setWasteQty] = useState<number>(1);
+
+  // Production Plan state
+  const [planBufferStock, setPlanBufferStock] = useState<BufferStockEntry[]>([]);
+  const [planDraft, setPlanDraft] = useState<{
+    demands: RecipeDemand[];
+    batches: BatchCalculation[];
+    allocations: OutputAllocation[];
+    bufferCreated: BufferStockEntry[];
+  } | null>(null);
+  const [confirmingPlan, setConfirmingPlan] = useState(false);
+
+
+  // Load buffer stock on mount
+  useEffect(() => {
+    db.fetchAvailableBufferStock().then(setPlanBufferStock).catch(console.error);
+  }, []);
+
+  // Build production plan draft when DOS items or recipes change
+  useEffect(() => {
+    const todayDOSForPlan = dosItems.filter(d => {
+      if (d.status === "scheduled") return false;
+      if (d.scheduledDate && d.scheduledDate <= new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]) return true;
+      const ts = d.id.match(/DOS-(\d+)/)?.[1];
+      if (!ts) return false;
+      const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+      return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    }).filter(d => (d.roles ?? []).includes("deco"));
+    if (todayDOSForPlan.length === 0) { setPlanDraft(null); return; }
+    const demands = aggregateRecipeDemand(todayDOSForPlan, recipes);
+    const batches = demands.map(d => {
+      const recipe = recipes.find(r => r.productName === d.recipeName)!;
+      return calculateBatches(d, recipe, inventory, planBufferStock);
+    });
+    const allocations = batches.map((b, i) => allocateOutput(b, demands[i].demandedBy));
+    const date = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    const batchRef = `PP-${Date.now()}`;
+    const bufferCreated = allocations.flatMap(a => createBufferStockEntries(a, batchRef, date));
+    setPlanDraft({ demands, batches, allocations, bufferCreated });
+  }, [dosItems, recipes, inventory, planBufferStock]);
   const [wasteReason, setWasteReason] = useState("Spoilage");
 
   const [wasteSearch, setWasteSearch] = useState("");
@@ -220,6 +338,11 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Load buffer stock on mount
+  useEffect(() => {
+    db.fetchAvailableBufferStock().then(setBufferStockItems).catch(console.error);
+  }, []);
+
   const allIngredients = inventory.filter(i => i.group === "ingredients" || i.group === "decoration-supplies" || i.group === "packaging-materials");
   const decoMaterials = inventory.filter(i => i.group === "decoration-supplies");
   const ingredientItems = inventory.filter(i => i.group === "ingredients");
@@ -230,6 +353,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const handleEditRecipe = (product: string) => {
     const existing = recipes.find(r => r.productName === product);
     setRecipeDraft(existing ? existing.ingredients.map(i => ({ ...i })) : []);
+    setRecipeDraftYield(existing?.yield ?? 1);
     setEditingRecipe(product);
   };
 
@@ -241,6 +365,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
       ingredients: recipeDraft.filter(i => i.name.trim()),
       packagingMaterials: existingRecipe?.packagingMaterials ?? [],
       decorationSupplies: existingRecipe?.decorationSupplies ?? [],
+      yield: recipeDraftYield || 1,
     };
     onUpdateRecipes(prev => {
       const idx = prev.findIndex(r => r.productName === editingRecipe);
@@ -496,6 +621,7 @@ defer(() => onUpdateInventory(prevInv => {
 
   const workflowSteps = [
     { id: "dashboard", label: "DOS Received" },
+    { id: "production-plan", label: "Production Plan" },
     { id: "advanced-premix", label: "Advanced Premix" },
     { id: "deco-queue", label: "Decoration Queue" },
     { id: "freezer", label: "Finished Products" },
@@ -907,6 +1033,16 @@ return (
           const recipeMap = new Map<string, { recipe: ProductRecipe; totalQty: number }>();
           dosForDeco.forEach(d => {
             const directRecipe = recipes.find(r => r.productName === d.product);
+            // Include the direct recipe only if it has ingredients
+            if (directRecipe && directRecipe.ingredients.length > 0) {
+              const key = directRecipe.productName.toLowerCase();
+              if (recipeMap.has(key)) {
+                recipeMap.get(key)!.totalQty += d.qty;
+              } else {
+                recipeMap.set(key, { recipe: directRecipe, totalQty: d.qty });
+              }
+            }
+            // Also include linked recipes
             const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
               .map(name => recipes.find(r => r.productName === name))
               .filter(Boolean)
@@ -930,18 +1066,26 @@ return (
               <thead>
                 <tr className="border-b border-zinc-700 bg-zinc-800 text-left text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
                   <th className="px-3 py-2.5">Recipe</th>
-                  <th className="px-3 py-2.5 text-right">Total Qty</th>
                   <th className="px-3 py-2.5 text-right">Ingredients</th>
+                  <th className="px-3 py-2.5 text-right">Yield/Batch</th>
+                  <th className="px-3 py-2.5 text-right">Total Qty</th>
+                  <th className="px-3 py-2.5 text-right">EST Prod. Total QTY</th>
                 </tr>
               </thead>
               <tbody>
-                {mergedRecipes.map(({ recipe, totalQty }) => (
+                {mergedRecipes.map(({ recipe, totalQty }) => {
+                  const yieldPerBatch = recipe.yield || 1;
+                  const estProdTotal = yieldPerBatch * totalQty;
+                  return (
                   <tr key={recipe.productName} onClick={() => setViewingDOSRecipe({ recipe, totalQty })} className="border-b border-zinc-800 text-[13px] hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <td className="px-3 py-2.5 font-medium text-zinc-100">{recipe.productName}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-zinc-300">{totalQty}</td>
                     <td className="px-3 py-2.5 text-right text-zinc-500">{recipe.ingredients.length}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-zinc-400">{yieldPerBatch}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-zinc-300">{totalQty}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-emerald-300">{estProdTotal}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -950,54 +1094,19 @@ return (
 
         {/* DOS Recipe Detail Modal */}
         {viewingDOSRecipe && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setViewingDOSRecipe(null)}>
-            <div className="w-full max-w-[480px] max-h-[85vh] rounded-[24px] bg-zinc-900 border border-zinc-700 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-                <div>
-                  <h3 className="text-[16px] font-semibold text-white">{viewingDOSRecipe.recipe.productName}</h3>
-                  <p className="text-[12px] text-zinc-400 mt-0.5">{viewingDOSRecipe.recipe.ingredients.length} ingredients · {viewingDOSRecipe.totalQty} total qty</p>
-                </div>
-                <button onClick={() => setViewingDOSRecipe(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors">✕</button>
-              </div>
-              <div className="overflow-y-auto px-5 py-4 space-y-2">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Ingredients</div>
-                {viewingDOSRecipe.recipe.ingredients.map((ing, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
-                    <div>
-                      <span className="text-[13px] font-medium text-zinc-200">{ing.name}</span>
-                      <span className="text-[11px] text-zinc-500 ml-2">{ing.unit}</span>
-                    </div>
-                    <span className="text-[13px] font-mono font-semibold text-zinc-300">{ing.qtyPerBatch * viewingDOSRecipe.totalQty}</span>
-                  </div>
-                ))}
-                {(viewingDOSRecipe.recipe.packagingMaterials ?? []).length > 0 && (
-                  <>
-                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium pt-2">Packaging</div>
-                    {viewingDOSRecipe.recipe.packagingMaterials.map((mat, i) => (
-                      <div key={`pkg-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
-                        <span className="text-[13px] font-medium text-zinc-200">{mat.name}</span>
-                        <span className="text-[12px] font-mono text-zinc-400">{mat.qtyPerBatch * viewingDOSRecipe.totalQty} {mat.unit}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-                {(viewingDOSRecipe.recipe.decorationSupplies ?? []).length > 0 && (
-                  <>
-                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium pt-2">Decoration</div>
-                    {viewingDOSRecipe.recipe.decorationSupplies.map((sup, i) => (
-                      <div key={`deco-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
-                        <span className="text-[13px] font-medium text-zinc-200">{sup.name}</span>
-                        <span className="text-[12px] font-mono text-zinc-400">{sup.qtyPerBatch * viewingDOSRecipe.totalQty} {sup.unit}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-              <div className="px-5 py-3 border-t border-zinc-800">
-                <button onClick={() => setViewingDOSRecipe(null)} className="w-full rounded-xl bg-zinc-800 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-700 transition-all">Close</button>
-              </div>
-            </div>
-          </div>
+          <DOSRecipeDetailModal
+            recipe={viewingDOSRecipe.recipe}
+            totalQty={viewingDOSRecipe.totalQty}
+            onClose={() => setViewingDOSRecipe(null)}
+            onSaveYield={(newYield) => {
+              const updated = { ...viewingDOSRecipe.recipe, yield: newYield };
+              setViewingDOSRecipe({ ...viewingDOSRecipe, recipe: updated });
+              if (onUpdateRecipes) {
+                onUpdateRecipes(prev => prev.map(r => r.productName === updated.productName ? updated : r));
+              }
+              db.upsertRecipe(updated).catch(console.error);
+            }}
+          />
         )}
 
         {/* Summary Modals */}
@@ -1105,15 +1214,270 @@ return (
 
         {/* Workflow Nav */}
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
-          <div className="text-[12px] text-zinc-400">Step 1 of 4</div>
+          <div className="text-[12px] text-zinc-400">Step 1 of 5</div>
           <button
-            onClick={() => setPreMixInDashboard(true)}
+            onClick={() => setActiveTab("production-plan")}
             className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all"
           >
-            Next: Pre-Mix →
+            Next: Production Plan →
           </button>
         </div>
         </>)}
+      </div>
+    );
+  }
+
+  /* ── Production Plan Panel ── */
+  if (activeTab === "production-plan") {
+    const todayDOSForPlan = dosItems.filter(d => {
+      if (d.status === "scheduled") return false;
+      if (d.scheduledDate && d.scheduledDate <= new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]) return true;
+      const ts = d.id.match(/DOS-(\d+)/)?.[1];
+      if (!ts) return false;
+      const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+      return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    }).filter(d => (d.roles ?? []).includes("deco"));
+
+    const totalDemand = planDraft?.demands.reduce((s, d) => s + d.totalDemand, 0) ?? 0;
+    const totalOutput = planDraft?.batches.reduce((s, b) => s + b.expectedOutput, 0) ?? 0;
+    const totalBuffer = planDraft?.allocations.reduce((s, a) => s + a.bufferStock, 0) ?? 0;
+    const totalBatches = planDraft?.batches.reduce((s, b) => s + b.batchesNeeded, 0) ?? 0;
+    const totalIngredients = planDraft ? sumIngredients(planDraft.batches) : [];
+    const totalPkg = planDraft ? sumPackaging(planDraft.batches) : [];
+    const totalDeco = planDraft ? sumDecoSupplies(planDraft.batches) : [];
+
+    const confirmPlan = async () => {
+      if (!planDraft || confirmingPlan) return;
+      setConfirmingPlan(true);
+      try {
+        const plan: ProductionPlan = {
+          id: `PP-${Date.now()}`,
+          date: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
+          dosItems: todayDOSForPlan,
+          recipeDemands: planDraft.demands,
+          batchCalculations: planDraft.batches,
+          outputAllocations: planDraft.allocations,
+          bufferStockCreated: planDraft.bufferCreated,
+          bufferStockUsed: [],
+          status: "confirmed",
+          createdBy: "deco",
+          createdAt: new Date().toISOString(),
+          confirmedAt: new Date().toISOString(),
+        };
+        await db.upsertProductionPlan(plan);
+        if (planDraft.bufferCreated.length > 0) {
+          await db.upsertBufferStock(planDraft.bufferCreated);
+        }
+        onAddAuditLog?.("PRODUCTION_PLAN_CONFIRMED", `Plan ${plan.id}: ${planDraft.batches.length} recipes, ${totalBatches} batches, ${totalBuffer} buffer`);
+        setActiveTab("advanced-premix");
+      } catch (err) {
+        console.error("Failed to save production plan:", err);
+      } finally {
+        setConfirmingPlan(false);
+      }
+    };
+
+    return (
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div className="rounded-2xl bg-zinc-900 p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-[28px] font-semibold tracking-tight text-white">Production Plan</h1>
+              <p className="mt-1 text-[13px] text-zinc-400">Recipe-level batch planning with yield calculation and buffer stock tracking.</p>
+            </div>
+            {planDraft && (
+              <div className="flex gap-3 shrink-0">
+                <div className="rounded-xl bg-white/10 px-4 py-2.5 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-medium tracking-wider">Recipes</div>
+                  <div className="text-[22px] font-bold text-white mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{planDraft.demands.length}</div>
+                </div>
+                <div className="rounded-xl bg-white/10 px-4 py-2.5 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-medium tracking-wider">Batches</div>
+                  <div className="text-[22px] font-bold text-white mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalBatches}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {todayDOSForPlan.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center">
+            <p className="text-[14px] text-zinc-400">No DOS items assigned for today. Production plan requires DOS items.</p>
+          </div>
+        ) : !planDraft ? (
+          <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center">
+            <p className="text-[14px] text-zinc-400">Calculating production plan...</p>
+          </div>
+        ) : (
+          <>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
+                <div className="text-[12px] text-zinc-400 uppercase tracking-wider font-medium">Total Demand</div>
+                <div className="text-[28px] font-bold mt-1 text-white" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalDemand}</div>
+                <div className="text-[11px] text-zinc-500 mt-1">pcs from DOS</div>
+              </div>
+              <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
+                <div className="text-[12px] text-zinc-400 uppercase tracking-wider font-medium">Expected Output</div>
+                <div className="text-[28px] font-bold mt-1 text-white" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalOutput}</div>
+                <div className="text-[11px] text-zinc-500 mt-1">pcs from {totalBatches} batch{totalBatches !== 1 ? "es" : ""}</div>
+              </div>
+              <div className="rounded-2xl border-2 border-emerald-600 bg-emerald-950/60 p-5 shadow-lg shadow-emerald-900/20">
+                <div className="text-[12px] text-emerald-400 uppercase tracking-wider font-semibold">Buffer Stock</div>
+                <div className="text-[28px] font-bold mt-1 text-emerald-300" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalBuffer}</div>
+                <div className="text-[11px] text-emerald-400 mt-1">excess pcs (reusable)</div>
+              </div>
+              <div className="rounded-2xl border-2 border-amber-600 bg-amber-950/60 p-5 shadow-lg shadow-amber-900/20">
+                <div className="text-[12px] text-amber-400 uppercase tracking-wider font-semibold">Buffer Available</div>
+                <div className="text-[28px] font-bold mt-1 text-amber-300" style={{ fontFamily: "Fragment Mono, monospace" }}>{getAvailableBuffer("", planBufferStock) || 0}</div>
+                <div className="text-[11px] text-amber-400 mt-1">pcs from previous</div>
+              </div>
+            </div>
+
+            {/* Recipe Demand Table */}
+            <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
+              <h2 className="text-[15px] font-semibold text-white mb-3">Recipe Demand Aggregation</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[13px]">
+                  <thead className="bg-zinc-800 text-zinc-400">
+                    <tr>
+                      <th className="px-4 py-3">Recipe</th>
+                      <th className="px-4 py-3 text-right">Yield</th>
+                      <th className="px-4 py-3 text-right">Demand</th>
+                      <th className="px-4 py-3 text-right">Buffer</th>
+                      <th className="px-4 py-3 text-right">Net</th>
+                      <th className="px-4 py-3 text-right">Batches</th>
+                      <th className="px-4 py-3 text-right">Output</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800">
+                    {planDraft.batches.map((b, i) => (
+                      <tr key={b.recipeName} className="hover:bg-zinc-800/50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-zinc-100">{b.recipeName}</div>
+                          <div className="text-[11px] text-zinc-500 mt-0.5">
+                            {planDraft.demands[i].demandedBy.map(d => `${d.productName} ×${d.qty}`).join(" + ")}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-zinc-400">{b.recipeYield}</td>
+                        <td className="px-4 py-3 text-right font-mono font-medium text-zinc-200">{b.totalDemand}</td>
+                        <td className="px-4 py-3 text-right font-mono text-emerald-400">{b.bufferFromPrevious > 0 ? `-${b.bufferFromPrevious}` : "—"}</td>
+                        <td className="px-4 py-3 text-right font-mono font-medium text-zinc-200">{b.netDemand}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] font-medium text-zinc-300">{b.batchesNeeded}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-zinc-100">{b.expectedOutput}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Output Allocation */}
+            <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
+              <h2 className="text-[15px] font-semibold text-white mb-3">Output Allocation</h2>
+              <div className="space-y-4">
+                {planDraft.allocations.map(a => (
+                  <div key={a.recipeName} className="rounded-xl border border-zinc-800 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[14px] font-semibold text-zinc-100">{a.recipeName}</span>
+                        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">{a.producedQty} produced</span>
+                      </div>
+                      {a.bufferStock > 0 && (
+                        <span className="rounded-full bg-emerald-900/50 px-2 py-0.5 text-[10px] font-medium text-emerald-300">+{a.bufferStock} buffer</span>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      {a.allocations.map(al => (
+                        <div key={al.productName} className="flex items-center justify-between text-[12px]">
+                          <div className="flex items-center gap-2">
+                            <span className="text-zinc-500">#{al.priority}</span>
+                            <span className="font-medium text-zinc-300">{al.productName}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-zinc-500">demand: {al.demandQty}</span>
+                            <span className={`font-mono font-medium ${al.allocatedQty === al.demandQty ? "text-emerald-400" : "text-amber-400"}`}>
+                              → {al.allocatedQty}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      {a.bufferStock > 0 && (
+                        <div className="flex items-center justify-between text-[12px] pt-1.5 border-t border-zinc-800">
+                          <span className="font-medium text-emerald-400">Buffer Stock (excess)</span>
+                          <span className="font-mono font-semibold text-emerald-400">+{a.bufferStock}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Ingredients Required */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="rounded-2xl border-2 border-amber-600 bg-amber-950/40 p-5 shadow-lg shadow-amber-900/20">
+                <h3 className="text-[14px] font-bold text-amber-200 mb-4 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  Ingredients Required
+                </h3>
+                <div className="space-y-2">
+                  {totalIngredients.map(ing => (
+                    <div key={ing.inventoryId} className="flex items-center justify-between text-[13px] py-1.5 px-3 rounded-lg bg-amber-900/20 border border-amber-800/30">
+                      <span className="text-zinc-200 font-medium">{ing.name}</span>
+                      <span className="font-mono font-bold text-amber-200">{ing.totalQty} {ing.unit}</span>
+                    </div>
+                  ))}
+                  {totalIngredients.length === 0 && <p className="text-[13px] text-amber-400/60 py-2">No ingredients needed.</p>}
+                </div>
+              </div>
+              <div className="rounded-2xl border-2 border-blue-600 bg-blue-950/40 p-5 shadow-lg shadow-blue-900/20">
+                <h3 className="text-[14px] font-bold text-blue-200 mb-4 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                  Packaging Required
+                </h3>
+                <div className="space-y-2">
+                  {totalPkg.map(p => (
+                    <div key={p.inventoryId} className="flex items-center justify-between text-[13px] py-1.5 px-3 rounded-lg bg-blue-900/20 border border-blue-800/30">
+                      <span className="text-zinc-200 font-medium">{p.name}</span>
+                      <span className="font-mono font-bold text-blue-200">{p.totalQty} {p.unit}</span>
+                    </div>
+                  ))}
+                  {totalPkg.length === 0 && <p className="text-[13px] text-blue-400/60 py-2">No packaging needed.</p>}
+                </div>
+              </div>
+              <div className="rounded-2xl border-2 border-purple-600 bg-purple-950/40 p-5 shadow-lg shadow-purple-900/20">
+                <h3 className="text-[14px] font-bold text-purple-200 mb-4 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+                  Deco Supplies Required
+                </h3>
+                <div className="space-y-2">
+                  {totalDeco.map(d => (
+                    <div key={d.inventoryId} className="flex items-center justify-between text-[13px] py-1.5 px-3 rounded-lg bg-purple-900/20 border border-purple-800/30">
+                      <span className="text-zinc-200 font-medium">{d.name}</span>
+                      <span className="font-mono font-bold text-purple-200">{d.totalQty} {d.unit}</span>
+                    </div>
+                  ))}
+                  {totalDeco.length === 0 && <p className="text-[13px] text-purple-400/60 py-2">No deco supplies needed.</p>}
+                </div>
+              </div>
+            </div>
+
+            {/* Confirm Button */}
+            <div className="flex items-center justify-between pt-4 border-t border-zinc-700">
+              <div className="text-[12px] text-zinc-500">Step 2 of 5</div>
+              <button
+                onClick={confirmPlan}
+                disabled={confirmingPlan || planDraft.batches.length === 0}
+                className="rounded-xl bg-emerald-600 px-6 py-2.5 text-[13px] font-medium text-white hover:bg-emerald-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {confirmingPlan ? "Saving..." : "Confirm Production Plan →"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -2055,7 +2419,7 @@ return (
     const decoOnlyInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco"));
     
     // Categorization logic
-    const tabs: ("Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "Advanced Premix", "My Inventory"];
+    const tabs: ("Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory" | "Buffer Stock")[] = ["Display Cakes", "Production Recipe", "Advanced Premix", "My Inventory", "Buffer Stock"];
     const displayCakes = myFreezer.filter(i => !i.notes?.startsWith("Production Recipe") && !i.batchRef?.startsWith("ADV-"));
     const productionRecipes = myFreezer.filter(i => i.notes?.startsWith("Production Recipe") && i.qty > 0);
     const advancedPremix = myFreezer.filter(i => i.batchRef?.startsWith("ADV-") && i.qty > 0);
@@ -2327,6 +2691,58 @@ return (
             )}
           </div>
         </div>
+
+        {/* Buffer Stock Tab Content */}
+        {freezerTab === "Buffer Stock" && (
+          <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-zinc-50 border-b border-zinc-100">
+                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                    <th className="px-5 py-3">Recipe</th>
+                    <th className="px-5 py-3 text-right">Qty</th>
+                    <th className="px-5 py-3">Unit</th>
+                    <th className="px-5 py-3">Batch Ref</th>
+                    <th className="px-5 py-3">Date</th>
+                    <th className="px-5 py-3 text-center">Status</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50">
+                  {bufferStockItems.length === 0 ? (
+                    <tr><td colSpan={7} className="px-5 py-12 text-center text-[13px] text-zinc-400">No buffer stock available. Confirm a production plan to generate buffer stock.</td></tr>
+                  ) : bufferStockItems.map(item => (
+                    <tr key={item.id} className="hover:bg-emerald-50/30 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <div className="text-[13px] font-medium text-zinc-900">{item.recipeName}</div>
+                        {item.productName && <div className="text-[11px] text-zinc-400 mt-0.5">{item.productName}</div>}
+                      </td>
+                      <td className="px-5 py-3.5 text-[13px] text-right font-mono font-semibold text-emerald-700">{item.qty}</td>
+                      <td className="px-5 py-3.5 text-[13px] text-zinc-500">{item.unit}</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{item.batchRef || "—"}</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{item.dateCreated}</td>
+                      <td className="px-5 py-3.5 text-center">
+                        <span className={`text-[11px] font-medium ${item.status === "available" ? "text-emerald-600" : item.status === "used" ? "text-zinc-400" : "text-amber-600"}`}>
+                          {item.status === "available" ? "✓ Available" : item.status === "used" ? "Used" : "⚠ Expired"}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        {item.status === "available" && (
+                          <button onClick={async () => {
+                            if (confirm(`Delete ${item.qty} ${item.unit} of ${item.recipeName} buffer stock?`)) {
+                              setBufferStockItems(prev => prev.filter(b => b.id !== item.id));
+                              db.deleteBufferStockItem(item.id).catch(console.error);
+                            }
+                          }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {showAddFreezer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddFreezer(false)}>

@@ -417,6 +417,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                           <th className="px-4 py-3">Recipe</th>
                           <th className="px-4 py-3">Items</th>
                           <th className="px-4 py-3">Group</th>
+                          <th className="px-4 py-3">Yield</th>
                           <th className="px-4 py-3">Notes</th>
                           <th className="px-4 py-3 text-right">Cost</th>
                           <th className="px-4 py-3 w-32" />
@@ -434,6 +435,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                                 <span className="text-[12px] text-zinc-400 italic">—</span>
                               )}
                             </td>
+                            <td className="px-4 py-3 text-zinc-600">{recipe.yield ?? "—"}</td>
                             <td className="px-4 py-3 text-zinc-600">{recipe.notes || "-"}</td>
                             <td className="px-4 py-3 text-right font-medium text-zinc-900">₱{computeRecipeCost(recipe).toFixed(2)}</td>
                             <td className="px-4 py-3 text-right">
@@ -819,6 +821,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                       <h3 className="text-[16px] font-semibold">{recipe.productName}</h3>
                       <div className="flex items-center gap-2 mt-1">
                         {recipe.group === "filling" && <span className="inline-block rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">Filling</span>}
+                        {recipe.yield != null && <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">Yield: {recipe.yield}</span>}
                         <span className="text-[11px] text-zinc-400">{recipe.ingredients.length} ingredients</span>
                       </div>
                     </div>
@@ -3473,6 +3476,7 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>(isNew ? [] : (existing?.ingredients || []));
   const [notes, setNotes] = useState(isNew ? "" : (existing?.notes || ""));
   const [group, setGroup] = useState<string>(existing?.group || "");
+  const [yieldQty, setYieldQty] = useState<number | "">(existing?.yield ?? "");
   const [showPicker, setShowPicker] = useState(false);
   const [ingredientSearch, setIngredientSearch] = useState("");
 
@@ -3519,6 +3523,11 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
             <input type="checkbox" checked={group === "filling"} onChange={e => setGroup(e.target.checked ? "filling" : "")} className="rounded border-zinc-300 w-4 h-4" />
             <span className="text-[13px] font-medium text-zinc-700">Filling Recipe</span>
           </label>
+        </div>
+
+        <div className="mb-4">
+          <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Yield</label>
+          <input type="number" min="0" value={yieldQty} onChange={e => setYieldQty(e.target.value === "" ? "" : Number(e.target.value))} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. 50" />
         </div>
 
         <div className="mb-3 relative">
@@ -3579,7 +3588,7 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
 
         <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
           <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-          <button onClick={() => onSave({ id: existing?.id, productId: isNew ? recipeName : product, productName: recipeName, ingredients, notes, group, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [] })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
+          <button onClick={() => onSave({ id: existing?.id, productId: isNew ? recipeName : product, productName: recipeName, ingredients, notes, group, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [], yield: yieldQty === "" ? undefined : yieldQty })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
         </div>
       </div>
     </div>
