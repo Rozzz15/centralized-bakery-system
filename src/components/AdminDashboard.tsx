@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { createPortal } from "react-dom";
 import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage } from "../types";
+import type { ProductRoute } from "../lib/db";
 import * as db from "../lib/db";
 import DOSBuilderModal from "./DOSBuilderModal";
 import EditProductModal from "./EditProductModal";
@@ -24,6 +25,8 @@ type Props = {
   onDeleteDOS: (id: string) => void;
   productCatalog: string[];
   onUpdateProductCatalog: (cb: string[] | ((prev: string[]) => string[])) => void;
+  productRoutes: Record<string, ProductRoute>;
+  onUpdateProductRoutes: (cb: Record<string, ProductRoute> | ((prev: Record<string, ProductRoute>) => Record<string, ProductRoute>)) => void;
   recipes: ProductRecipe[];
   onUpdateRecipes: (cb: ProductRecipe[] | ((prev: ProductRecipe[]) => ProductRecipe[])) => void;
   onAddAuditLog?: (action: string, details: string) => void;
@@ -42,6 +45,7 @@ type Props = {
   onUpdateWasteLog: (cb: WasteLog[] | ((prev: WasteLog[]) => WasteLog[])) => void;
   promosPackages: PromoPackage[];
   onUpdatePromosPackages: (cb: PromoPackage[] | ((prev: PromoPackage[]) => PromoPackage[])) => void;
+  decoProductionPrep: { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean; additionalIngredients: { name: string; qty: number; unit: string; reason: string; source: string }[] }[];
 };
 
 export default function AdminDashboard({
@@ -62,6 +66,8 @@ export default function AdminDashboard({
   onDeleteDOS,
   productCatalog,
   onUpdateProductCatalog,
+  productRoutes,
+  onUpdateProductRoutes,
   onAddAuditLog,
   recipes,
   onUpdateRecipes,
@@ -80,6 +86,7 @@ export default function AdminDashboard({
   onUpdateWasteLog,
   promosPackages,
   onUpdatePromosPackages,
+  decoProductionPrep = [],
 }: Props) {
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
   const [showAddProduct, setShowAddProduct] = useState(false);
@@ -330,7 +337,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Linked Recipe</th><th className="px-4 py-3">Categories</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-36" /></tr>
+                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Linked Recipe</th><th className="px-4 py-3">Categories</th><th className="px-4 py-3">Route</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-36" /></tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 text-[13px]">
                 {[...filteredProducts].sort((a, b) => {
@@ -362,6 +369,34 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                         ) : (
                           <span className="text-[12px] text-zinc-400 italic">—</span>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={productRoutes[product] || ""}
+                          onChange={e => {
+                            e.stopPropagation();
+                            const val = (e.target.value || null) as ProductRoute | null;
+                            onUpdateProductRoutes(prev => {
+                              const next = { ...prev };
+                              if (val) next[product] = val;
+                              else delete next[product];
+                              return next;
+                            });
+                            db.saveProductRoute(product, val).catch(console.error);
+                          }}
+                          onClick={e => e.stopPropagation()}
+                          className={`rounded-lg border px-2 py-1 text-[11px] font-medium outline-none cursor-pointer ${
+                            productRoutes[product] === "baker" ? "border-stone-300 bg-stone-50 text-stone-700"
+                            : productRoutes[product] === "deco" ? "border-rose-300 bg-rose-50 text-rose-700"
+                            : productRoutes[product] === "pastry" ? "border-amber-300 bg-amber-50 text-amber-700"
+                            : "border-zinc-200 bg-white text-zinc-400"
+                          }`}
+                        >
+                          <option value="">—</option>
+                          <option value="baker">Baker</option>
+                          <option value="deco">Deco</option>
+                          <option value="pastry">Pastry</option>
+                        </select>
                       </td>
                       <td className="px-4 py-3">
                         {recipe?.packagingMaterials && recipe.packagingMaterials.length > 0 ? (
@@ -934,7 +969,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000);
 
     const groupItems = (g: typeof warehouseSection) => inventory.filter(i => g === "history" ? false : i.group === g);
-    const roleFiltered = (items: InventoryItem[]) => warehouseSection !== "ingredients" || ingredientRoleFilter === "all" ? items : items.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter));
+    const roleFiltered = (items: InventoryItem[]) => ingredientRoleFilter === "all" ? items : items.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter));
 
     const sidebarItems: { key: typeof warehouseSection; label: string; icon: string }[] = [
       { key: "ingredients", label: "Ingredients", icon: "◇" },
@@ -991,8 +1026,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             </div>
           )}
 
-          {/* Role filter pills for Ingredients */}
-          {warehouseSection === "ingredients" && (
+          {/* Role filter pills */}
+          {warehouseSection !== "history" && (
             <div className="flex items-center gap-1.5 rounded-xl bg-zinc-100 p-1">
               {[
                 { id: "all" as const, label: "All" },
@@ -1063,7 +1098,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 </div>
                 <div className="overflow-x-auto">
                   <div className="min-w-[600px] space-y-3">
-                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).map(item => {
+                  {roleFiltered(groupItems(warehouseSection)).filter(i => !invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase())).map(item => {
                     const pct = Math.min(100, (item.onHand / item.threshold) * 100);
                     const isCritical = item.onHand < item.threshold;
                     const isExpired = item.expiryDate && item.expiryDate < todayStr;
@@ -1094,7 +1129,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                                 <span className="text-[12px] text-zinc-400 italic">No expiry</span>
                               )}
                             </div>
-                            {warehouseSection === "ingredients" && item.accessRoles && item.accessRoles.length > 0 && (
+                            {item.accessRoles && item.accessRoles.length > 0 && (
                               <div className="flex items-center gap-1.5 mt-2.5">
                                 <span className="text-[11px] text-zinc-400 font-medium uppercase tracking-wider">Access:</span>
                                 {item.accessRoles.map(r => (
@@ -1128,7 +1163,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                       </div>
                     );
                   })}
-                  {groupItems(warehouseSection).filter(i => (warehouseSection !== "ingredients" || ingredientRoleFilter === "all" || !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter)) && (!invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase()))).length === 0 && <div className="text-center py-12 text-[15px] text-zinc-400">{invSearch ? "No items match your search." : "No items in this group yet."}</div>}
+                  {roleFiltered(groupItems(warehouseSection)).filter(i => !invSearch || i.name.toLowerCase().includes(invSearch.toLowerCase()) || i.sku.toLowerCase().includes(invSearch.toLowerCase()) || i.supplier.toLowerCase().includes(invSearch.toLowerCase())).length === 0 && <div className="text-center py-12 text-[15px] text-zinc-400">{invSearch ? "No items match your search." : "No items in this group yet."}</div>}
                   </div>
                 </div>
               </div>
@@ -1538,6 +1573,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             onClose={() => setScheduledAddDate(null)}
             onSave={(items, tasks) => { onCreateDOS(items, tasks); setScheduledAddDate(null); }}
             productCatalog={productCatalog}
+            productRoutes={productRoutes}
             onAddToCatalog={(name) => { onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]); db.addToCatalog(name).catch(console.error); }}
             hasTodayItems={todayDOS.length > 0}
             presetDate={scheduledAddDate}
@@ -1550,6 +1586,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     onClose={() => setTodayAddOpen(false)}
     onSave={(items, tasks) => { onCreateDOS(items, tasks); setTodayAddOpen(false); }}
     productCatalog={productCatalog}
+    productRoutes={productRoutes}
     onAddToCatalog={(name) => { onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]); db.addToCatalog(name).catch(console.error); }}
     hasTodayItems={todayDOS.length > 0}
             presetDate={new Date().toISOString().split("T")[0]}
@@ -1561,7 +1598,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     );
   }
 
-  /* ── Production Tab (Enhanced) ── */
+  /* ── Production Tab (Monitoring) ── */
   if (activeTab === "production") {
     const todayDate = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
     const todayTasks = production.filter(t => {
@@ -1573,56 +1610,199 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     const bakerTasks = todayTasks.filter(t => t.assignedTo === "baker");
     const pastryTasks = todayTasks.filter(t => t.assignedTo === "pastry");
     const decoTasks = todayTasks.filter(t => t.assignedTo === "deco");
-    const kitchenTasks = todayTasks.filter(t => t.assignedTo === "kitchen");
-    return (
-      <div className="space-y-5">
-        <div className="flex items-center gap-3"><div><h1 className="text-[24px] font-semibold">Production Control</h1><p className="mt-1 text-[13px] text-zinc-600">Track all tasks across Baker, Pastry, Deco, and Kitchen.</p></div><div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" /><span className="text-[11px] font-medium text-emerald-700">Live</span></div></div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Total Tasks</div><div className="text-[20px] font-semibold mt-0.5">{todayTasks.length}</div></div>
-          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">In Progress</div><div className="text-[20px] font-semibold mt-0.5 text-amber-600">{todayTasks.filter(t => t.status === "in-progress").length}</div></div>
-          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3"><div className="text-[10px] text-zinc-500 uppercase tracking-wider">Completed</div><div className="text-[20px] font-semibold mt-0.5 text-emerald-600">{todayTasks.filter(t => t.status === "completed").length}</div></div>
+    const bakerFreezer = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.qty > 0);
+    const pastryFreezer = freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored" && i.qty > 0);
+    const decoFreezer = freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.qty > 0);
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-[24px] font-semibold">Production Monitoring</h1>
+            <p className="mt-1 text-[13px] text-zinc-600">Track freezers, tasks, and additional ingredients across all departments.</p>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[11px] font-medium text-emerald-700">Live</span>
+          </div>
         </div>
 
-        {/* Department Lanes */}
-        <div className="grid gap-4 lg:grid-cols-4">
-          {[
-            { tasks: bakerTasks, label: "Baker", accent: "bg-stone-600", dot: "bg-stone-500", tag: "bg-stone-100 text-stone-700", bar: "bg-stone-500" },
-            { tasks: pastryTasks, label: "Pastry", accent: "bg-amber-600", dot: "bg-amber-500", tag: "bg-amber-100 text-amber-700", bar: "bg-amber-500" },
-            { tasks: decoTasks, label: "Deco / Pre-Mix", accent: "bg-rose-600", dot: "bg-rose-500", tag: "bg-rose-100 text-rose-700", bar: "bg-rose-500" },
-            { tasks: kitchenTasks, label: "Kitchen", accent: "bg-emerald-600", dot: "bg-emerald-500", tag: "bg-emerald-100 text-emerald-700", bar: "bg-emerald-500" },
-          ].map(({ tasks, label, accent, dot, tag, bar }) => {
-            const done = tasks.filter(t => t.status === "completed").length;
-            const totalPct = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0;
-            return (
-              <div key={label} className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
-                <div className={`h-1 ${accent}`} />
-                <div className="px-5 pt-4 pb-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2.5">
-                      <div className={`h-3 w-3 rounded-full ${dot}`} />
-                      <h2 className="text-[17px] font-semibold text-zinc-900 tracking-tight">{label}</h2>
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Total Tasks</div>
+            <div className="text-[20px] font-semibold mt-0.5">{todayTasks.length}</div>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">In Progress</div>
+            <div className="text-[20px] font-semibold mt-0.5 text-amber-600">{todayTasks.filter(t => t.status === "in-progress").length}</div>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Completed</div>
+            <div className="text-[20px] font-semibold mt-0.5 text-emerald-600">{todayTasks.filter(t => t.status === "completed").length}</div>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Additional Items</div>
+            <div className="text-[20px] font-semibold mt-0.5 text-rose-600">{decoProductionPrep.reduce((sum, p) => sum + (p.additionalIngredients?.length ?? 0), 0)}</div>
+          </div>
+        </div>
+
+        {/* Today's Production Tasks */}
+        <div>
+          <h2 className="text-[16px] font-semibold text-zinc-900 mb-3">Today's Production Tasks</h2>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {[
+              { tasks: bakerTasks, label: "Baker", accent: "bg-stone-600", dot: "bg-stone-500", tag: "bg-stone-100 text-stone-700", bar: "bg-stone-500", icon: "🍞" },
+              { tasks: pastryTasks, label: "Pastry", accent: "bg-amber-600", dot: "bg-amber-500", tag: "bg-amber-100 text-amber-700", bar: "bg-amber-500", icon: "🧁" },
+              { tasks: decoTasks, label: "Deco / Pre-Mix", accent: "bg-rose-600", dot: "bg-rose-500", tag: "bg-rose-100 text-rose-700", bar: "bg-rose-500", icon: "🎂" },
+            ].map(({ tasks, label, accent, dot, tag, bar, icon }) => {
+              const done = tasks.filter(t => t.status === "completed").length;
+              const totalPct = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0;
+              return (
+                <div key={label} className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+                  <div className={`h-1 ${accent}`} />
+                  <div className="px-4 pt-3 pb-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[14px]">{icon}</span>
+                        <h3 className="text-[14px] font-semibold text-zinc-900">{label}</h3>
+                      </div>
+                      <span className={`rounded-lg ${tag} px-2 py-0.5 text-[11px] font-bold font-mono`}>{done}/{tasks.length}</span>
                     </div>
-                    <div className={`rounded-lg ${tag} px-2.5 py-0.5`}>
-                      <span className="text-[12px] font-bold font-mono">{done}<span className="text-zinc-400 font-medium">/{tasks.length}</span></span>
+                    <div className="h-1.5 rounded-full bg-zinc-100 mt-2">
+                      <div className={`h-full rounded-full ${totalPct === 100 ? "bg-emerald-500" : bar}`} style={{ width: `${totalPct}%` }} />
                     </div>
                   </div>
-                  <div className="h-2 rounded-full bg-[#F3EFE9] mt-3">
-                    <div className={`h-full rounded-full ${totalPct === 100 ? "bg-emerald-500" : bar}`} style={{ width: `${totalPct}%` }} />
+                  {tasks.length === 0 ? (
+                    <p className="text-[12px] text-zinc-400 text-center py-6 px-4">No tasks yet</p>
+                  ) : (
+                    <div className="divide-y divide-zinc-100 border-t border-zinc-100">
+                      {tasks.map(task => {
+                        const decoPrep = label === "Deco / Pre-Mix" ? decoProductionPrep.find(p => p.productName === task.product) : null;
+                        return (
+                          <div key={task.id} className="px-4 py-2.5 hover:bg-zinc-50 transition-colors">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-[12px] font-medium text-zinc-900 truncate">{task.product}</span>
+                                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${task.status === "completed" ? "bg-emerald-100 text-emerald-700" : task.status === "in-progress" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-500"}`}>{task.status === "in-progress" ? "active" : task.status}</span>
+                              </div>
+                              <span className={`text-[11px] font-mono ${task.status === "completed" ? "text-emerald-600" : task.status === "in-progress" ? "text-amber-600" : "text-zinc-400"}`}>{task.completed}/{task.target}</span>
+                            </div>
+                            {decoPrep && decoPrep.additionalIngredients && decoPrep.additionalIngredients.length > 0 && (
+                              <div className="mt-2 rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1.5">
+                                <div className="text-[9px] font-semibold text-rose-600 uppercase tracking-wider mb-1">Additional Used</div>
+                                {decoPrep.additionalIngredients.map((item, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-[10px] text-zinc-700">
+                                    <span className="truncate">{item.name} — {item.qty} {item.unit}</span>
+                                    <span className="text-zinc-500 italic shrink-0 ml-2">{item.reason}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Freezer Status */}
+        <div>
+          <h2 className="text-[16px] font-semibold text-zinc-900 mb-3">Freezer Status</h2>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {[
+              { items: bakerFreezer, label: "Baker Freezer", accent: "bg-stone-500", icon: "🍞", emptyMsg: "No items in baker freezer" },
+              { items: pastryFreezer, label: "Pastry Freezer", accent: "bg-amber-500", icon: "🧁", emptyMsg: "No items in pastry freezer" },
+              { items: decoFreezer, label: "Deco Freezer", accent: "bg-rose-500", icon: "🎂", emptyMsg: "No items in deco freezer" },
+            ].map(({ items, label, accent, icon, emptyMsg }) => (
+              <div key={label} className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+                <div className={`h-1 ${accent}`} />
+                <div className="px-4 pt-3 pb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[16px]">{icon}</span>
+                      <h3 className="text-[14px] font-semibold text-zinc-900">{label}</h3>
+                    </div>
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-mono text-zinc-600">{items.length} items</span>
                   </div>
                 </div>
-                {tasks.length === 0 ? (
-                  <p className="text-[13px] text-zinc-400 text-center py-8">No {label.toLowerCase()} tasks yet.</p>
+                {items.length === 0 ? (
+                  <p className="text-[12px] text-zinc-400 text-center py-6 px-4">{emptyMsg}</p>
                 ) : (
-                  <div className="divide-y divide-[#F3EFE9]/60 border-t border-[#E8E0D5]/50">
-                    {tasks.map(task => <CompactTaskCard key={task.id} task={task} color={bar.replace("bg-", "")} />)}
+                  <div className="divide-y divide-zinc-100 border-t border-zinc-100 max-h-[200px] overflow-y-auto">
+                    {items.map(item => (
+                      <div key={item.id} className="flex items-center justify-between px-4 py-2 hover:bg-zinc-50 transition-colors">
+                        <div className="min-w-0">
+                          <div className="text-[12px] font-medium text-zinc-900 truncate">{item.productName}</div>
+                          <div className="text-[10px] text-zinc-500">{item.batchRef}</div>
+                        </div>
+                        <span className="text-[12px] font-mono text-zinc-700 shrink-0 ml-2">{item.qty} {item.unit}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
+
+        {/* Additional Ingredients Used */}
+        {(() => {
+          const allAdditional = decoProductionPrep
+            .filter(p => p.additionalIngredients && p.additionalIngredients.length > 0)
+            .flatMap(p => p.additionalIngredients.map(ai => ({ ...ai, product: p.productName })));
+          return (
+            <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+              <div className="h-1 bg-rose-500" />
+              <div className="px-5 pt-4 pb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[16px]">➕</span>
+                    <h2 className="text-[16px] font-semibold text-zinc-900">Additional Ingredients Used</h2>
+                  </div>
+                  <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold font-mono text-rose-700">{allAdditional.length} items</span>
+                </div>
+                <p className="text-[11px] text-zinc-500 mt-0.5">Extra ingredients added during preparation with reasons</p>
+              </div>
+              <div className="overflow-x-auto border-t border-zinc-100">
+                {allAdditional.length === 0 ? (
+                  <p className="text-[12px] text-zinc-400 text-center py-8">No additional ingredients used today.</p>
+                ) : (
+                  <table className="w-full text-[12px]">
+                    <thead className="bg-zinc-50 text-left text-[10px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                      <tr>
+                        <th className="px-5 py-2.5">Product</th>
+                        <th className="px-5 py-2.5">Ingredient</th>
+                        <th className="px-5 py-2.5 text-right">Quantity</th>
+                        <th className="px-5 py-2.5">Reason</th>
+                        <th className="px-5 py-2.5">Source</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {allAdditional.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-zinc-50 transition-colors">
+                          <td className="px-5 py-2.5 font-medium text-zinc-900">{item.product}</td>
+                          <td className="px-5 py-2.5 text-zinc-700">{item.name}</td>
+                          <td className="px-5 py-2.5 text-right font-mono text-zinc-700">{item.qty} {item.unit}</td>
+                          <td className="px-5 py-2.5">
+                            <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-medium">{item.reason || "—"}</span>
+                          </td>
+                          <td className="px-5 py-2.5 text-zinc-500">{item.source}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Production History */}
         {(() => {
@@ -1649,7 +1829,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           return (
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-[18px] font-semibold">Production History</h2>
+                <h2 className="text-[16px] font-semibold text-zinc-900">Production History</h2>
                 <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 font-mono">{prodGroups.length} day{prodGroups.length > 1 ? "s" : ""}</span>
               </div>
               <div className="space-y-2">
@@ -1659,28 +1839,28 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   <div key={group.date} className="rounded-2xl border border-zinc-200 overflow-hidden bg-white">
                     <button onClick={() => toggleProdGroup(group.date)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-50 transition-colors text-left cursor-pointer">
                       <div className="flex items-center gap-3">
-                        <span className="text-[14px] font-medium text-zinc-900">
+                        <span className="text-[13px] font-medium text-zinc-900">
                           {new Date(group.date + "T00:00:00").toLocaleDateString("en-PH", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
                         </span>
-                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600 font-mono">{group.items.length} task{group.items.length > 1 ? "s" : ""} • {group.total} pcs</span>
-                        <span className="text-[11px] text-zinc-500">{group.done}/{group.items.length} done</span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-600 font-mono">{group.items.length} tasks • {group.total} pcs</span>
+                        <span className="text-[10px] text-zinc-500">{group.done}/{group.items.length} done</span>
                       </div>
-                      <span className="text-zinc-400 text-[13px]">{isOpen ? "▾" : "›"}</span>
+                      <span className="text-zinc-400 text-[12px]">{isOpen ? "▾" : "›"}</span>
                     </button>
                     {isOpen && <div className="border-t border-zinc-100">
                       <div className="overflow-x-auto">
-                        <table className="w-full text-[13px]">
-                          <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                            <tr><th className="px-4 py-2.5">Product</th><th className="px-4 py-2.5 text-right">Target</th><th className="px-4 py-2.5 text-right">Completed</th><th className="px-4 py-2.5">Assigned To</th><th className="px-4 py-2.5 text-right">Status</th></tr>
+                        <table className="w-full text-[12px]">
+                          <thead className="bg-zinc-50 text-left text-[10px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                            <tr><th className="px-4 py-2">Product</th><th className="px-4 py-2 text-right">Target</th><th className="px-4 py-2 text-right">Done</th><th className="px-4 py-2">Assigned</th><th className="px-4 py-2 text-right">Status</th></tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-100">
                             {group.items.map(task => (
                               <tr key={task.id} className="hover:bg-zinc-50">
-                                <td className="px-4 py-2 font-medium text-zinc-900">{task.product}</td>
-                                <td className="px-4 py-2 text-right font-mono text-zinc-600">{task.target}</td>
-                                <td className="px-4 py-2 text-right font-mono text-zinc-600">{task.completed}</td>
-                                <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium text-white ${task.assignedTo === "baker" ? "bg-stone-500" : task.assignedTo === "deco" ? "bg-rose-500" : task.assignedTo === "kitchen" ? "bg-emerald-500" : "bg-zinc-400"}`}>{task.assignedTo || "—"}</span></td>
-                                <td className="px-4 py-2 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${task.status === "completed" ? "text-emerald-700" : task.status === "in-progress" ? "text-amber-700" : "text-zinc-500"}`}><span className={`h-1.5 w-1.5 rounded-full ${task.status === "completed" ? "bg-emerald-500" : task.status === "in-progress" ? "bg-amber-500" : "bg-zinc-300"}`} />{task.status === "in-progress" ? "In Progress" : task.status === "completed" ? "Completed" : "Pending"}</span></td>
+                                <td className="px-4 py-1.5 font-medium text-zinc-900">{task.product}</td>
+                                <td className="px-4 py-1.5 text-right font-mono text-zinc-600">{task.target}</td>
+                                <td className="px-4 py-1.5 text-right font-mono text-zinc-600">{task.completed}</td>
+                                <td className="px-4 py-1.5"><span className={`rounded-full px-2 py-0.5 text-[9px] font-medium text-white ${task.assignedTo === "baker" ? "bg-stone-500" : task.assignedTo === "deco" ? "bg-rose-500" : task.assignedTo === "kitchen" ? "bg-emerald-500" : "bg-zinc-400"}`}>{task.assignedTo || "—"}</span></td>
+                                <td className="px-4 py-1.5 text-right"><span className={`inline-flex items-center gap-1 text-[10px] font-medium ${task.status === "completed" ? "text-emerald-700" : task.status === "in-progress" ? "text-amber-700" : "text-zinc-500"}`}><span className={`h-1.5 w-1.5 rounded-full ${task.status === "completed" ? "bg-emerald-500" : task.status === "in-progress" ? "bg-amber-500" : "bg-zinc-300"}`} />{task.status === "in-progress" ? "Active" : task.status === "completed" ? "Done" : "Pending"}</span></td>
                               </tr>
                             ))}
                           </tbody>
@@ -1690,12 +1870,12 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   </div>
                 );})}
                 {!showAllProdHistory && prodGroups.length > 3 && (
-                  <button onClick={() => setShowAllProdHistory(true)} className="w-full rounded-xl border border-dashed border-zinc-200 py-2.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition-all">
-                    See all ({prodGroups.length} day{prodGroups.length > 1 ? "s" : ""})
+                  <button onClick={() => setShowAllProdHistory(true)} className="w-full rounded-xl border border-dashed border-zinc-200 py-2 text-[11px] font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition-all">
+                    See all ({prodGroups.length} days)
                   </button>
                 )}
                 {showAllProdHistory && prodGroups.length > 3 && (
-                  <button onClick={() => setShowAllProdHistory(false)} className="w-full rounded-xl border border-dashed border-zinc-200 py-2.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition-all">
+                  <button onClick={() => setShowAllProdHistory(false)} className="w-full rounded-xl border border-dashed border-zinc-200 py-2 text-[11px] font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-50 transition-all">
                     Show less
                   </button>
                 )}
@@ -3588,7 +3768,7 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
 
         <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
           <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-          <button onClick={() => onSave({ id: existing?.id, productId: isNew ? recipeName : product, productName: recipeName, ingredients, notes, group, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [], yield: yieldQty === "" ? undefined : yieldQty })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
+          <button onClick={() => onSave({ id: existing?.id, productId: isNew ? recipeName : product, productName: product, ingredients, notes, group, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [], yield: yieldQty === "" ? undefined : yieldQty })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
         </div>
       </div>
     </div>
@@ -3597,7 +3777,7 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
 
 /* ── Sub-components ── */
 
-function CompactTaskCard({ task, color }: { task: ProductionTask; color: string }) {
+function CompactTaskCard({ task, color, additionalIngredients }: { task: ProductionTask; color: string; additionalIngredients?: { name: string; qty: number; unit: string; reason: string; source: string }[] }) {
   const pct = Math.round((task.completed / task.target) * 100);
   const barMap: Record<string, string> = { "stone-500": "bg-stone-500", "rose-500": "bg-rose-500", "emerald-500": "bg-emerald-500", "amber-500": "bg-amber-500" };
   const barColor = barMap[color] || "bg-stone-500";
@@ -3614,6 +3794,17 @@ function CompactTaskCard({ task, color }: { task: ProductionTask; color: string 
         <div className="mt-1.5 h-1.5 rounded-full bg-[#F3EFE9]">
           <div className={`h-full rounded-full ${pct === 100 ? "bg-emerald-500" : barColor}`} style={{ width: `${pct}%` }} />
         </div>
+        {additionalIngredients && additionalIngredients.length > 0 && (
+          <div className="mt-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2">
+            <div className="text-[10px] font-semibold text-rose-600 uppercase tracking-wider mb-1">Additional Ingredients Used</div>
+            {additionalIngredients.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between text-[11px] text-zinc-700">
+                <span>{item.name} — {item.qty} {item.unit}</span>
+                <span className="text-zinc-500 italic">{item.reason}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className={`shrink-0 h-2.5 w-2.5 rounded-full ${task.status === "completed" ? "bg-emerald-500" : task.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} />
     </div>

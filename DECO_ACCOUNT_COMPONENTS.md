@@ -8,11 +8,33 @@ The **Deco (Decoration) Account** is responsible for the visual finishing and pr
 
 ---
 
-## Dashboard Tabs & Components
+## Workflow (5-Step Process)
 
-### 1. Dashboard (DOS Received)
+The Deco Account follows a linear 5-step workflow. Each step produces outputs that feed into the next. The sidebar provides access to reference tabs and supporting functions at any time.
 
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                     │
+│   1. DOS Received ──► 2. Production Plan ──► 3. Advanced Premix    │
+│         (Dashboard)        (Batch Planning)      (Composition)     │
+│                                                                     │
+│   4. Decoration Queue ──► 5. Finished Products (Freezer)           │
+│         (Design & Decorate)    (Track & Store)                      │
+│                                                                     │
+│   Sidebar: Custom Orders │ Waste/Adjustment │ Ingredients │ Deco   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Step 1: Dashboard (DOS Received)
+
+**Tab ID:** `dashboard`
+**Workflow Position:** Step 1 of 5
 **Purpose:** Landing page showing today's DOS items assigned to the Deco role with a recipe-based overview.
+
+### Components
 
 | Component | Description |
 |---|---|
@@ -23,38 +45,85 @@ The **Deco (Decoration) Account** is responsible for the visual finishing and pr
 | **Deco Supplies Card** | Count of unique decoration supplies required across all DOS recipes |
 | **Recipe Formula Table** | List of linked recipes with total qty and ingredient count; clickable for detail modal |
 | **Summary Modals (4 types)** | Products, Recipe Needed, Packaging Materials, Deco Supplies — each shows itemized breakdown |
-| **DOS Recipe Detail Modal** | Read-only view of a recipe's ingredients, packaging, and decoration supplies scaled by qty |
-| **Workflow Nav** | Step indicator (1 of 4) + "Next: Pre-Mix →" button |
+| **DOS Recipe Detail Modal** | Read-only view of a recipe's ingredients, packaging, and decoration supplies scaled by qty; includes yield editor |
+| **Workflow Nav** | Step indicator (1 of 5) + "Next: Production Plan →" button |
 
-**Data Sources:** `dosItems` (filtered by role=deco + assigned production tasks), `recipes`, `inventory`
+### Data Sources
+- `dosItems` (filtered by role=deco + today's date)
+- `recipes` (for recipe lookup and ingredient scaling)
+- `inventory` (for packaging/deco supply counts)
+
+### Key Behavior
+- Filters DOS items by `roles.includes("deco")` and today's date
+- Marks new DOS items as seen via `onMarkDOSSeen`
+- Links to recipe detail modal with yield editor per recipe
 
 ---
 
-### 1a. Pre-Mix (Production Preparation) Sub-View
+## Step 2: Production Plan
 
-**Purpose:** Prepare ingredient pre-mixes for each DOS product before decoration. Accessed from Dashboard via "Next: Pre-Mix →".
+**Tab ID:** `production-plan`
+**Workflow Position:** Step 2 of 5
+**Purpose:** Recipe-level batch planning with yield calculation, buffer stock tracking, and ingredient/packaging/deco supply aggregation.
+
+### Components
 
 | Component | Description |
 |---|---|
-| **Product Header** | Each DOS product with checkbox selection, qty stepper (−/+), recipe count |
-| **Recipe Cards (grid)** | Per-product linked recipe cards showing ingredient/packaging/deco counts; tap to open detail |
-| **Recipe Detail Modal** | Full recipe view with ingredients list, qty multiplier, linked packaging & decoration supplies |
-| **Prepared Toggle** | Per-recipe "Done" badge tracking preparation state |
-| **Freezer Action Bar** | Fixed bottom bar when recipes selected: "Put in Production Recipe" or "Put in My Inventory" buttons |
-| **Qty Stepper** | Per-product quantity adjuster (min 1, max DOS qty) with save-amounts tracking |
-| **Workflow Nav** | Step 2 of 4 + "Next: Advanced Premix →" button |
+| **Summary Cards (4)** | Total Demand, Expected Output, Buffer Stock (excess), Buffer Available (from previous plans) |
+| **Recipe Demand Aggregation Table** | Recipe name, yield, total demand, buffer deduction, net demand, batches needed, expected output; shows which products demand each recipe |
+| **Output Allocation** | Per-recipe breakdown showing how produced output is allocated back to requesting products; excess becomes buffer stock |
+| **Ingredients Required** | Aggregated ingredient totals across all batches, color-coded amber panel |
+| **Packaging Required** | Aggregated packaging totals across all batches, color-coded blue panel |
+| **Deco Supplies Required** | Aggregated decoration supply totals across all batches, color-coded purple panel |
+| **Confirm Button** | Saves the production plan to Supabase, creates buffer stock entries, logs audit event, then advances to Advanced Premix |
 
-**Key Actions:**
-- **Put in Production Recipe** — Deducts ingredients from inventory, creates freezer items with `notes: "Production Recipe"`
-- **Put in My Inventory** — Creates/updates inventory items with `source: "production-prep"` and `accessRoles: ["deco"]`, deducts ingredients
+### Calculation Engine (`src/utils/production-calculation.ts`)
 
-**Supabase Tables:** `deco_production_prep` (prepared/done/qty state), `inventory`, `freezer_items`
+| Function | Purpose |
+|---|---|
+| `aggregateRecipeDemand()` | Groups DOS items by recipe (direct + linked), sums demand per recipe, merges duplicate product entries in `demandedBy` |
+| `calculateBatches()` | Computes batches needed: `ceil(netDemand / yield)`, scales ingredients/packaging/deco by batch count |
+| `allocateOutput()` | Distributes produced output back to requesting products (smallest demand first); excess becomes buffer stock |
+| `createBufferStockEntries()` | Creates buffer stock records from allocation excess |
+| `getAvailableBuffer()` | Sums available buffer stock for a recipe |
+| `sumIngredients()` / `sumPackaging()` / `sumDecoSupplies()` | Aggregates resource totals across all batch calculations |
+
+### Data Flow
+```
+DOS Items (filtered for deco, today)
+    ↓
+aggregateRecipeDemand(dosItems, recipes)
+    ↓
+calculateBatches(demand, recipe, inventory, bufferStock)  [per recipe]
+    ↓
+allocateOutput(batch, demands)  [per recipe]
+    ↓
+createBufferStockEntries(allocation)  [per recipe with excess]
+    ↓
+planDraft = { demands, batches, allocations, bufferCreated }
+```
+
+### Data Sources
+- `dosItems` (filtered by role=deco + today's date, excluding "scheduled" status)
+- `recipes` (for yield, ingredients, packaging, deco supplies)
+- `inventory` (for current stock levels)
+- `planBufferStock` (existing buffer stock entries from previous plans)
+
+### Key Behavior
+- Draft is auto-computed via `useEffect` when `dosItems`, `recipes`, `inventory`, or `planBufferStock` change
+- Confirming saves to `production_plans` table and `buffer_stock` table
+- Advances to Advanced Premix after confirmation
 
 ---
 
-### 2. Advanced Premix
+## Step 3: Advanced Premix
 
+**Tab ID:** `advanced-premix`
+**Workflow Position:** Step 3 of 5
 **Purpose:** Curate recipe batches with fine-tuned ingredient compositions and save them to the freezer for Baker's Assembly.
+
+### Components
 
 | Component | Description |
 |---|---|
@@ -67,13 +136,26 @@ The **Deco (Decoration) Account** is responsible for the visual finishing and pr
 | **Confirmation Modal** | Shows summary of items + adjustments before saving |
 | **Baker Assembly Task Creation** | Auto-creates `PastryAssemblyTask` records for Baker upon save |
 
-**Supabase Tables:** `freezer_items` (batch ref `ADV-*`), `pastry_assembly_tasks`
+### Data Sources
+- `recipes` (for recipe data and ingredient compositions)
+- `freezerItems` (for saving compositions)
+- `inventory` (for ingredient stock reference)
+
+### Key Actions
+- **Select Recipes** — Toggle recipes to include in the premix batch
+- **Adjust Composition** — Edit ingredient quantities per recipe
+- **Save to Freezer** — Creates freezer items with `batchRef: "ADV-{timestamp}"` and `producedBy: "deco"`
+- **Create Baker Task** — Auto-generates `PastryAssemblyTask` for Baker's Assembly workflow
 
 ---
 
-### 3. Decoration Queue
+## Step 4: Decoration Queue
 
+**Tab ID:** `deco-queue`
+**Workflow Position:** Step 4 of 5
 **Purpose:** Manage the decoration workflow — pick products from My Inventory (Production Prep), design them with themes, and track through completion.
+
+### Components
 
 | Component | Description |
 |---|---|
@@ -84,18 +166,68 @@ The **Deco (Decoration) Account** is responsible for the visual finishing and pr
 | **Decoration History** | Expandable compact cards for completed tasks with date, qty, theme details |
 | **Task Status Flow** | `pending` → `in-progress` (Start Decorating) → `completed` (Put it on Display Cake) |
 
-**Key Actions:**
+### Status Flow
+```
+pending ──► in-progress ──► completed
+             │                  │
+             │                  └──► Adds to Freezer (Display Cakes)
+             │
+             └──► Deducts packaging + deco supplies from inventory
+```
+
+### Key Actions
 - **Design** — Deducts designed qty from source inventory item; creates `DecoTask` with snapshot
 - **Start Decorating** (pending → in-progress) — Deducts packaging materials + decoration supplies from inventory
 - **Put it on Display Cake** (in-progress → completed) — Adds finished product to Freezer Display Cakes
 - **Delete** — Restores source inventory (via snapshot or partial refund)
 
-**Supabase Tables:** `decoration_queue`, `inventory` (deductions), `freezer_items` (completed items)
+### Data Sources
+- `inventory` (for production-prep sourced items, packaging/deco deductions)
+- `recipes` (for linked packaging/deco supplies)
+- `freezerItems` (for completed display cakes)
 
 ---
 
-### 4. Custom Orders
+## Step 5: Finished Products (Freezer)
 
+**Tab ID:** `freezer`
+**Workflow Position:** Step 5 of 5
+**Purpose:** Track all decorated and prepared products ready for dispatch or further processing.
+
+### Sub-Tabs
+
+| Tab | Content | Source |
+|---|---|---|
+| **Display Cakes** | Finished decorated cakes from Decoration Queue | `decoQueue` completed tasks → freezer |
+| **Production Recipe** | Pre-mixed items saved from Pre-Mix step | Pre-Mix "Put in Production Recipe" action |
+| **Advanced Premix** | Curated compositions from Advanced Premix step | Advanced Premix save action (batch ref `ADV-*`) |
+| **My Inventory** | Deco's own inventory (production-prep + manual items) | Pre-Mix "Put in My Inventory" + Admin-assigned items |
+| **Buffer Stock** | Excess production output available for reuse | Production Plan buffer stock entries |
+
+### Components
+
+| Component | Description |
+|---|---|
+| **Tab Navigation** | 5 sub-tabs with count/total stats per tab |
+| **Search Bar** | Filters products by name |
+| **Stats Cards** | Item count + total qty/stock per active tab |
+| **Add Product Modal** | Form: product (from catalog), qty, unit, batch ref, notes |
+| **Edit Product Modal** | Edit existing freezer item details |
+| **Delete** | Removes item from freezer (with confirmation) |
+
+### Key Behavior
+- My Inventory tab shows items grouped by source: "From Production Prep" section and "Manual" section
+- Buffer Stock tab shows available buffer entries from Production Plan with qty and date
+
+---
+
+## Sidebar Tabs (Reference & Supporting)
+
+These tabs are accessible at any time from the sidebar navigation.
+
+### Custom Orders
+
+**Tab ID:** `custom-orders`
 **Purpose:** Manage customer-requested customizations and special cake designs.
 
 | Component | Description |
@@ -108,60 +240,9 @@ The **Deco (Decoration) Account** is responsible for the visual finishing and pr
 
 ---
 
-### 5. Decoration Materials
+### Waste & Adjustment
 
-**Purpose:** View-only display of decoration supply stock levels.
-
-| Component | Description |
-|---|---|
-| **Materials Table** | Name, SKU, On Hand (color-coded), Threshold, Unit |
-| **Low Stock Indicators** | Red = 0 on hand, Amber = below threshold, Green = sufficient |
-
-**Access:** Read-only. Contact Admin to replenish.
-
----
-
-### 6. Ingredients
-
-**Purpose:** View-only display of ingredient stock from the Warehouse.
-
-| Component | Description |
-|---|---|
-| **Ingredients Table** | Name, SKU, On Hand (color-coded), Threshold, Unit |
-| **Low Stock Indicators** | Same color coding as Decoration Materials |
-
-**Access:** Read-only. For reference during pre-mix preparation.
-
----
-
-### 7. Freezer — Finished Products
-
-**Purpose:** Track all decorated and prepared products ready for dispatch or further processing.
-
-#### Sub-Tabs:
-
-| Tab | Content | Source |
-|---|---|---|
-| **Display Cakes** | Finished decorated cakes from Decoration Queue | `decoQueue` completed tasks → freezer |
-| **Production Recipe** | Pre-mixed items saved from Pre-Mix step | Pre-Mix "Put in Production Recipe" action |
-| **Advanced Premix** | Curated compositions from Advanced Premix step | Advanced Premix save action (batch ref `ADV-*`) |
-| **My Inventory** | Deco's own inventory (production-prep + manual items) | Pre-Mix "Put in My Inventory" + Admin-assigned items |
-
-| Component | Description |
-|---|---|
-| **Tab Navigation** | 4 sub-tabs with count/total stats per tab |
-| **Search Bar** | Filters products by name |
-| **Stats Cards** | Item count + total qty/stock per active tab |
-| **Add Product Modal** | Form: product (from catalog), qty, unit, batch ref, notes |
-| **Edit Product Modal** | Edit existing freezer item details |
-| **Delete** | Removes item from freezer (with confirmation) |
-
-**Supabase Tables:** `freezer_items`, `inventory` (for My Inventory tab)
-
----
-
-### 8. Waste & Adjustment
-
+**Tab ID:** `waste-adjustment`
 **Purpose:** Record wasted, damaged, or adjusted stock from inventory and freezer.
 
 | Component | Description |
@@ -170,43 +251,98 @@ The **Deco (Decoration) Account** is responsible for the visual finishing and pr
 | **Item Search/Select** | Dropdown search to pick the item to waste |
 | **Qty Stepper** | Quantity to deduct (with max validation) |
 | **Reason Dropdown** | Spoilage, Damaged/Breakage, Expired, Overproduction, Quality Issue, Wrong Product, Contamination, Other |
-| **Record Button** | Deducts from source + saves waste log entry |
-| **Waste History Table** | Date, Product, Qty, Source, Reason, Delete action |
+| **Record Button** | Deducts from source + saves waste log entry with cost calculation |
+| **Waste History Table** | Date, Product, Qty, Source, Reason, Cost, Delete action |
 
-**Supabase Tables:** `waste_log` (shared with Admin Finance), `inventory`, `freezer_items`
+### Ingredients
+
+**Tab ID:** `ingredients`
+**Purpose:** View-only display of ingredient stock from the Warehouse.
+
+| Component | Description |
+|---|---|
+| **Ingredients Table** | Name, SKU, On Hand (color-coded), Threshold, Unit |
+| **Low Stock Indicators** | Red = 0 on hand, Amber = below threshold, Green = sufficient |
+
+**Access:** Read-only. For reference during pre-mix preparation.
 
 ---
 
-## Workflow Steps (Ordered)
+### Decoration Materials
 
-| Step | Tab | Description |
+**Tab ID:** `decoration-supplies`
+**Purpose:** View-only display of decoration supply stock levels.
+
+| Component | Description |
+|---|---|
+| **Materials Table** | Name, SKU, On Hand (color-coded), Threshold, Unit |
+| **Low Stock Indicators** | Same color coding as Ingredients |
+
+**Access:** Read-only. Contact Admin to replenish.
+
+---
+
+## Workflow Data Flow
+
+```
+Admin assigns DOS items (roles: ["deco"])
+        │
+        ▼
+┌─── Step 1: Dashboard ──────────────────────────────────┐
+│  • Filter today's DOS items for deco role              │
+│  • Display recipe overview, packaging, deco supplies   │
+│  • Recipe detail modals with yield editor              │
+└───────────────────────────────┬────────────────────────┘
+                                │ "Next: Production Plan →"
+                                ▼
+┌─── Step 2: Production Plan ────────────────────────────┐
+│  • aggregateRecipeDemand() — group DOS by recipe       │
+│  • calculateBatches() — compute batches with yield     │
+│  • allocateOutput() — distribute output, create buffer │
+│  • Confirm → save plan + buffer stock to Supabase     │
+└───────────────────────────────┬────────────────────────┘
+                                │ "Confirm Production Plan →"
+                                ▼
+┌─── Step 3: Advanced Premix ────────────────────────────┐
+│  • Select recipes + set batch quantities               │
+│  • Adjust ingredient compositions                      │
+│  • Save to freezer (batch ref ADV-*)                   │
+│  • Auto-create PastryAssemblyTask for Baker            │
+└───────────────────────────────┬────────────────────────┘
+                                │ "Next: Decoration Queue →"
+                                ▼
+┌─── Step 4: Decoration Queue ───────────────────────────┐
+│  • Pick products from My Inventory (production-prep)   │
+│  • Design: set theme, qty, preview packaging/deco      │
+│  • Start Decorating: deduct packaging + deco supplies  │
+│  • Put on Display Cake: move to Freezer Display Cakes  │
+└───────────────────────────────┬────────────────────────┘
+                                │ "Next: Finished Products →"
+                                ▼
+┌─── Step 5: Finished Products (Freezer) ────────────────┐
+│  • Display Cakes — completed decorated products        │
+│  • Production Recipe — pre-mixed production items      │
+│  • Advanced Premix — curated compositions (ADV-*)      │
+│  • My Inventory — deco's working stock                 │
+│  • Buffer Stock — excess from production plans         │
+└────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Supabase Tables Accessed
+
+| Table | Operations | Used In |
 |---|---|---|
-| 1 | Dashboard (DOS Received) | View today's assigned DOS items and recipe overview |
-| 2 | Pre-Mix (sub-view) | Prepare ingredient pre-mixes, save to Production Recipe or My Inventory |
-| 3 | Advanced Premix | Curate fine-tuned recipe compositions, save to freezer for Baker |
-| 4 | Decoration Queue | Design, decorate, and complete products → Freezer Display Cakes |
-| — | Freezer | Track all finished/decorated products |
-| — | Waste & Adjustment | Record stock losses at any point |
-
----
-
-## Priorities
-
-### High Priority (Core Workflow)
-1. **DOS Received** — Central entry point; must show accurate daily assignments
-2. **Pre-Mix / Production Preparation** — Critical for ingredient deduction accuracy and freezer sync
-3. **Decoration Queue** — Main job function; status flow must be reliable with proper inventory deductions
-4. **Freezer (Display Cakes + Production Recipe)** — Inventory accuracy depends on correct freezer tracking
-
-### Medium Priority (Supporting Functions)
-5. **Advanced Premix** — Enables Baker Assembly workflow; composition adjustments must be precise
-6. **Waste & Adjustment** — Financial tracking depends on accurate waste logging
-7. **My Inventory** — Deco's working stock; must sync with Pre-Mix and Design actions
-
-### Low Priority (Reference / Future)
-8. **Decoration Materials** — Read-only view; useful but not blocking
-9. **Ingredients** — Read-only reference; helpful for planning
-10. **Custom Orders** — Currently mock data; needs Supabase integration
+| `decoration_queue` | CRUD | Decoration Queue |
+| `deco_production_prep` | Read/Write | Pre-Mix |
+| `freezer_items` | CRUD | Freezer, Advanced Premix, Decoration Queue |
+| `inventory` | Read/Update | All steps (ingredient/deco deductions) |
+| `recipes` | Read | All steps (recipe data) |
+| `waste_log` | Create/Read | Waste & Adjustment |
+| `pastry_assembly_tasks` | Create | Advanced Premix → Baker |
+| `production_plans` | Create/Read | Production Plan |
+| `buffer_stock` | Create/Read | Production Plan, Freezer |
 
 ---
 
@@ -216,27 +352,18 @@ The **Deco (Decoration) Account** is responsible for the visual finishing and pr
 |---|---|
 | `DOSItem` | Daily Order Sales items assigned to deco |
 | `ProductionTask` | Production tasks assigned to `deco` role |
-| `ProductRecipe` | Recipe with ingredients, packaging, decoration supplies |
+| `ProductRecipe` | Recipe with ingredients, packaging, decoration supplies, yield, linked ingredients |
 | `InventoryItem` | Inventory items (decoration-supplies, packaging-materials, ingredients) |
 | `FreezerItem` | Products stored in freezer (Display Cakes, Production Recipe, Advanced Premix) |
 | `DecoTask` | Decoration queue task with theme, status, source snapshot |
-| `CustomOrder` | Customer customization requests |
+| `CustomOrder` | Customer customization requests (mock data) |
 | `WasteLog` | Waste/adjustment records (shared with Admin Finance) |
 | `DecoProductionPrep` | Per-DOS preparation state (prepared/done/qty) |
-
----
-
-## Supabase Tables Accessed
-
-| Table | Operations |
-|---|---|
-| `decoration_queue` | CRUD for decoration tasks |
-| `deco_production_prep` | Read/Write preparation state |
-| `freezer_items` | CRUD for all freezer products |
-| `inventory` | Read/Update for ingredient deductions and My Inventory |
-| `recipes` | Read for recipe data |
-| `waste_log` | Create/Read waste records |
-| `pastry_assembly_tasks` | Create tasks for Baker from Advanced Premix |
+| `RecipeDemand` | Aggregated demand per recipe with `demandedBy` entries |
+| `BatchCalculation` | Batch computation: yield, net demand, required resources |
+| `OutputAllocation` | Output distribution back to products + buffer stock |
+| `BufferStockEntry` | Reusable buffer stock from production excess |
+| `ProductionPlan` | Full plan record with demands, batches, allocations, buffer |
 
 ---
 
@@ -248,3 +375,23 @@ The **Deco (Decoration) Account** is responsible for the visual finishing and pr
 | **Baker** | Advanced Premix saves create `PastryAssemblyTask` for Baker's Assembly |
 | **Kitchen** | Indirect — Kitchen produces items that may flow to Deco for decoration |
 | **Branch** | Finished Display Cakes in freezer are available for Branch dispatch |
+
+---
+
+## Priorities
+
+### High Priority (Core Workflow)
+1. **DOS Received** — Central entry point; must show accurate daily assignments
+2. **Production Plan** — Batch planning engine; drives resource requirements for all downstream steps
+3. **Advanced Premix** — Enables Baker Assembly workflow; composition adjustments must be precise
+4. **Decoration Queue** — Main job function; status flow must be reliable with proper inventory deductions
+5. **Freezer (Display Cakes + Production Recipe)** — Inventory accuracy depends on correct freezer tracking
+
+### Medium Priority (Supporting Functions)
+6. **Waste & Adjustment** — Financial tracking depends on accurate waste logging
+7. **My Inventory** — Deco's working stock; must sync with Pre-Mix and Design actions
+
+### Low Priority (Reference / Future)
+8. **Decoration Materials** — Read-only view; useful but not blocking
+9. **Ingredients** — Read-only reference; helpful for planning
+10. **Custom Orders** — Currently mock data; needs Supabase integration

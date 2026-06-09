@@ -43,7 +43,12 @@ export function aggregateRecipeDemand(
       }
 
       const demand = demandMap.get(recipeName)!;
-      demand.demandedBy.push({ productName: dos.product, qty: dos.qty });
+      const existingEntry = demand.demandedBy.find(d => d.productName === dos.product);
+      if (existingEntry) {
+        existingEntry.qty += dos.qty;
+      } else {
+        demand.demandedBy.push({ productName: dos.product, qty: dos.qty });
+      }
       demand.totalDemand += dos.qty;
     });
   });

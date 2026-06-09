@@ -279,6 +279,7 @@ export default function App() {
   const userIdRef = useRef<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [productCatalog, setProductCatalog] = useState<string[]>(["Pandesal", "Loaf Bread", "Choco Moist Cake", "Sponge Fudge", "Ensaymada"]);
+  const [productRoutes, setProductRoutes] = useState<Record<string, db.ProductRoute>>({});
   const [recipes, setRecipes] = useState<ProductRecipe[]>([]);
   const [productPricing, setProductPricing] = useState<ProductPricing[]>([]);
   const [freezerItems, setFreezerItems] = useState<FreezerItem[]>([]);
@@ -288,6 +289,7 @@ export default function App() {
   const [revenue, setRevenue] = useState<Revenue[]>([]);
   const [wasteLog, setWasteLog] = useState<WasteLog[]>([]);
   const [promosPackages, setPromosPackages] = useState<PromoPackage[]>([]);
+  const [decoProductionPrep, setDecoProductionPrep] = useState<{ dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean; additionalIngredients: { name: string; qty: number; unit: string; reason: string; source: string }[] }[]>([]);
   const [now, setNow] = useState(new Date());
   const prevDayRef = useRef(getPHToday());
   const [dosNotifs, setDosNotifs] = useState<{ id: string; message: string }[]>([]);
@@ -301,7 +303,7 @@ export default function App() {
   async function loadAllData(): Promise<DOSItem[]> {
     setDataLoading(true);
     try {
-      const [inv, dos, prod, del, audit, catalog, rec, pricing, freezer, fHistory, purch, bills, rev, waste, promos] = await Promise.all([
+      const [inv, dos, prod, del, audit, catalog, rec, pricing, freezer, fHistory, purch, bills, rev, waste, promos, routes, decoPrep] = await Promise.all([
         db.fetchAllInventory(),
         db.fetchDOS(),
         db.fetchProduction(),
@@ -317,6 +319,8 @@ export default function App() {
         db.fetchRevenue(),
         db.fetchWasteLog(),
         db.fetchPromosPackages(),
+        db.fetchProductRoutes(),
+        db.fetchDecoProductionPrep(),
       ]);
       if (inv.length > 0) setInventory(inv);
       if (dos.length > 0) setDosItems(dos);
@@ -324,6 +328,7 @@ export default function App() {
       if (del.length > 0) setDeliveries(del);
       setAuditLogs(audit);
       if (catalog.length > 0) setProductCatalog(catalog);
+      if (Object.keys(routes).length > 0) setProductRoutes(routes);
       if (rec.length > 0) setRecipes(rec);
       if (pricing.length > 0) setProductPricing(pricing);
       if (freezer.length > 0) setFreezerItems(freezer);
@@ -356,6 +361,7 @@ export default function App() {
         setWasteLog(waste.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
       } else { setWasteLog(waste); }
       setPromosPackages(promos);
+      setDecoProductionPrep(decoPrep);
 
       // Auto-expire promos past their end date
       const today = new Date().toISOString().slice(0, 10);
@@ -554,7 +560,7 @@ export default function App() {
     if (!loggedIn) return;
     const sync = setInterval(async () => {
       try {
-        const [dos, prod] = await Promise.all([db.fetchDOS(), db.fetchProduction()]);
+        const [dos, prod, decoPrep] = await Promise.all([db.fetchDOS(), db.fetchProduction(), db.fetchDecoProductionPrep()]);
         if (dos.length > 0) {
           if (!syncReady.current) {
             dos.forEach(d => seenDOS.current.add(d.id));
@@ -577,6 +583,7 @@ export default function App() {
           }
         }
         if (prod.length > 0) setProduction(prod);
+        setDecoProductionPrep(decoPrep);
       } catch {}
     }, 5000);
     return () => clearInterval(sync);
@@ -984,6 +991,8 @@ export default function App() {
                 onDeleteDOS={handleDeleteDOS}
                 productCatalog={productCatalog}
                 onUpdateProductCatalog={setProductCatalog}
+                productRoutes={productRoutes}
+                onUpdateProductRoutes={setProductRoutes}
                 recipes={recipes}
                 onUpdateRecipes={setRecipes}
                 onAddAuditLog={logAudit}
@@ -1002,13 +1011,14 @@ export default function App() {
                 onUpdateWasteLog={setWasteLog}
                 promosPackages={promosPackages}
                 onUpdatePromosPackages={setPromosPackages}
+                decoProductionPrep={decoProductionPrep}
               />
             )}
             {role === "baker" && ["dashboard", "assembly", "freezer", "filling"].includes(activeTab) && (
               <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} />
             )}
-            {role === "deco" && ["dashboard", "production-plan", "pre-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer", "waste-adjustment"].includes(activeTab) && (
-              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} wasteLog={wasteLog} onUpdateWasteLog={setWasteLog} />
+            {role === "deco" && ["dashboard", "tasks-to-prepare", "recipe-analysis", "pre-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer", "waste-adjustment"].includes(activeTab) && (
+              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} onUpdateProduction={handleUpdateProduction} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} productRoutes={productRoutes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} wasteLog={wasteLog} onUpdateWasteLog={setWasteLog} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (
               <KitchenDashboard production={production} deliveries={deliveries} dosItems={dosItems} onUpdateDeliveries={setDeliveries} activeTab={activeTab} />
@@ -1034,6 +1044,7 @@ export default function App() {
           onClose={() => setShowDOSBuilder(false)}
           onSave={handleDOSCreate}
           productCatalog={productCatalog}
+          productRoutes={productRoutes}
           onAddToCatalog={(name) => {
             setProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]);
             db.addToCatalog(name).catch(console.error);

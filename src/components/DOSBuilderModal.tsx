@@ -1,10 +1,12 @@
 import { useState } from "react";
 import type { DOSItem, ProductionTask, PromoPackage } from "../types";
+import type { ProductRoute } from "../lib/db";
 
 type Props = {
   onClose: () => void;
   onSave: (items: DOSItem[], tasks: ProductionTask[]) => void;
   productCatalog: string[];
+  productRoutes: Record<string, ProductRoute>;
   onAddToCatalog: (name: string) => void;
   hasTodayItems?: boolean;
   presetDate?: string;
@@ -18,7 +20,7 @@ function defaultRow(): Row {
   return { product: "", qty: 0, roles: new Set(["baker"]) };
 }
 
-export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAddToCatalog, hasTodayItems, presetDate, scheduledDates, promosPackages = [] }: Props) {
+export default function DOSBuilderModal({ onClose, onSave, productCatalog, productRoutes, onAddToCatalog, hasTodayItems, presetDate, scheduledDates, promosPackages = [] }: Props) {
   const [rows, setRows] = useState<Row[]>([defaultRow()]);
   const [priority, setPriority] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
   const [productSearch, setProductSearch] = useState<Record<number, string>>({});
@@ -164,6 +166,12 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                           updateRow(i, "product", "");
                         } else if (val && productCatalog.some(p => p.toLowerCase() === val.toLowerCase())) {
                           updateRow(i, "product", val);
+                          // Auto-set role from product route
+                          const matched = productCatalog.find(p => p.toLowerCase() === val.toLowerCase());
+                          const route = matched ? productRoutes[matched] : undefined;
+                          if (route) {
+                            setRows(prev => prev.map((r, idx) => idx === i ? { ...r, roles: new Set([route]) } : r));
+                          }
                         }
                       }}
                       onFocus={() => setShowSuggestions(prev => ({ ...prev, [i]: true }))}
@@ -204,7 +212,7 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                               ))}
                             </>
                           )}
-                          {filtered.length > 0 && (
+                              {filtered.length > 0 && (
                             <>
                               {filteredPromos.length > 0 && <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-50 border-b border-zinc-100">Products</div>}
                               {filtered.map(p => (
@@ -214,6 +222,11 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, onAdd
                                     updateRow(i, "product", p);
                                     setProductSearch(prev => ({ ...prev, [i]: p }));
                                     setShowSuggestions(prev => ({ ...prev, [i]: false }));
+                                    // Auto-set role from product route
+                                    const route = productRoutes[p];
+                                    if (route) {
+                                      setRows(prev => prev.map((r, idx) => idx === i ? { ...r, roles: new Set([route]) } : r));
+                                    }
                                   }}
                                   className={`w-full text-left px-3 py-2 text-[13px] hover:bg-zinc-50 transition-colors ${row.product === p ? 'bg-zinc-100 font-medium' : ''}`}
                                 >

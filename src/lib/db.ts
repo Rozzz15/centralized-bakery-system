@@ -226,16 +226,32 @@ export function subscribeInventory(onChange: () => void) {
 }
 
 // ─── Deco Production Prep ───
-export async function fetchDecoProductionPrep(): Promise<{ dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean }[]> {
+export type AdditionalIngredient = { name: string; qty: number; unit: string; reason: string; source: string };
+
+export async function fetchDecoProductionPrep(): Promise<{ dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean; additionalIngredients: AdditionalIngredient[] }[]> {
   const { data, error } = await supabase.from("deco_production_prep").select("*");
   if (error) throw error;
-  return (data ?? []).map((d: any) => ({ dosId: d.dos_id, productName: d.product_name, productQty: d.product_qty, prepared: d.prepared, done: d.done }));
+  return (data ?? []).map((d: any) => ({
+    dosId: d.dos_id,
+    productName: d.product_name,
+    productQty: d.product_qty,
+    prepared: d.prepared,
+    done: d.done,
+    additionalIngredients: d.additional_ingredients ?? [],
+  }));
 }
 
-export async function saveDecoProductionPrep(items: { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean }[]) {
+export async function saveDecoProductionPrep(items: { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean; additionalIngredients: AdditionalIngredient[] }[]) {
   if (items.length === 0) return;
   const { error } = await supabase.from("deco_production_prep").upsert(
-    items.map(i => ({ dos_id: i.dosId, product_name: i.productName, product_qty: i.productQty, prepared: i.prepared, done: i.done })),
+    items.map(i => ({
+      dos_id: i.dosId,
+      product_name: i.productName,
+      product_qty: i.productQty,
+      prepared: i.prepared,
+      done: i.done,
+      additional_ingredients: i.additionalIngredients,
+    })),
     { onConflict: "dos_id,product_name" }
   );
   if (error) throw error;
@@ -408,6 +424,22 @@ export async function addToCatalog(name: string) {
 }
 export async function removeFromCatalog(name: string) {
   const { error } = await supabase.from("product_catalog").delete().eq("name", name);
+  if (error) throw error;
+}
+
+// ─── Product Routes (default team assignment) ───
+export type ProductRoute = "baker" | "deco" | "pastry";
+export async function fetchProductRoutes(): Promise<Record<string, ProductRoute>> {
+  const { data, error } = await supabase.from("product_catalog").select("name, default_role");
+  if (error) throw error;
+  const map: Record<string, ProductRoute> = {};
+  for (const r of (data ?? []) as any[]) {
+    if (r.default_role) map[r.name] = r.default_role;
+  }
+  return map;
+}
+export async function saveProductRoute(productName: string, role: ProductRoute | null) {
+  const { error } = await supabase.from("product_catalog").upsert({ name: productName, default_role: role }, { onConflict: "name" });
   if (error) throw error;
 }
 export async function deleteRecipe(productName: string) {

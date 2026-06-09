@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from "react";
-import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog, RecipeDemand, BatchCalculation, OutputAllocation, BufferStockEntry, ProductionPlan } from "../types";
+import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog, BufferStockEntry } from "../types";
 import * as db from "../lib/db";
+import type { AdditionalIngredient } from "../lib/db";
 import { aggregateRecipeDemand, calculateBatches, allocateOutput, createBufferStockEntries, getAvailableBuffer, sumIngredients, sumPackaging, sumDecoSupplies } from "../utils/production-calculation";
 
-type DecoProductionPrep = { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean };
+type DecoProductionPrep = { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean; additionalIngredients: AdditionalIngredient[] };
 
 type CustomOrder = {
   id: string;
@@ -29,13 +30,10 @@ type DecoTask = {
   createdAt?: string;
 };
 
-function DOSRecipeDetailModal({ recipe, totalQty, onClose, onSaveYield }: {
+function DOSRecipeDetailModal({ recipe, totalQty, onClose }: {
   recipe: ProductRecipe; totalQty: number; onClose: () => void;
-  onSaveYield: (yieldQty: number) => void;
 }) {
-  const [yieldInput, setYieldInput] = useState<number | "">(recipe.yield ?? "");
-  const currentYield = yieldInput === "" ? 1 : yieldInput;
-  const estTotal = currentYield * totalQty;
+  const estTotal = (recipe.yield ?? 1) * totalQty;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={onClose}>
@@ -48,16 +46,14 @@ function DOSRecipeDetailModal({ recipe, totalQty, onClose, onSaveYield }: {
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto px-5 py-4 space-y-3">
-          {/* Yield Editor */}
+          {/* Yield Display */}
           <div className="rounded-xl border border-amber-800 bg-amber-950/40 px-4 py-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] uppercase tracking-wider text-amber-400 font-medium">Yield per Batch</span>
               <span className="text-[11px] text-amber-500">EST Prod. Total: <span className="font-mono font-semibold text-amber-300">{estTotal}</span></span>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setYieldInput(prev => Math.max(1, (prev === "" ? 1 : prev) - 1))} className="w-8 h-8 rounded-lg border border-amber-700 bg-amber-900/50 text-amber-300 hover:bg-amber-800/50 flex items-center justify-center text-[14px]">−</button>
-              <input type="number" min={1} value={yieldInput} onChange={e => { const v = e.target.value; setYieldInput(v === "" ? "" : Math.max(1, Number(v))); }} className="flex-1 text-center font-mono text-[16px] font-bold text-amber-200 bg-transparent outline-none" />
-              <button onClick={() => setYieldInput(prev => (prev === "" ? 1 : prev) + 1)} className="w-8 h-8 rounded-lg border border-amber-700 bg-amber-900/50 text-amber-300 hover:bg-amber-800/50 flex items-center justify-center text-[14px]">+</button>
+            <div className="flex items-center justify-center">
+              <span className="font-mono text-[16px] font-bold text-amber-200">{recipe.yield ?? 1}</span>
             </div>
           </div>
           {/* Ingredients */}
@@ -96,9 +92,6 @@ function DOSRecipeDetailModal({ recipe, totalQty, onClose, onSaveYield }: {
         </div>
         <div className="px-5 py-3 border-t border-zinc-800 flex gap-2">
           <button onClick={onClose} className="flex-1 rounded-xl bg-zinc-800 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-700 transition-all">Close</button>
-          {(yieldInput !== "" && yieldInput !== (recipe.yield ?? 1)) && (
-            <button onClick={() => onSaveYield(currentYield)} className="flex-1 rounded-xl bg-amber-600 py-2.5 text-[13px] font-medium text-white hover:bg-amber-700 transition-all">Save Yield</button>
-          )}
         </div>
       </div>
     </div>
@@ -124,9 +117,11 @@ type Props = {
   freezerHistory?: FreezerHistory[];
   wasteLog?: WasteLog[];
   onUpdateWasteLog?: (cb: WasteLog[] | ((prev: WasteLog[]) => WasteLog[])) => void;
+  productRoutes?: Record<string, db.ProductRoute>;
+  onUpdateProduction?: (taskId: string, updates: Partial<ProductionTask>) => void;
 };
 
-export default function DecoDashboard({ production, dosItems, onCompleteTask, activeTab, setActiveTab, productCatalog, recipes, inventory, onUpdateInventory, onUpdateRecipes, onAddAuditLog, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], wasteLog = [], onUpdateWasteLog }: Props) {
+export default function DecoDashboard({ production, dosItems, onCompleteTask, activeTab, setActiveTab, productCatalog, recipes, inventory, onUpdateInventory, onUpdateRecipes, onAddAuditLog, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], wasteLog = [], onUpdateWasteLog, productRoutes = {}, onUpdateProduction }: Props) {
   // Defer setState calls to the next macrotask (setTimeout 0) to avoid
   // "Cannot update a component (App) while rendering DecoDashboard" warning.
   // queueMicrotask is NOT enough — React's setState also runs in microtasks.
@@ -168,10 +163,17 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [preMixPrepared, setPreMixPrepared] = useState<Set<string>>(new Set());
   const [preMixDone, setPreMixDone] = useState<Set<string>>(new Set());
   const [productQty, setProductQty] = useState<Record<string, number>>({});
+  const [activePreparation, setActivePreparation] = useState<{ dos: DOSItem; recipe: ProductRecipe; route: "baker" | "deco" } | null>(null);
+  const [additionalIngredients, setAdditionalIngredients] = useState<AdditionalIngredient[]>([]);
+  const [actualOutput, setActualOutput] = useState<number | "">("");
+  const [showAddIngredientModal, setShowAddIngredientModal] = useState(false);
+  const [newAddIngredient, setNewAddIngredient] = useState<AdditionalIngredient>({ name: "", qty: 0, unit: "", reason: "", source: "" });
+  const [productAdditionalIngredients, setProductAdditionalIngredients] = useState<Record<string, AdditionalIngredient[]>>({});
 
   // Load from Supabase on mount
   useEffect(() => {
     db.fetchDecoProductionPrep().then(items => {
+      const addIngMap: Record<string, AdditionalIngredient[]> = {};
       const prepared = new Set<string>();
       const done = new Set<string>();
       const qty: Record<string, number> = {};
@@ -180,10 +182,12 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         if (i.prepared) prepared.add(key);
         if (i.done) done.add(key);
         qty[i.dosId] = i.productQty;
+        if (i.additionalIngredients?.length) addIngMap[key] = i.additionalIngredients;
       });
       setPreMixPrepared(prepared);
       setPreMixDone(done);
       setProductQty(qty);
+      if (Object.keys(addIngMap).length > 0) setProductAdditionalIngredients(addIngMap);
     }).catch(console.error);
   }, []);
 
@@ -202,15 +206,15 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
       const allRecipes = linkedRecipes;
       if (allRecipes.length === 0) {
         const key = `${dosId}-${dos.product.toLowerCase()}`;
-        items.push({ dosId, productName: dos.product, productQty: productQty[dosId] ?? dos.qty, prepared: preMixPrepared.has(key), done: preMixDone.has(key) });
+        items.push({ dosId, productName: dos.product, productQty: productQty[dosId] ?? dos.qty, prepared: preMixPrepared.has(key), done: preMixDone.has(key), additionalIngredients: productAdditionalIngredients[key] ?? [] });
       }
       allRecipes.forEach(r => {
         const key = `${dosId}-${r!.productName.toLowerCase()}`;
-        items.push({ dosId, productName: r!.productName, productQty: productQty[dosId] ?? dos.qty, prepared: preMixPrepared.has(key), done: preMixDone.has(key) });
+        items.push({ dosId, productName: r!.productName, productQty: productQty[dosId] ?? dos.qty, prepared: preMixPrepared.has(key), done: preMixDone.has(key), additionalIngredients: productAdditionalIngredients[key] ?? [] });
       });
     });
     if (items.length > 0) db.saveDecoProductionPrep(items).catch(console.error);
-  }, [preMixPrepared, preMixDone, productQty]);
+  }, [preMixPrepared, preMixDone, productQty, productAdditionalIngredients]);
   const [advMixSearch, setAdvMixSearch] = useState("");
   const [selectedAdvRecipes, setSelectedAdvRecipes] = useState<Set<string>>(new Set());
   const [advMixQtys, setAdvMixQtys] = useState<Record<string, number>>({});
@@ -283,6 +287,13 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [wasteSource, setWasteSource] = useState("my-inventory");
   const [wasteItemId, setWasteItemId] = useState<string>("");
   const [wasteQty, setWasteQty] = useState<number>(1);
+
+  // Toast state
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   // Production Plan state
   const [planBufferStock, setPlanBufferStock] = useState<BufferStockEntry[]>([]);
@@ -621,6 +632,7 @@ defer(() => onUpdateInventory(prevInv => {
 
   const workflowSteps = [
     { id: "dashboard", label: "DOS Received" },
+    { id: "tasks-to-prepare", label: "Tasks to Prepare" },
     { id: "production-plan", label: "Production Plan" },
     { id: "advanced-premix", label: "Advanced Premix" },
     { id: "deco-queue", label: "Decoration Queue" },
@@ -1098,14 +1110,6 @@ return (
             recipe={viewingDOSRecipe.recipe}
             totalQty={viewingDOSRecipe.totalQty}
             onClose={() => setViewingDOSRecipe(null)}
-            onSaveYield={(newYield) => {
-              const updated = { ...viewingDOSRecipe.recipe, yield: newYield };
-              setViewingDOSRecipe({ ...viewingDOSRecipe, recipe: updated });
-              if (onUpdateRecipes) {
-                onUpdateRecipes(prev => prev.map(r => r.productName === updated.productName ? updated : r));
-              }
-              db.upsertRecipe(updated).catch(console.error);
-            }}
           />
         )}
 
@@ -1216,10 +1220,10 @@ return (
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
           <div className="text-[12px] text-zinc-400">Step 1 of 5</div>
           <button
-            onClick={() => setActiveTab("production-plan")}
+            onClick={() => setActiveTab("tasks-to-prepare")}
             className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all"
           >
-            Next: Production Plan →
+            Next: Tasks to Prepare →
           </button>
         </div>
         </>)}
@@ -1227,257 +1231,399 @@ return (
     );
   }
 
-  /* ── Production Plan Panel ── */
-  if (activeTab === "production-plan") {
-    const todayDOSForPlan = dosItems.filter(d => {
-      if (d.status === "scheduled") return false;
-      if (d.scheduledDate && d.scheduledDate <= new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]) return true;
-      const ts = d.id.match(/DOS-(\d+)/)?.[1];
-      if (!ts) return false;
-      const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-      return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-    }).filter(d => (d.roles ?? []).includes("deco"));
+  /* ── Tasks to Prepare ── */
+  if (activeTab === "tasks-to-prepare") {
+    const bakerTasks = dosForDeco.filter(d => productRoutes[d.product] === "baker" || !productRoutes[d.product]);
+    const decoTasks = dosForDeco.filter(d => productRoutes[d.product] === "deco");
 
-    const totalDemand = planDraft?.demands.reduce((s, d) => s + d.totalDemand, 0) ?? 0;
-    const totalOutput = planDraft?.batches.reduce((s, b) => s + b.expectedOutput, 0) ?? 0;
-    const totalBuffer = planDraft?.allocations.reduce((s, a) => s + a.bufferStock, 0) ?? 0;
-    const totalBatches = planDraft?.batches.reduce((s, b) => s + b.batchesNeeded, 0) ?? 0;
-    const totalIngredients = planDraft ? sumIngredients(planDraft.batches) : [];
-    const totalPkg = planDraft ? sumPackaging(planDraft.batches) : [];
-    const totalDeco = planDraft ? sumDecoSupplies(planDraft.batches) : [];
+    const getRecipesForProduct = (product: string): ProductRecipe[] => {
+      const direct = recipes.find(r => r.productName === product);
+      if (!direct) return [];
+      return (direct.linkedIngredients ?? [])
+        .map(name => recipes.find(r => r.productName === name))
+        .filter((r): r is ProductRecipe => !!r);
+    };
 
-    const confirmPlan = async () => {
-      if (!planDraft || confirmingPlan) return;
-      setConfirmingPlan(true);
-      try {
-        const plan: ProductionPlan = {
-          id: `PP-${Date.now()}`,
-          date: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
-          dosItems: todayDOSForPlan,
-          recipeDemands: planDraft.demands,
-          batchCalculations: planDraft.batches,
-          outputAllocations: planDraft.allocations,
-          bufferStockCreated: planDraft.bufferCreated,
-          bufferStockUsed: [],
-          status: "confirmed",
-          createdBy: "deco",
-          createdAt: new Date().toISOString(),
-          confirmedAt: new Date().toISOString(),
-        };
-        await db.upsertProductionPlan(plan);
-        if (planDraft.bufferCreated.length > 0) {
-          await db.upsertBufferStock(planDraft.bufferCreated);
+    // TASK LIST VIEW
+    if (!activePreparation) {
+    return (
+      <div className="max-w-5xl mx-auto space-y-6 bg-zinc-950 p-6 rounded-2xl">
+          {toast && (
+            <div style={{ position: "fixed", top: 20, right: 20, zIndex: 100, display: "flex", alignItems: "center", gap: 12, borderRadius: 12, padding: "14px 20px", boxShadow: "0 8px 30px rgba(0,0,0,0.2)", background: toast.type === "success" ? "#059669" : "#dc2626", color: "#fff" }}>
+              <span style={{ fontSize: 18 }}>{toast.type === "success" ? "✓" : "✗"}</span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>{toast.message}</span>
+              <button onClick={() => setToast(null)} style={{ marginLeft: 8, color: "rgba(255,255,255,0.7)", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>x</button>
+            </div>
+          )}
+
+          <div className="rounded-2xl bg-zinc-900 p-6 shadow-sm">
+            <h1 className="text-[28px] font-semibold tracking-tight text-white">Tasks to Prepare Today</h1>
+            <p className="mt-1 text-[13px] text-zinc-400">View and prepare DOS items assigned to your team.</p>
+          </div>
+
+          {dosForDeco.length === 0 ? (
+            <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center">
+              <p className="text-[14px] text-zinc-400">No DOS items assigned for today.</p>
+            </div>
+          ) : (
+            <>
+              {bakerTasks.length > 0 && (
+                <div>
+                  <h2 className="text-[18px] font-bold text-zinc-900 mb-3 flex items-center gap-2">
+                    <span>🍞</span> For Baker
+                  </h2>
+                  <div className="space-y-3">
+                    {bakerTasks.map(d => {
+                      const allRecipes = getRecipesForProduct(d.product);
+                      if (allRecipes.length === 0) return null;
+                      return allRecipes.map(recipe => {
+                        const yieldPerBatch = recipe.yield || 1;
+                        const estProdTotal = yieldPerBatch * d.qty;
+                        return (
+                          <div key={d.id + "-" + recipe.productName} className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <h3 className="text-[17px] font-semibold text-white">{recipe.productName}</h3>
+                                <div className="flex items-center gap-3 mt-1 text-[13px] text-zinc-400">
+                                  <span>Demand: <span className="font-mono font-semibold text-zinc-200">{d.qty} pcs</span></span>
+                                  <span>Yield/Batch: <span className="font-mono font-semibold text-zinc-200">{yieldPerBatch} pcs</span></span>
+                                  <span>Expected: <span className="font-mono font-semibold text-emerald-300">{estProdTotal} pcs</span></span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-xl bg-zinc-800/50 border border-zinc-700 p-3 mb-3">
+                              <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium mb-2">Ingredients Needed</div>
+                              <div className="space-y-1.5">
+                                {recipe.ingredients.map((ing, i) => (
+                                  <div key={i} className="flex items-center justify-between text-[13px]">
+                                    <span className="text-zinc-300">{ing.name}</span>
+                                    <span className="font-mono text-zinc-400">{ing.qtyPerBatch * d.qty}{ing.unit}</span>
+                                  </div>
+                                ))}
+                                {recipe.ingredients.length === 0 && (
+                                  <span className="text-[12px] text-zinc-500">No ingredients listed</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => setViewingDOSRecipe({ recipe, totalQty: d.qty })} className="rounded-xl border border-zinc-600 px-3 py-2 text-[12px] font-medium text-zinc-300 hover:bg-zinc-800 transition-all">View Recipe</button>
+                              <button onClick={() => { setActivePreparation({ dos: d, recipe, route: "baker" }); setAdditionalIngredients([]); setActualOutput(""); }} className="rounded-xl bg-amber-600 px-4 py-2 text-[12px] font-medium text-white hover:bg-amber-700 transition-all">Start Pre-Mix</button>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {decoTasks.length > 0 && (
+                <div>
+                  <h2 className="text-[18px] font-bold text-zinc-900 mb-3 flex items-center gap-2">
+                    <span>🎂</span> For Decoration
+                  </h2>
+                  <div className="space-y-3">
+                    {decoTasks.map(d => {
+                      const allRecipes = getRecipesForProduct(d.product);
+                      if (allRecipes.length === 0) return null;
+                      return allRecipes.map(recipe => {
+                        const yieldPerBatch = recipe.yield || 1;
+                        const estProdTotal = yieldPerBatch * d.qty;
+                        return (
+                          <div key={d.id + "-" + recipe.productName} className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <h3 className="text-[17px] font-semibold text-white">{recipe.productName}</h3>
+                                <div className="flex items-center gap-3 mt-1 text-[13px] text-zinc-400">
+                                  <span>Demand: <span className="font-mono font-semibold text-zinc-200">{d.qty} pcs</span></span>
+                                  <span>Yield/Batch: <span className="font-mono font-semibold text-zinc-200">{yieldPerBatch} pcs</span></span>
+                                  <span>Expected: <span className="font-mono font-semibold text-emerald-300">{estProdTotal} pcs</span></span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-xl bg-zinc-800/50 border border-zinc-700 p-3 mb-3">
+                              <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium mb-2">Ingredients Needed</div>
+                              <div className="space-y-1.5">
+                                {recipe.ingredients.map((ing, i) => (
+                                  <div key={i} className="flex items-center justify-between text-[13px]">
+                                    <span className="text-zinc-300">{ing.name}</span>
+                                    <span className="font-mono text-zinc-400">{ing.qtyPerBatch * d.qty}{ing.unit}</span>
+                                  </div>
+                                ))}
+                                {recipe.ingredients.length === 0 && (
+                                  <span className="text-[12px] text-zinc-500">No ingredients listed</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => setViewingDOSRecipe({ recipe, totalQty: d.qty })} className="rounded-xl border border-zinc-600 px-3 py-2 text-[12px] font-medium text-zinc-300 hover:bg-zinc-800 transition-all">View Recipe</button>
+                              <button onClick={() => { setActivePreparation({ dos: d, recipe, route: "deco" }); setAdditionalIngredients([]); setActualOutput(""); }} className="rounded-xl bg-rose-600 px-4 py-2 text-[12px] font-medium text-white hover:bg-rose-700 transition-all">Start Preparation</button>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {viewingDOSRecipe && (
+            <DOSRecipeDetailModal
+              recipe={viewingDOSRecipe.recipe}
+              totalQty={viewingDOSRecipe.totalQty}
+              onClose={() => setViewingDOSRecipe(null)}
+            />
+          )}
+
+          <div className="flex items-center justify-between pt-4 border-t border-zinc-700">
+            <div className="text-[12px] text-zinc-500">Step 2 of 5</div>
+            <button onClick={() => setActiveTab("advanced-premix")} className="rounded-xl bg-zinc-800 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-700 transition-all">Next: Advanced Premix →</button>
+          </div>
+        </div>
+      );
+    }
+
+    // PREPARATION VIEW
+    const { dos, recipe, route } = activePreparation;
+    const linkedRecipesForPrep = (recipe.linkedIngredients ?? [])
+      .map(name => recipes.find(r => r.productName === name))
+      .filter((r): r is ProductRecipe => !!r);
+    const allIngredientsForPrep = [
+      ...recipe.ingredients,
+      ...linkedRecipesForPrep.flatMap(lr => lr.ingredients),
+    ];
+    const yieldPerBatch = recipe.yield || linkedRecipesForPrep.find(r => r.yield && r.yield > 1)?.yield || 1;
+    const expectedOutput = yieldPerBatch * dos.qty;
+    const prepKey = dos.id + "-" + dos.product.toLowerCase();
+    const savedAddIngs = productAdditionalIngredients[prepKey] || [];
+
+    const handleComplete = () => {
+      const output = actualOutput === "" ? expectedOutput : Number(actualOutput);
+      const finalAddIngs = [...savedAddIngs, ...additionalIngredients];
+      setProductAdditionalIngredients(prev => ({ ...prev, [prepKey]: finalAddIngs }));
+
+      const newInv = [...inventory];
+      const findMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
+        if (ingredient.inventoryId) {
+          const direct = newInv.find(i => i.id === ingredient.inventoryId);
+          if (direct) return direct;
         }
-        onAddAuditLog?.("PRODUCTION_PLAN_CONFIRMED", `Plan ${plan.id}: ${planDraft.batches.length} recipes, ${totalBatches} batches, ${totalBuffer} buffer`);
-        setActiveTab("advanced-premix");
-      } catch (err) {
-        console.error("Failed to save production plan:", err);
-      } finally {
-        setConfirmingPlan(false);
+        const ingLower = ingredient.name.toLowerCase().trim();
+        let match = newInv.find(i => i.name.toLowerCase().trim() === ingLower);
+        if (match) return match;
+        match = newInv.find(i => i.name.toLowerCase().includes(ingLower) || ingLower.includes(i.name.toLowerCase()));
+        if (match) return match;
+        if (ingredient.sku) match = newInv.find(i => i.sku === ingredient.sku);
+        return match;
+      };
+
+      recipe.ingredients.forEach(ing => {
+        const match = findMatch(ing);
+        if (!match) return;
+        const idx = newInv.findIndex(i => i.id === match.id);
+        const needed = ing.qtyPerBatch * dos.qty;
+        newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - needed) };
+      });
+
+      additionalIngredients.forEach(addIng => {
+        const match = findMatch({ name: addIng.name });
+        if (!match) return;
+        const idx = newInv.findIndex(i => i.id === match.id);
+        newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - addIng.qty) };
+      });
+
+      onUpdateInventory(newInv);
+      const changed = newInv.filter((item, i) => {
+        const orig = inventory[i];
+        return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
+      });
+      if (changed.length > 0) db.upsertInventory(changed).catch(console.error);
+
+      if (route === "baker") {
+        const freezerItem: FreezerItem = {
+          id: "FRZ-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+          productName: dos.product,
+          batchRef: "DEC-" + Date.now(),
+          qty: output, unit: "pcs", status: "stored", producedBy: "deco",
+          dateProduced: new Date().toISOString(), notes: "Production Recipe",
+        };
+        if (onUpdateFreezer) onUpdateFreezer((prev) => [...prev, freezerItem]);
+        db.upsertFreezerItems([freezerItem]).catch(console.error);
+        onAddAuditLog?.("TASK_COMPLETED", dos.product + " x" + output + " sent to Baker");
+        showToast(dos.product + " sent to Baker. Ingredients deducted.");
+      } else {
+        const existingItem = newInv.find(i => i.name === dos.product && i.accessRoles?.includes("deco") && i.source === "production-prep");
+        if (existingItem) {
+          const updated = { ...existingItem, onHand: existingItem.onHand + output };
+          const idx = newInv.findIndex(i => i.id === existingItem.id);
+          newInv[idx] = updated;
+          db.upsertInventory([updated]).catch(console.error);
+        } else {
+          const newItem: InventoryItem = {
+            id: "INV-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+            name: dos.product,
+            sku: "DECO-" + dos.product.substring(0, 8).toUpperCase() + "-" + Date.now(),
+            unit: "pcs", onHand: output, threshold: 0, cost: 0, supplier: "",
+            lastIn: new Date().toISOString(), category: "dry", group: "ingredients",
+            accessRoles: ["deco"] as Role[], source: "production-prep",
+          };
+          onUpdateInventory((prev) => [...prev, newItem]);
+          db.upsertInventory([newItem]).catch(console.error);
+        }
+        onAddAuditLog?.("TASK_COMPLETED", dos.product + " x" + output + " moved to Decoration Inventory");
+        showToast(dos.product + " moved to Decoration Inventory. Ingredients deducted.");
       }
+      // Update production task status
+      if (onUpdateProduction) {
+        const task = production.find(t => t.product === dos.product && t.assignedTo === "deco" && t.status !== "completed");
+        if (task) onUpdateProduction(task.id, { status: "completed", completed: output });
+      }
+      setActivePreparation(null);
     };
 
     return (
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div className="rounded-2xl bg-zinc-900 p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-[28px] font-semibold tracking-tight text-white">Production Plan</h1>
-              <p className="mt-1 text-[13px] text-zinc-400">Recipe-level batch planning with yield calculation and buffer stock tracking.</p>
-            </div>
-            {planDraft && (
-              <div className="flex gap-3 shrink-0">
-                <div className="rounded-xl bg-white/10 px-4 py-2.5 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-medium tracking-wider">Recipes</div>
-                  <div className="text-[22px] font-bold text-white mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{planDraft.demands.length}</div>
-                </div>
-                <div className="rounded-xl bg-white/10 px-4 py-2.5 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-medium tracking-wider">Batches</div>
-                  <div className="text-[22px] font-bold text-white mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalBatches}</div>
-                </div>
+      <div className="max-w-5xl mx-auto space-y-6 bg-zinc-950 p-6 rounded-2xl">
+        {toast && (
+          <div style={{ position: "fixed", top: 20, right: 20, zIndex: 100, display: "flex", alignItems: "center", gap: 12, borderRadius: 12, padding: "14px 20px", boxShadow: "0 8px 30px rgba(0,0,0,0.2)", background: toast.type === "success" ? "#059669" : "#dc2626", color: "#fff" }}>
+            <span style={{ fontSize: 18 }}>{toast.type === "success" ? "✓" : "✗"}</span>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{toast.message}</span>
+            <button onClick={() => setToast(null)} style={{ marginLeft: 8, color: "rgba(255,255,255,0.7)", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>x</button>
+          </div>
+        )}
+
+        <button onClick={() => setActivePreparation(null)} className="flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-zinc-300 hover:bg-zinc-800 transition-all">
+          <span className="text-[14px]">←</span> Back to Tasks
+        </button>
+
+        <div>
+          <h1 className="text-[24px] font-semibold text-white">{recipe.productName}</h1>
+          <p className="text-[13px] text-zinc-400 mt-1">Route: {route === "baker" ? "Bakery" : "Decoration"}</p>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
+          <h3 className="text-[14px] font-bold text-zinc-200 mb-4 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-zinc-400"></span> Standard Ingredients
+          </h3>
+          <div className="space-y-2">
+            {allIngredientsForPrep.map((ing, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/50 px-3 py-2">
+                <span className="text-[13px] text-zinc-300 font-medium">{ing.name}</span>
+                <span className="font-mono text-[13px] text-zinc-400">{ing.qtyPerBatch * dos.qty}{ing.unit}</span>
               </div>
+            ))}
+            {allIngredientsForPrep.length === 0 && (
+              <p className="text-[13px] text-zinc-500">No standard ingredients in recipe.</p>
             )}
           </div>
         </div>
 
-        {todayDOSForPlan.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center">
-            <p className="text-[14px] text-zinc-400">No DOS items assigned for today. Production plan requires DOS items.</p>
-          </div>
-        ) : !planDraft ? (
-          <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center">
-            <p className="text-[14px] text-zinc-400">Calculating production plan...</p>
-          </div>
-        ) : (
-          <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
-                <div className="text-[12px] text-zinc-400 uppercase tracking-wider font-medium">Total Demand</div>
-                <div className="text-[28px] font-bold mt-1 text-white" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalDemand}</div>
-                <div className="text-[11px] text-zinc-500 mt-1">pcs from DOS</div>
-              </div>
-              <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
-                <div className="text-[12px] text-zinc-400 uppercase tracking-wider font-medium">Expected Output</div>
-                <div className="text-[28px] font-bold mt-1 text-white" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalOutput}</div>
-                <div className="text-[11px] text-zinc-500 mt-1">pcs from {totalBatches} batch{totalBatches !== 1 ? "es" : ""}</div>
-              </div>
-              <div className="rounded-2xl border-2 border-emerald-600 bg-emerald-950/60 p-5 shadow-lg shadow-emerald-900/20">
-                <div className="text-[12px] text-emerald-400 uppercase tracking-wider font-semibold">Buffer Stock</div>
-                <div className="text-[28px] font-bold mt-1 text-emerald-300" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalBuffer}</div>
-                <div className="text-[11px] text-emerald-400 mt-1">excess pcs (reusable)</div>
-              </div>
-              <div className="rounded-2xl border-2 border-amber-600 bg-amber-950/60 p-5 shadow-lg shadow-amber-900/20">
-                <div className="text-[12px] text-amber-400 uppercase tracking-wider font-semibold">Buffer Available</div>
-                <div className="text-[28px] font-bold mt-1 text-amber-300" style={{ fontFamily: "Fragment Mono, monospace" }}>{getAvailableBuffer("", planBufferStock) || 0}</div>
-                <div className="text-[11px] text-amber-400 mt-1">pcs from previous</div>
-              </div>
-            </div>
+        <div className="rounded-2xl border border-amber-700 bg-amber-950/40 p-5">
+          <h3 className="text-[14px] font-bold text-amber-200 mb-4 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span> Additional Ingredients Used
+          </h3>
 
-            {/* Recipe Demand Table */}
-            <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
-              <h2 className="text-[15px] font-semibold text-white mb-3">Recipe Demand Aggregation</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-[13px]">
-                  <thead className="bg-zinc-800 text-zinc-400">
-                    <tr>
-                      <th className="px-4 py-3">Recipe</th>
-                      <th className="px-4 py-3 text-right">Yield</th>
-                      <th className="px-4 py-3 text-right">Demand</th>
-                      <th className="px-4 py-3 text-right">Buffer</th>
-                      <th className="px-4 py-3 text-right">Net</th>
-                      <th className="px-4 py-3 text-right">Batches</th>
-                      <th className="px-4 py-3 text-right">Output</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-800">
-                    {planDraft.batches.map((b, i) => (
-                      <tr key={b.recipeName} className="hover:bg-zinc-800/50">
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-zinc-100">{b.recipeName}</div>
-                          <div className="text-[11px] text-zinc-500 mt-0.5">
-                            {planDraft.demands[i].demandedBy.map(d => `${d.productName} ×${d.qty}`).join(" + ")}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-zinc-400">{b.recipeYield}</td>
-                        <td className="px-4 py-3 text-right font-mono font-medium text-zinc-200">{b.totalDemand}</td>
-                        <td className="px-4 py-3 text-right font-mono text-emerald-400">{b.bufferFromPrevious > 0 ? `-${b.bufferFromPrevious}` : "—"}</td>
-                        <td className="px-4 py-3 text-right font-mono font-medium text-zinc-200">{b.netDemand}</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[11px] font-medium text-zinc-300">{b.batchesNeeded}</span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono font-semibold text-zinc-100">{b.expectedOutput}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Output Allocation */}
-            <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
-              <h2 className="text-[15px] font-semibold text-white mb-3">Output Allocation</h2>
-              <div className="space-y-4">
-                {planDraft.allocations.map(a => (
-                  <div key={a.recipeName} className="rounded-xl border border-zinc-800 p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[14px] font-semibold text-zinc-100">{a.recipeName}</span>
-                        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-zinc-400">{a.producedQty} produced</span>
-                      </div>
-                      {a.bufferStock > 0 && (
-                        <span className="rounded-full bg-emerald-900/50 px-2 py-0.5 text-[10px] font-medium text-emerald-300">+{a.bufferStock} buffer</span>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      {a.allocations.map(al => (
-                        <div key={al.productName} className="flex items-center justify-between text-[12px]">
-                          <div className="flex items-center gap-2">
-                            <span className="text-zinc-500">#{al.priority}</span>
-                            <span className="font-medium text-zinc-300">{al.productName}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-zinc-500">demand: {al.demandQty}</span>
-                            <span className={`font-mono font-medium ${al.allocatedQty === al.demandQty ? "text-emerald-400" : "text-amber-400"}`}>
-                              → {al.allocatedQty}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                      {a.bufferStock > 0 && (
-                        <div className="flex items-center justify-between text-[12px] pt-1.5 border-t border-zinc-800">
-                          <span className="font-medium text-emerald-400">Buffer Stock (excess)</span>
-                          <span className="font-mono font-semibold text-emerald-400">+{a.bufferStock}</span>
-                        </div>
-                      )}
-                    </div>
+          {savedAddIngs.length > 0 && (
+            <div className="space-y-1.5 mb-3">
+              {savedAddIngs.map((a, i) => (
+                <div key={i} className="flex items-center justify-between rounded-lg bg-amber-900/20 border border-amber-800/30 px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] font-medium text-zinc-200">{a.name}</span>
+                    <span className="text-[11px] text-amber-400/60">{a.reason}</span>
                   </div>
-                ))}
-              </div>
+                  <span className="font-mono text-[13px] text-amber-200">{a.qty}{a.unit}</span>
+                </div>
+              ))}
             </div>
+          )}
 
-            {/* Ingredients Required */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="rounded-2xl border-2 border-amber-600 bg-amber-950/40 p-5 shadow-lg shadow-amber-900/20">
-                <h3 className="text-[14px] font-bold text-amber-200 mb-4 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                  Ingredients Required
-                </h3>
-                <div className="space-y-2">
-                  {totalIngredients.map(ing => (
-                    <div key={ing.inventoryId} className="flex items-center justify-between text-[13px] py-1.5 px-3 rounded-lg bg-amber-900/20 border border-amber-800/30">
-                      <span className="text-zinc-200 font-medium">{ing.name}</span>
-                      <span className="font-mono font-bold text-amber-200">{ing.totalQty} {ing.unit}</span>
-                    </div>
-                  ))}
-                  {totalIngredients.length === 0 && <p className="text-[13px] text-amber-400/60 py-2">No ingredients needed.</p>}
+          {additionalIngredients.length > 0 && (
+            <div className="space-y-1.5 mb-3">
+              {additionalIngredients.map((a, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-amber-900/20 border border-amber-800/30 px-3 py-2">
+                  <span className="text-[13px] font-medium text-zinc-200 flex-1">{a.name}</span>
+                  <input type="number" min={0} value={a.qty || ""} onChange={e => {
+                    const val = Math.max(0, Number(e.target.value));
+                    setAdditionalIngredients(prev => prev.map((item, idx) => idx === i ? { ...item, qty: val } : item));
+                  }} placeholder="Qty" className="w-20 rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1 text-[12px] font-mono text-white text-center outline-none focus:border-amber-500" />
+                  <span className="text-[11px] text-zinc-400 w-8">{a.unit}</span>
+                  <select value={a.reason} onChange={e => {
+                    setAdditionalIngredients(prev => prev.map((item, idx) => idx === i ? { ...item, reason: e.target.value } : item));
+                  }} className="rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 outline-none focus:border-amber-500">
+                    <option value="">Reason</option>
+                    <option value="Spoilage">Spoilage</option>
+                    <option value="Dropped">Dropped</option>
+                    <option value="Contaminated">Contaminated</option>
+                    <option value="Over-portioned">Over-portioned</option>
+                    <option value="Trial/Test Batch">Trial/Test Batch</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  <button onClick={() => setAdditionalIngredients(prev => prev.filter((_, idx) => idx !== i))} className="text-zinc-500 hover:text-red-400 text-[14px]">✕</button>
                 </div>
-              </div>
-              <div className="rounded-2xl border-2 border-blue-600 bg-blue-950/40 p-5 shadow-lg shadow-blue-900/20">
-                <h3 className="text-[14px] font-bold text-blue-200 mb-4 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-blue-400"></span>
-                  Packaging Required
-                </h3>
-                <div className="space-y-2">
-                  {totalPkg.map(p => (
-                    <div key={p.inventoryId} className="flex items-center justify-between text-[13px] py-1.5 px-3 rounded-lg bg-blue-900/20 border border-blue-800/30">
-                      <span className="text-zinc-200 font-medium">{p.name}</span>
-                      <span className="font-mono font-bold text-blue-200">{p.totalQty} {p.unit}</span>
-                    </div>
-                  ))}
-                  {totalPkg.length === 0 && <p className="text-[13px] text-blue-400/60 py-2">No packaging needed.</p>}
-                </div>
-              </div>
-              <div className="rounded-2xl border-2 border-purple-600 bg-purple-950/40 p-5 shadow-lg shadow-purple-900/20">
-                <h3 className="text-[14px] font-bold text-purple-200 mb-4 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-                  Deco Supplies Required
-                </h3>
-                <div className="space-y-2">
-                  {totalDeco.map(d => (
-                    <div key={d.inventoryId} className="flex items-center justify-between text-[13px] py-1.5 px-3 rounded-lg bg-purple-900/20 border border-purple-800/30">
-                      <span className="text-zinc-200 font-medium">{d.name}</span>
-                      <span className="font-mono font-bold text-purple-200">{d.totalQty} {d.unit}</span>
-                    </div>
-                  ))}
-                  {totalDeco.length === 0 && <p className="text-[13px] text-purple-400/60 py-2">No deco supplies needed.</p>}
-                </div>
-              </div>
+              ))}
             </div>
+          )}
 
-            {/* Confirm Button */}
-            <div className="flex items-center justify-between pt-4 border-t border-zinc-700">
-              <div className="text-[12px] text-zinc-500">Step 2 of 5</div>
-              <button
-                onClick={confirmPlan}
-                disabled={confirmingPlan || planDraft.batches.length === 0}
-                className="rounded-xl bg-emerald-600 px-6 py-2.5 text-[13px] font-medium text-white hover:bg-emerald-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {confirmingPlan ? "Saving..." : "Confirm Production Plan →"}
-              </button>
+          {showAddIngredientModal && (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setShowAddIngredientModal(false)}>
+              <div className="w-full max-w-[500px] max-h-[80vh] overflow-y-auto rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-[16px] font-bold text-white">Add Additional Ingredient</h3>
+                  <button onClick={() => setShowAddIngredientModal(false)} className="text-zinc-400 hover:text-white text-[18px]">✕</button>
+                </div>
+                <p className="text-[12px] text-zinc-400 mb-3">Select from Deco Freezer inventory</p>
+                {inventory.filter(i => i.group === "ingredients" && (!i.accessRoles || i.accessRoles.includes("deco"))).length === 0 ? (
+                  <p className="text-[13px] text-zinc-500 text-center py-6">No items in Deco Freezer.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {inventory.filter(i => i.group === "ingredients" && (!i.accessRoles || i.accessRoles.includes("deco"))).map(item => (
+                      <button key={item.id} onClick={() => {
+                        setAdditionalIngredients(prev => [...prev, { name: item.name, qty: 0, unit: item.unit, reason: "", source: "freezer" }]);
+                        setShowAddIngredientModal(false);
+                      }} className="w-full flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800/50 px-4 py-3 hover:bg-zinc-800 transition-all text-left">
+                        <div>
+                          <div className="text-[13px] font-medium text-white">{item.name}</div>
+                          <div className="text-[11px] text-zinc-400">{item.onHand} {item.unit} available</div>
+                        </div>
+                        <span className="text-[12px] text-amber-400 font-medium">+ Add</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </>
-        )}
+          )}
+
+          {!showAddIngredientModal && (
+            <button onClick={() => setShowAddIngredientModal(true)} className="flex items-center gap-1.5 rounded-lg border border-dashed border-amber-700/50 px-3 py-2 text-[12px] font-medium text-amber-400 hover:bg-amber-900/20 transition-all w-full justify-center">+ Add Additional Ingredient</button>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
+          <h3 className="text-[14px] font-bold text-zinc-200 mb-4 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-zinc-400"></span> Production Result
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-lg bg-zinc-800/50 p-3">
+              <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">Expected Production</div>
+              <div className="text-[20px] font-bold text-emerald-300 mt-1">{expectedOutput}</div>
+            </div>
+            <div className="rounded-lg bg-zinc-800/50 p-3">
+              <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">Actual Production</div>
+              <div className="mt-1">
+                <input type="number" min={0} value={actualOutput} onChange={e => setActualOutput(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))} placeholder={String(expectedOutput)} className="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-2 text-[16px] font-bold font-mono text-white outline-none focus:border-emerald-500" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-4 border-t border-zinc-700">
+          <div className="text-[12px] text-zinc-500">Step 2 of 5</div>
+          <button onClick={handleComplete} className="rounded-xl bg-emerald-600 px-6 py-2.5 text-[13px] font-medium text-white hover:bg-emerald-700 transition-all">
+            {route === "baker" ? "Save & Send to Baker" : "Move to Decoration Inventory"}
+          </button>
+        </div>
       </div>
     );
   }
