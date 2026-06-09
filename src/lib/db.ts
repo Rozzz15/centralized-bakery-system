@@ -226,7 +226,7 @@ export function subscribeInventory(onChange: () => void) {
 }
 
 // ─── Deco Production Prep ───
-export type AdditionalIngredient = { name: string; qty: number; unit: string; reason: string; source: string };
+export type AdditionalIngredient = { name: string; qty: number; unit: string; reason: string; source: string; timestamp?: string };
 
 export async function fetchDecoProductionPrep(): Promise<{ dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean; additionalIngredients: AdditionalIngredient[] }[]> {
   const { data, error } = await supabase.from("deco_production_prep").select("*");

@@ -178,7 +178,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
       const done = new Set<string>();
       const qty: Record<string, number> = {};
       items.forEach(i => {
-        const key = `${i.dosId}-${i.productName.toLowerCase()}`;
+        const key = `${i.dosId}:::${i.productName.toLowerCase()}`;
         if (i.prepared) prepared.add(key);
         if (i.done) done.add(key);
         qty[i.dosId] = i.productQty;
@@ -194,7 +194,12 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   // Save to Supabase on change
   useEffect(() => {
     const items: DecoProductionPrep[] = [];
-    const allDosIds = new Set([...[...preMixPrepared].map(k => k.split("-")[0]), ...[...preMixDone].map(k => k.split("-")[0]), ...Object.keys(productQty)]);
+    const allDosIds = new Set<string>();
+    [...preMixPrepared, ...preMixDone].forEach(k => {
+      const sepIdx = k.indexOf(":::");
+      if (sepIdx !== -1) allDosIds.add(k.substring(0, sepIdx));
+    });
+    Object.keys(productQty).forEach(id => allDosIds.add(id));
     allDosIds.forEach(dosId => {
       const dos = dosForDeco.find(d => d.id === dosId);
       if (!dos) return;
@@ -205,11 +210,11 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         .filter(r => r!.productName !== dos.product);
       const allRecipes = linkedRecipes;
       if (allRecipes.length === 0) {
-        const key = `${dosId}-${dos.product.toLowerCase()}`;
+        const key = `${dosId}:::${dos.product.toLowerCase()}`;
         items.push({ dosId, productName: dos.product, productQty: productQty[dosId] ?? dos.qty, prepared: preMixPrepared.has(key), done: preMixDone.has(key), additionalIngredients: productAdditionalIngredients[key] ?? [] });
       }
       allRecipes.forEach(r => {
-        const key = `${dosId}-${r!.productName.toLowerCase()}`;
+        const key = `${dosId}:::${r!.productName.toLowerCase()}`;
         items.push({ dosId, productName: r!.productName, productQty: productQty[dosId] ?? dos.qty, prepared: preMixPrepared.has(key), done: preMixDone.has(key), additionalIngredients: productAdditionalIngredients[key] ?? [] });
       });
     });
@@ -1249,10 +1254,15 @@ return (
     return (
       <div className="max-w-5xl mx-auto space-y-6 bg-zinc-950 p-6 rounded-2xl">
           {toast && (
-            <div style={{ position: "fixed", top: 20, right: 20, zIndex: 100, display: "flex", alignItems: "center", gap: 12, borderRadius: 12, padding: "14px 20px", boxShadow: "0 8px 30px rgba(0,0,0,0.2)", background: toast.type === "success" ? "#059669" : "#dc2626", color: "#fff" }}>
-              <span style={{ fontSize: 18 }}>{toast.type === "success" ? "✓" : "✗"}</span>
-              <span style={{ fontSize: 13, fontWeight: 500 }}>{toast.message}</span>
-              <button onClick={() => setToast(null)} style={{ marginLeft: 8, color: "rgba(255,255,255,0.7)", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>x</button>
+            <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }} onClick={() => setToast(null)}>
+              <div className="flex flex-col items-center rounded-2xl bg-white px-8 py-7 shadow-2xl" style={{ minWidth: 360, maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+                <div className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full ${toast.type === "success" ? "bg-emerald-100" : "bg-red-100"}`}>
+                  <span className={`text-[28px] ${toast.type === "success" ? "text-emerald-600" : "text-red-600"}`}>{toast.type === "success" ? "✓" : "✗"}</span>
+                </div>
+                <h3 className="text-[16px] font-semibold text-zinc-900">{toast.type === "success" ? "Success" : "Error"}</h3>
+                <p className="mt-1.5 text-center text-[13px] leading-relaxed text-zinc-500">{toast.message}</p>
+                <button onClick={() => setToast(null)} className="mt-5 w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-colors">Got it</button>
+              </div>
             </div>
           )}
 
@@ -1396,15 +1406,42 @@ return (
     ];
     const yieldPerBatch = recipe.yield || linkedRecipesForPrep.find(r => r.yield && r.yield > 1)?.yield || 1;
     const expectedOutput = yieldPerBatch * dos.qty;
-    const prepKey = dos.id + "-" + dos.product.toLowerCase();
+    const prepKey = dos.id + ":::" + dos.product.toLowerCase();
     const savedAddIngs = productAdditionalIngredients[prepKey] || [];
 
     const handleComplete = () => {
       const output = actualOutput === "" ? expectedOutput : Number(actualOutput);
       const finalAddIngs = [...savedAddIngs, ...additionalIngredients];
       setProductAdditionalIngredients(prev => ({ ...prev, [prepKey]: finalAddIngs }));
+      setPreMixDone(prev => new Set([...prev, prepKey]));
 
-      const newInv = [...inventory];
+      // Immediately save deco production prep to Supabase so Admin can see it
+      const allLinkedRecipes = (recipe.linkedIngredients ?? [])
+        .map(name => recipes.find(r => r.productName === name))
+        .filter((r): r is ProductRecipe => !!r)
+        .filter(r => r.productName !== dos.product);
+      const allProductKeys: { dosId: string; productName: string }[] = [];
+      if (allLinkedRecipes.length === 0) {
+        allProductKeys.push({ dosId: dos.id, productName: dos.product });
+      }
+      allLinkedRecipes.forEach(r => {
+        allProductKeys.push({ dosId: dos.id, productName: r.productName });
+      });
+      const updatedAddIngs = { ...productAdditionalIngredients, [prepKey]: finalAddIngs };
+      const prepItems = allProductKeys.map(({ dosId, productName }) => {
+        const key = `${dosId}:::${productName.toLowerCase()}`;
+        return {
+          dosId,
+          productName,
+          productQty: productQty[dosId] ?? dos.qty,
+          prepared: true,
+          done: true,
+          additionalIngredients: updatedAddIngs[key] ?? [],
+        };
+      });
+      if (prepItems.length > 0) db.saveDecoProductionPrep(prepItems).catch(console.error);
+
+      const newInv = inventory.map(i => ({ ...i }));
       const findMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
         if (ingredient.inventoryId) {
           const direct = newInv.find(i => i.id === ingredient.inventoryId);
@@ -1419,52 +1456,112 @@ return (
         return match;
       };
 
-      recipe.ingredients.forEach(ing => {
+      const deductedIngredients: string[] = [];
+      const missedIngredients: string[] = [];
+
+      allIngredientsForPrep.forEach(ing => {
         const match = findMatch(ing);
-        if (!match) return;
+        if (!match) {
+          missedIngredients.push(ing.name);
+          return;
+        }
         const idx = newInv.findIndex(i => i.id === match.id);
         const needed = ing.qtyPerBatch * dos.qty;
         newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - needed) };
+        deductedIngredients.push(ing.name + " (-" + needed + " " + ing.unit + ")");
       });
 
       additionalIngredients.forEach(addIng => {
         const match = findMatch({ name: addIng.name });
-        if (!match) return;
+        if (!match) {
+          missedIngredients.push(addIng.name + " (additional)");
+          return;
+        }
         const idx = newInv.findIndex(i => i.id === match.id);
         newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - addIng.qty) };
+        deductedIngredients.push(addIng.name + " (-" + addIng.qty + " " + addIng.unit + " additional)");
       });
+
+      if (missedIngredients.length > 0) {
+        console.warn("[Deco] Could not find inventory items for:", missedIngredients);
+      }
+      if (deductedIngredients.length > 0) {
+        console.log("[Deco] Deducted ingredients:", deductedIngredients);
+      }
 
       onUpdateInventory(newInv);
-      const changed = newInv.filter((item, i) => {
-        const orig = inventory[i];
+      const changed = newInv.filter(item => {
+        const orig = inventory.find(i => i.id === item.id);
         return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
       });
-      if (changed.length > 0) db.upsertInventory(changed).catch(console.error);
+      if (changed.length > 0) {
+        db.upsertInventory(changed).catch(err => console.error("[Deco] Failed to upsert inventory:", err));
+      }
 
       if (route === "baker") {
-        const freezerItem: FreezerItem = {
-          id: "FRZ-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
-          productName: dos.product,
-          batchRef: "DEC-" + Date.now(),
-          qty: output, unit: "pcs", status: "stored", producedBy: "deco",
-          dateProduced: new Date().toISOString(), notes: "Production Recipe",
+        const existingFreezer = freezerItems.find(
+          i => i.productName === dos.product && i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.status === "stored"
+        );
+        const newIngredients = {
+          standard: allIngredientsForPrep.map(ing => ({
+            name: ing.name,
+            qtyPerBatch: ing.qtyPerBatch,
+            unit: ing.unit,
+            totalUsed: ing.qtyPerBatch * dos.qty,
+          })),
+          additional: finalAddIngs.map(addIng => ({
+            name: addIng.name,
+            qty: addIng.qty,
+            unit: addIng.unit,
+            reason: addIng.reason,
+          })),
         };
-        if (onUpdateFreezer) onUpdateFreezer((prev) => [...prev, freezerItem]);
-        db.upsertFreezerItems([freezerItem]).catch(console.error);
-        onAddAuditLog?.("TASK_COMPLETED", dos.product + " x" + output + " sent to Baker");
-        showToast(dos.product + " sent to Baker. Ingredients deducted.");
+        if (existingFreezer) {
+          const updatedItem: FreezerItem = {
+            ...existingFreezer,
+            qty: existingFreezer.qty + output,
+            dateProduced: new Date().toISOString(),
+            ingredients: {
+              standard: [
+                ...(existingFreezer.ingredients?.standard ?? []),
+                ...newIngredients.standard,
+              ],
+              additional: [
+                ...(existingFreezer.ingredients?.additional ?? []),
+                ...newIngredients.additional,
+              ],
+            },
+          };
+          if (onUpdateFreezer) onUpdateFreezer((prev) => prev.map(i => i.id === existingFreezer.id ? updatedItem : i));
+          db.upsertFreezerItems([updatedItem]).catch(console.error);
+        } else {
+          const freezerItem: FreezerItem = {
+            id: "FRZ-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+            productName: dos.product,
+            batchRef: "DEC-" + Date.now(),
+            qty: output, unit: "pcs", status: "stored", producedBy: "deco",
+            dateProduced: new Date().toISOString(), notes: "Production Recipe",
+            ingredients: newIngredients,
+          };
+          if (onUpdateFreezer) onUpdateFreezer((prev) => [...prev, freezerItem]);
+          db.upsertFreezerItems([freezerItem]).catch(console.error);
+        }
+        onAddAuditLog?.("TASK_COMPLETED", dos.product + " x" + output + " sent to Baker. Standard ingredients: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional ingredients: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
+        const deductMsg = missedIngredients.length > 0 ? " Warning: " + missedIngredients.join(", ") + " not found in inventory." : "";
+        showToast(dos.product + " x" + output + " sent to Baker. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg, missedIngredients.length > 0 ? "error" : "success");
       } else {
-        const existingItem = newInv.find(i => i.name === dos.product && i.accessRoles?.includes("deco") && i.source === "production-prep");
+        const recipeName = recipe.productName;
+        const existingItem = newInv.find(i => i.name === recipeName && i.accessRoles?.includes("deco") && i.source === "production-prep");
         if (existingItem) {
-          const updated = { ...existingItem, onHand: existingItem.onHand + output };
+          const updated = { ...existingItem, onHand: existingItem.onHand + output, lastIn: new Date().toISOString() };
           const idx = newInv.findIndex(i => i.id === existingItem.id);
           newInv[idx] = updated;
           db.upsertInventory([updated]).catch(console.error);
         } else {
           const newItem: InventoryItem = {
             id: "INV-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
-            name: dos.product,
-            sku: "DECO-" + dos.product.substring(0, 8).toUpperCase() + "-" + Date.now(),
+            name: recipeName,
+            sku: "DECO-" + recipeName.substring(0, 8).toUpperCase() + "-" + Date.now(),
             unit: "pcs", onHand: output, threshold: 0, cost: 0, supplier: "",
             lastIn: new Date().toISOString(), category: "dry", group: "ingredients",
             accessRoles: ["deco"] as Role[], source: "production-prep",
@@ -1472,8 +1569,9 @@ return (
           onUpdateInventory((prev) => [...prev, newItem]);
           db.upsertInventory([newItem]).catch(console.error);
         }
-        onAddAuditLog?.("TASK_COMPLETED", dos.product + " x" + output + " moved to Decoration Inventory");
-        showToast(dos.product + " moved to Decoration Inventory. Ingredients deducted.");
+        onAddAuditLog?.("TASK_COMPLETED", recipeName + " x" + output + " moved to Decoration Inventory. Standard: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
+        const deductMsg2 = missedIngredients.length > 0 ? " Warning: " + missedIngredients.join(", ") + " not found in inventory." : "";
+        showToast(recipeName + " x" + output + " moved to Decoration Inventory. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg2, missedIngredients.length > 0 ? "error" : "success");
       }
       // Update production task status
       if (onUpdateProduction) {
@@ -1486,10 +1584,15 @@ return (
     return (
       <div className="max-w-5xl mx-auto space-y-6 bg-zinc-950 p-6 rounded-2xl">
         {toast && (
-          <div style={{ position: "fixed", top: 20, right: 20, zIndex: 100, display: "flex", alignItems: "center", gap: 12, borderRadius: 12, padding: "14px 20px", boxShadow: "0 8px 30px rgba(0,0,0,0.2)", background: toast.type === "success" ? "#059669" : "#dc2626", color: "#fff" }}>
-            <span style={{ fontSize: 18 }}>{toast.type === "success" ? "✓" : "✗"}</span>
-            <span style={{ fontSize: 13, fontWeight: 500 }}>{toast.message}</span>
-            <button onClick={() => setToast(null)} style={{ marginLeft: 8, color: "rgba(255,255,255,0.7)", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>x</button>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }} onClick={() => setToast(null)}>
+            <div className="flex flex-col items-center rounded-2xl bg-white px-8 py-7 shadow-2xl" style={{ minWidth: 360, maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+              <div className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full ${toast.type === "success" ? "bg-emerald-100" : "bg-red-100"}`}>
+                <span className={`text-[28px] ${toast.type === "success" ? "text-emerald-600" : "text-red-600"}`}>{toast.type === "success" ? "✓" : "✗"}</span>
+              </div>
+              <h3 className="text-[16px] font-semibold text-zinc-900">{toast.type === "success" ? "Success" : "Error"}</h3>
+              <p className="mt-1.5 text-center text-[13px] leading-relaxed text-zinc-500">{toast.message}</p>
+              <button onClick={() => setToast(null)} className="mt-5 w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-colors">Got it</button>
+            </div>
           </div>
         )}
 
@@ -1579,7 +1682,7 @@ return (
                   <div className="space-y-2">
                     {inventory.filter(i => i.group === "ingredients" && (!i.accessRoles || i.accessRoles.includes("deco"))).map(item => (
                       <button key={item.id} onClick={() => {
-                        setAdditionalIngredients(prev => [...prev, { name: item.name, qty: 0, unit: item.unit, reason: "", source: "freezer" }]);
+                        setAdditionalIngredients(prev => [...prev, { name: item.name, qty: 0, unit: item.unit, reason: "", source: "Deco", timestamp: new Date().toISOString() }]);
                         setShowAddIngredientModal(false);
                       }} className="w-full flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800/50 px-4 py-3 hover:bg-zinc-800 transition-all text-left">
                         <div>

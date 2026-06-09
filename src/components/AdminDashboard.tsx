@@ -117,6 +117,14 @@ export default function AdminDashboard({
   const [editingWaste, setEditingWaste] = useState<WasteLog | null>(null);
   const [financeSearch, setFinanceSearch] = useState("");
   const [financeTab, setFinanceTab] = useState<"purchases" | "bills" | "revenue" | "waste" | "analytics">("purchases");
+
+  // Additional Ingredients modal
+  const [showAllAdditional, setShowAllAdditional] = useState(false);
+  const [addIngFilterProduct, setAddIngFilterProduct] = useState("all");
+  const [addIngFilterIngredient, setAddIngFilterIngredient] = useState("all");
+  const [addIngFilterReason, setAddIngFilterReason] = useState("all");
+  const [addIngFilterRole, setAddIngFilterRole] = useState("all");
+  const [addIngFilterDate, setAddIngFilterDate] = useState("");
   const [financePeriod, setFinancePeriod] = useState<"today" | "week" | "month" | "year" | "custom">("month");
   const [financeCustomMonth, setFinanceCustomMonth] = useState(() => {
     const now = new Date();
@@ -1756,8 +1764,15 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         {(() => {
           const allAdditional = decoProductionPrep
             .filter(p => p.additionalIngredients && p.additionalIngredients.length > 0)
-            .flatMap(p => p.additionalIngredients.map(ai => ({ ...ai, product: p.productName })));
+            .flatMap(p => p.additionalIngredients.map(ai => ({ ...ai, product: p.productName })))
+            .sort((a, b) => {
+              const aTs = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+              const bTs = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+              return bTs - aTs;
+            });
+          const latest3 = allAdditional.slice(0, 3);
           return (
+            <>
             <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
               <div className="h-1 bg-rose-500" />
               <div className="px-5 pt-4 pb-3">
@@ -1774,6 +1789,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 {allAdditional.length === 0 ? (
                   <p className="text-[12px] text-zinc-400 text-center py-8">No additional ingredients used today.</p>
                 ) : (
+                  <>
                   <table className="w-full text-[12px]">
                     <thead className="bg-zinc-50 text-left text-[10px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                       <tr>
@@ -1781,26 +1797,218 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                         <th className="px-5 py-2.5">Ingredient</th>
                         <th className="px-5 py-2.5 text-right">Quantity</th>
                         <th className="px-5 py-2.5">Reason</th>
-                        <th className="px-5 py-2.5">Source</th>
+                        <th className="px-5 py-2.5">Role</th>
+                        <th className="px-5 py-2.5">Date & Time</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
-                      {allAdditional.map((item, idx) => (
-                        <tr key={idx} className="hover:bg-zinc-50 transition-colors">
-                          <td className="px-5 py-2.5 font-medium text-zinc-900">{item.product}</td>
-                          <td className="px-5 py-2.5 text-zinc-700">{item.name}</td>
-                          <td className="px-5 py-2.5 text-right font-mono text-zinc-700">{item.qty} {item.unit}</td>
-                          <td className="px-5 py-2.5">
-                            <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-medium">{item.reason || "—"}</span>
-                          </td>
-                          <td className="px-5 py-2.5 text-zinc-500">{item.source}</td>
-                        </tr>
-                      ))}
+                      {latest3.map((item, idx) => {
+                        const ts = item.timestamp ? new Date(item.timestamp) : null;
+                        const dateStr = ts ? ts.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
+                        const timeStr = ts ? ts.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }) : "";
+                        const roleColor = item.source === "Baker" ? "bg-stone-100 text-stone-700" : item.source === "Deco" ? "bg-rose-100 text-rose-700" : item.source === "Pastry" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600";
+                        return (
+                          <tr key={idx} className="hover:bg-zinc-50 transition-colors">
+                            <td className="px-5 py-2.5 font-medium text-zinc-900">{item.product}</td>
+                            <td className="px-5 py-2.5 text-zinc-700">{item.name}</td>
+                            <td className="px-5 py-2.5 text-right font-mono text-zinc-700">{item.qty} {item.unit}</td>
+                            <td className="px-5 py-2.5">
+                              <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-medium">{item.reason || "—"}</span>
+                            </td>
+                            <td className="px-5 py-2.5">
+                              <span className={`rounded-full ${roleColor} px-2 py-0.5 text-[10px] font-semibold`}>{item.source || "—"}</span>
+                            </td>
+                            <td className="px-5 py-2.5 text-zinc-500">
+                              <div>{dateStr}</div>
+                              {timeStr && <div className="text-[10px] text-zinc-400">{timeStr}</div>}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
+                  {allAdditional.length > 3 && (
+                    <div className="px-5 py-3 border-t border-zinc-100 text-center">
+                      <button onClick={() => setShowAllAdditional(true)} className="text-[12px] font-medium text-rose-600 hover:text-rose-700 transition-colors">See More ({allAdditional.length - 3} remaining) →</button>
+                    </div>
+                  )}
+                  </>
                 )}
               </div>
             </div>
+
+            {/* Full Additional Ingredients Modal */}
+            {showAllAdditional && (() => {
+              const products = [...new Set(allAdditional.map(i => i.product))].sort();
+              const ingredients = [...new Set(allAdditional.map(i => i.name))].sort();
+              const reasons = [...new Set(allAdditional.map(i => i.reason).filter(Boolean))].sort();
+              const roles = [...new Set(allAdditional.map(i => i.source).filter(Boolean))].sort();
+
+              const filtered = allAdditional.filter(item => {
+                if (addIngFilterProduct !== "all" && item.product !== addIngFilterProduct) return false;
+                if (addIngFilterIngredient !== "all" && item.name !== addIngFilterIngredient) return false;
+                if (addIngFilterReason !== "all" && item.reason !== addIngFilterReason) return false;
+                if (addIngFilterRole !== "all" && item.source !== addIngFilterRole) return false;
+                if (addIngFilterDate) {
+                  const itemDate = item.timestamp ? new Date(item.timestamp).toLocaleDateString("en-CA") : "";
+                  if (itemDate !== addIngFilterDate) return false;
+                }
+                return true;
+              });
+
+              const clearFilters = () => {
+                setAddIngFilterProduct("all");
+                setAddIngFilterIngredient("all");
+                setAddIngFilterReason("all");
+                setAddIngFilterRole("all");
+                setAddIngFilterDate("");
+              };
+              const hasFilters = addIngFilterProduct !== "all" || addIngFilterIngredient !== "all" || addIngFilterReason !== "all" || addIngFilterRole !== "all" || addIngFilterDate !== "";
+
+              return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-md" style={{ animation: "fadeIn 0.2s ease" }} onClick={() => { setShowAllAdditional(false); clearFilters(); }}>
+                  <div className="w-full max-w-[960px] max-h-[88vh] rounded-3xl bg-white shadow-2xl flex flex-col overflow-hidden" style={{ animation: "slideUp 0.25s ease" }} onClick={e => e.stopPropagation()}>
+
+                    {/* Header */}
+                    <div className="relative px-7 pt-6 pb-5 border-b border-zinc-100">
+                      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-rose-500 via-pink-500 to-purple-500" />
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3.5">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 shadow-lg shadow-rose-200">
+                            <span className="text-white text-[18px]">➕</span>
+                          </div>
+                          <div>
+                            <h2 className="text-[18px] font-bold text-zinc-900 tracking-tight">Additional Ingredients Used</h2>
+                            <p className="text-[12px] text-zinc-500 mt-0.5">Track extra ingredients added during preparation</p>
+                          </div>
+                        </div>
+                        <button onClick={() => { setShowAllAdditional(false); clearFilters(); }} className="grid h-9 w-9 place-items-center rounded-xl hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-all">
+                          <span className="text-[16px]">✕</span>
+                        </button>
+                      </div>
+
+                      {/* Stats */}
+                      <div className="flex items-center gap-3 mt-4">
+                        <div className="flex items-center gap-2 rounded-xl bg-zinc-100 px-3 py-1.5">
+                          <span className="text-[11px] font-semibold text-zinc-700">{filtered.length}</span>
+                          <span className="text-[11px] text-zinc-500">of {allAdditional.length}</span>
+                        </div>
+                        {roles.map(role => {
+                          const count = filtered.filter(i => i.source === role).length;
+                          const color = role === "Baker" ? "bg-stone-100 text-stone-600" : role === "Deco" ? "bg-rose-100 text-rose-600" : role === "Pastry" ? "bg-amber-100 text-amber-600" : "bg-zinc-100 text-zinc-600";
+                          return (
+                            <div key={role} className={`flex items-center gap-1.5 rounded-lg ${color} px-2.5 py-1`}>
+                              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                              <span className="text-[10px] font-semibold">{role}</span>
+                              <span className="text-[10px] font-mono opacity-70">{count}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Filters */}
+                    <div className="px-7 py-3.5 border-b border-zinc-100 bg-zinc-50/60">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mr-1">Filters</span>
+                        <select value={addIngFilterProduct} onChange={e => setAddIngFilterProduct(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] text-zinc-700 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition-all">
+                          <option value="all">All Products</option>
+                          {products.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                        <select value={addIngFilterIngredient} onChange={e => setAddIngFilterIngredient(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] text-zinc-700 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition-all">
+                          <option value="all">All Ingredients</option>
+                          {ingredients.map(i => <option key={i} value={i}>{i}</option>)}
+                        </select>
+                        <select value={addIngFilterReason} onChange={e => setAddIngFilterReason(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] text-zinc-700 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition-all">
+                          <option value="all">All Reasons</option>
+                          {reasons.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                        <select value={addIngFilterRole} onChange={e => setAddIngFilterRole(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] text-zinc-700 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition-all">
+                          <option value="all">All Roles</option>
+                          {roles.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                        <input type="date" value={addIngFilterDate} onChange={e => setAddIngFilterDate(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] text-zinc-700 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition-all" />
+                        {hasFilters && (
+                          <button onClick={clearFilters} className="flex items-center gap-1 rounded-xl bg-zinc-900 px-3 py-2 text-[11px] font-medium text-white hover:bg-zinc-800 transition-all">
+                            <span className="text-[10px]">✕</span> Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Table */}
+                    <div className="flex-1 overflow-y-auto">
+                      <table className="w-full text-[12px]">
+                        <thead className="bg-zinc-50/80 text-left text-[10px] uppercase tracking-wider text-zinc-500 sticky top-0 backdrop-blur-sm" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                          <tr>
+                            <th className="px-6 py-3 font-semibold">Product</th>
+                            <th className="px-6 py-3 font-semibold">Ingredient</th>
+                            <th className="px-6 py-3 text-right font-semibold">Quantity</th>
+                            <th className="px-6 py-3 font-semibold">Reason</th>
+                            <th className="px-6 py-3 font-semibold">Role</th>
+                            <th className="px-6 py-3 font-semibold">Date & Time</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100/80">
+                          {filtered.length === 0 ? (
+                            <tr>
+                              <td colSpan={6}>
+                                <div className="flex flex-col items-center justify-center py-16 text-center">
+                                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-100 mb-3">
+                                    <span className="text-[24px]">📭</span>
+                                  </div>
+                                  <p className="text-[13px] font-medium text-zinc-500">No items match the filters</p>
+                                  <p className="text-[11px] text-zinc-400 mt-1">Try adjusting your filter criteria</p>
+                                  {hasFilters && (
+                                    <button onClick={clearFilters} className="mt-3 rounded-xl bg-zinc-900 px-4 py-2 text-[11px] font-medium text-white hover:bg-zinc-800 transition-all">Clear All Filters</button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ) : filtered.map((item, idx) => {
+                            const ts = item.timestamp ? new Date(item.timestamp) : null;
+                            const dateStr = ts ? ts.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) : "—";
+                            const timeStr = ts ? ts.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" }) : "";
+                            const roleColor = item.source === "Baker" ? "bg-stone-100 text-stone-700 border-stone-200" : item.source === "Deco" ? "bg-rose-100 text-rose-700 border-rose-200" : item.source === "Pastry" ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-zinc-100 text-zinc-600 border-zinc-200";
+                            return (
+                              <tr key={idx} className="hover:bg-zinc-50/80 transition-colors group">
+                                <td className="px-6 py-3.5">
+                                  <span className="font-semibold text-zinc-900 group-hover:text-rose-700 transition-colors">{item.product}</span>
+                                </td>
+                                <td className="px-6 py-3.5 text-zinc-700">{item.name}</td>
+                                <td className="px-6 py-3.5 text-right">
+                                  <span className="inline-flex items-center rounded-lg bg-zinc-100 px-2 py-0.5 font-mono font-semibold text-zinc-700">{item.qty} {item.unit}</span>
+                                </td>
+                                <td className="px-6 py-3.5">
+                                  <span className="rounded-full bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-0.5 text-[10px] font-medium">{item.reason || "—"}</span>
+                                </td>
+                                <td className="px-6 py-3.5">
+                                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${roleColor}`}>
+                                    <span className="h-1 w-1 rounded-full bg-current" />
+                                    {item.source || "—"}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-3.5">
+                                  <div className="text-[12px] text-zinc-700">{dateStr}</div>
+                                  {timeStr && <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{timeStr}</div>}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex items-center justify-between px-7 py-3.5 border-t border-zinc-100 bg-zinc-50/60">
+                      <span className="text-[11px] text-zinc-400">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+                      <button onClick={() => { setShowAllAdditional(false); clearFilters(); }} className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-[12px] font-medium text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300 transition-all">Close</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            </>
           );
         })()}
 

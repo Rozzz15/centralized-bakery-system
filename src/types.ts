@@ -205,6 +205,11 @@ export type ProductPricing = {
   variants: ProductPricingVariant[];
 };
 
+export type FreezerItemIngredients = {
+  standard: { name: string; qtyPerBatch: number; unit: string; totalUsed: number }[];
+  additional: { name: string; qty: number; unit: string; reason: string }[];
+};
+
 export type FreezerItem = {
   id: string;
   productName: string;
@@ -215,6 +220,7 @@ export type FreezerItem = {
   dateProduced: string;
   status: "stored" | "dispatched" | "expired";
   notes?: string;
+  ingredients?: FreezerItemIngredients;
 };
 
 export type FreezerHistory = {
