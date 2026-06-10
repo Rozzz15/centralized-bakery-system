@@ -560,7 +560,8 @@ export default function App() {
     if (!loggedIn) return;
     const sync = setInterval(async () => {
       try {
-        const [dos, prod, decoPrep] = await Promise.all([db.fetchDOS(), db.fetchProduction(), db.fetchDecoProductionPrep()]);
+        const [dos, prod, decoPrep, inv] = await Promise.all([db.fetchDOS(), db.fetchProduction(), db.fetchDecoProductionPrep(), db.fetchAllInventory()]);
+        if (inv.length > 0) setInventory(inv);
         if (dos.length > 0) {
           if (!syncReady.current) {
             dos.forEach(d => seenDOS.current.add(d.id));

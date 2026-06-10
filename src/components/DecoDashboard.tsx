@@ -163,7 +163,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [preMixPrepared, setPreMixPrepared] = useState<Set<string>>(new Set());
   const [preMixDone, setPreMixDone] = useState<Set<string>>(new Set());
   const [productQty, setProductQty] = useState<Record<string, number>>({});
-  const [activePreparation, setActivePreparation] = useState<{ dos: DOSItem; recipe: ProductRecipe; route: "baker" | "deco" } | null>(null);
+  const [activePreparation, setActivePreparation] = useState<{ dos: DOSItem; recipe: ProductRecipe; route: "baker" | "deco"; demandQty?: number } | null>(null);
   const [additionalIngredients, setAdditionalIngredients] = useState<AdditionalIngredient[]>([]);
   const [actualOutput, setActualOutput] = useState<number | "">("");
   const [showAddIngredientModal, setShowAddIngredientModal] = useState(false);
@@ -1238,19 +1238,62 @@ return (
 
   /* ── Tasks to Prepare ── */
   if (activeTab === "tasks-to-prepare") {
-    const bakerTasks = dosForDeco.filter(d => productRoutes[d.product] === "baker" || !productRoutes[d.product]);
-    const decoTasks = dosForDeco.filter(d => productRoutes[d.product] === "deco");
-
     const getRecipesForProduct = (product: string): ProductRecipe[] => {
       const direct = recipes.find(r => r.productName === product);
-      if (!direct) return [];
-      return (direct.linkedIngredients ?? [])
-        .map(name => recipes.find(r => r.productName === name))
-        .filter((r): r is ProductRecipe => !!r);
+      const result: ProductRecipe[] = [];
+      const seen = new Set<string>();
+      if (direct) {
+        const subRecipes = (direct.linkedIngredients ?? [])
+          .map(name => recipes.find(r => r.productName === name))
+          .filter((r): r is ProductRecipe => !!r);
+        if (subRecipes.length > 0) {
+          subRecipes.forEach(r => { if (!seen.has(r.productName)) { result.push(r); seen.add(r.productName); } });
+        } else {
+          result.push(direct);
+          seen.add(direct.productName);
+        }
+      }
+      // Reverse lookup: recipes whose linkedIngredients include this product
+      recipes.forEach(r => {
+        if (r.productName !== product && (r.linkedIngredients ?? []).includes(product) && !seen.has(r.productName)) {
+          result.push(r);
+          seen.add(r.productName);
+        }
+      });
+      return result;
     };
 
-    // TASK LIST VIEW
+    // TASK LIST VIEW — aggregated by recipe like Deco DOS Production Plan
     if (!activePreparation) {
+      // Aggregate all DOS items by recipe (matching Deco DOS merge logic)
+      const recipeAggMap = new Map<string, {
+        recipe: ProductRecipe;
+        totalQty: number;
+        dosItems: DOSItem[];
+        prepKeys: string[];
+        allDone: boolean;
+        routes: Set<string>;
+      }>();
+      dosForDeco.forEach(d => {
+        const allRecipes = getRecipesForProduct(d.product);
+        if (allRecipes.length === 0) return;
+        allRecipes.forEach(recipe => {
+          const key = recipe.productName;
+          if (!recipeAggMap.has(key)) {
+            recipeAggMap.set(key, { recipe, totalQty: 0, dosItems: [], prepKeys: [], allDone: false, routes: new Set() });
+          }
+          const entry = recipeAggMap.get(key)!;
+          entry.totalQty += d.qty;
+          entry.dosItems.push(d);
+          entry.prepKeys.push(d.id + ":::" + recipe.productName.toLowerCase());
+          entry.routes.add(productRoutes[d.product] || "baker");
+        });
+      });
+      // Mark allDone when every prepKey for this recipe is in preMixDone
+      recipeAggMap.forEach(entry => {
+        entry.allDone = entry.prepKeys.every(k => preMixDone.has(k));
+      });
+
     return (
       <div className="max-w-5xl mx-auto space-y-6 bg-zinc-950 p-6 rounded-2xl">
           {toast && (
@@ -1267,116 +1310,67 @@ return (
           )}
 
           <div className="rounded-2xl bg-zinc-900 p-6 shadow-sm">
-            <h1 className="text-[28px] font-semibold tracking-tight text-white">Tasks to Prepare Today</h1>
-            <p className="mt-1 text-[13px] text-zinc-400">View and prepare DOS items assigned to your team.</p>
+            <div className="flex items-center gap-3 mb-3">
+              <button onClick={() => setActiveTab("dashboard")} className="rounded-xl bg-zinc-800 px-3.5 py-2 text-[12px] font-medium text-zinc-300 hover:bg-zinc-700 transition-all flex items-center gap-1.5">← Back</button>
+              <h1 className="text-[28px] font-semibold tracking-tight text-white">Tasks to Prepare Today</h1>
+            </div>
+            <p className="mt-1 text-[13px] text-zinc-400 pl-1">View and prepare DOS items assigned to your team.</p>
           </div>
 
-          {dosForDeco.length === 0 ? (
+          {recipeAggMap.size === 0 ? (
             <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center">
               <p className="text-[14px] text-zinc-400">No DOS items assigned for today.</p>
             </div>
           ) : (
-            <>
-              {bakerTasks.length > 0 && (
-                <div>
-                  <h2 className="text-[18px] font-bold text-zinc-900 mb-3 flex items-center gap-2">
-                    <span>🍞</span> For Baker
-                  </h2>
-                  <div className="space-y-3">
-                    {bakerTasks.map(d => {
-                      const allRecipes = getRecipesForProduct(d.product);
-                      if (allRecipes.length === 0) return null;
-                      return allRecipes.map(recipe => {
-                        const yieldPerBatch = recipe.yield || 1;
-                        const estProdTotal = yieldPerBatch * d.qty;
-                        return (
-                          <div key={d.id + "-" + recipe.productName} className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
-                            <div className="flex items-start justify-between mb-3">
-                              <div>
-                                <h3 className="text-[17px] font-semibold text-white">{recipe.productName}</h3>
-                                <div className="flex items-center gap-3 mt-1 text-[13px] text-zinc-400">
-                                  <span>Demand: <span className="font-mono font-semibold text-zinc-200">{d.qty} pcs</span></span>
-                                  <span>Yield/Batch: <span className="font-mono font-semibold text-zinc-200">{yieldPerBatch} pcs</span></span>
-                                  <span>Expected: <span className="font-mono font-semibold text-emerald-300">{estProdTotal} pcs</span></span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="rounded-xl bg-zinc-800/50 border border-zinc-700 p-3 mb-3">
-                              <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium mb-2">Ingredients Needed</div>
-                              <div className="space-y-1.5">
-                                {recipe.ingredients.map((ing, i) => (
-                                  <div key={i} className="flex items-center justify-between text-[13px]">
-                                    <span className="text-zinc-300">{ing.name}</span>
-                                    <span className="font-mono text-zinc-400">{ing.qtyPerBatch * d.qty}{ing.unit}</span>
-                                  </div>
-                                ))}
-                                {recipe.ingredients.length === 0 && (
-                                  <span className="text-[12px] text-zinc-500">No ingredients listed</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <button onClick={() => setViewingDOSRecipe({ recipe, totalQty: d.qty })} className="rounded-xl border border-zinc-600 px-3 py-2 text-[12px] font-medium text-zinc-300 hover:bg-zinc-800 transition-all">View Recipe</button>
-                              <button onClick={() => { setActivePreparation({ dos: d, recipe, route: "baker" }); setAdditionalIngredients([]); setActualOutput(""); }} className="rounded-xl bg-amber-600 px-4 py-2 text-[12px] font-medium text-white hover:bg-amber-700 transition-all">Start Pre-Mix</button>
-                            </div>
+            <div className="space-y-3">
+              {Array.from(recipeAggMap.entries()).map(([recipeName, entry]) => {
+                const { recipe, totalQty, dosItems, allDone, routes } = entry;
+                const yieldPerBatch = recipe.yield || 1;
+                const estProdTotal = yieldPerBatch * totalQty;
+                const activeDOS = dosItems.find(d => !preMixDone.has(d.id + ":::" + recipe.productName.toLowerCase())) || dosItems[0];
+                const doneCount = dosItems.filter(d => preMixDone.has(d.id + ":::" + recipe.productName.toLowerCase())).length;
+                return (
+                  <div key={recipeName} className={`rounded-2xl border p-5 transition-all ${allDone ? "border-emerald-700/50 bg-zinc-900/50" : "border-zinc-700 bg-zinc-900"}`}>
+                        <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className={`text-[17px] font-semibold ${allDone ? "text-zinc-500" : "text-white"}`}>{recipe.productName}</h3>
+                          {Array.from(routes).map(r => (
+                            <span key={r} className={`text-[14px] ${allDone ? "opacity-50" : ""}`}>{r === "baker" ? "🍞" : "🎂"}</span>
+                          ))}
+                        </div>
+                        <div className={`flex items-center gap-3 mt-1 text-[13px] ${allDone ? "text-zinc-500" : "text-zinc-400"}`}>
+                          <span>Total Demand: <span className={`font-mono font-semibold ${allDone ? "text-zinc-500" : "text-zinc-200"}`}>{totalQty} pcs</span></span>
+                          <span>Yield/Batch: <span className={`font-mono font-semibold ${allDone ? "text-zinc-500" : "text-zinc-200"}`}>{yieldPerBatch} pcs</span></span>
+                          <span>Expected: <span className={`font-mono font-semibold ${allDone ? "text-zinc-500" : "text-emerald-300"}`}>{estProdTotal} pcs</span></span>
+                        </div>
+                        <div className={`text-[10px] mt-0.5 ${allDone ? "text-zinc-600" : "text-zinc-500"}`}>{yieldPerBatch} × {totalQty} = {estProdTotal}</div>
+                        {dosItems.length > 1 && (
+                          <div className={`text-[10px] mt-1.5 leading-relaxed ${allDone ? "text-zinc-600" : "text-zinc-500"}`}>
+                            From: {dosItems.map((d, i) => {
+                              const pk = d.id + ":::" + recipe.productName.toLowerCase();
+                              const dDone = preMixDone.has(pk);
+                              return <span key={d.id} className={dDone ? "text-emerald-500" : ""}>{i > 0 ? ", " : ""}{d.product} ({d.qty} pcs{dDone ? " ✓" : ""})</span>;
+                            })}
                           </div>
-                        );
-                      });
-                    })}
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <button onClick={() => setViewingDOSRecipe({ recipe, totalQty })} className={`rounded-xl border px-3 py-2 text-[12px] font-medium transition-all ${allDone ? "border-zinc-700 text-zinc-500 cursor-not-allowed" : "border-zinc-600 text-zinc-300 hover:bg-zinc-800"}`} disabled={allDone}>View Ingredients</button>
+                      {allDone ? (
+                        <button disabled className="rounded-xl bg-emerald-800/40 px-4 py-2 text-[12px] font-medium text-emerald-400/70 cursor-not-allowed">✓ Completed</button>
+                      ) : (
+                        <>
+                          <button onClick={() => { setActivePreparation({ dos: activeDOS, recipe, route: routes.has("deco") ? "deco" : "baker", demandQty: totalQty }); setAdditionalIngredients([]); setActualOutput(""); }} className={`rounded-xl px-4 py-2 text-[12px] font-medium text-white transition-all ${routes.has("deco") ? "bg-rose-600 hover:bg-rose-700" : "bg-amber-600 hover:bg-amber-700"}`}>{routes.has("deco") ? "Start Preparation" : "Start Pre-Mix"}</button>
+                          {doneCount > 0 && <span className="text-[11px] text-zinc-500">{doneCount}/{dosItems.length} done</span>}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-
-              {decoTasks.length > 0 && (
-                <div>
-                  <h2 className="text-[18px] font-bold text-zinc-900 mb-3 flex items-center gap-2">
-                    <span>🎂</span> For Decoration
-                  </h2>
-                  <div className="space-y-3">
-                    {decoTasks.map(d => {
-                      const allRecipes = getRecipesForProduct(d.product);
-                      if (allRecipes.length === 0) return null;
-                      return allRecipes.map(recipe => {
-                        const yieldPerBatch = recipe.yield || 1;
-                        const estProdTotal = yieldPerBatch * d.qty;
-                        return (
-                          <div key={d.id + "-" + recipe.productName} className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
-                            <div className="flex items-start justify-between mb-3">
-                              <div>
-                                <h3 className="text-[17px] font-semibold text-white">{recipe.productName}</h3>
-                                <div className="flex items-center gap-3 mt-1 text-[13px] text-zinc-400">
-                                  <span>Demand: <span className="font-mono font-semibold text-zinc-200">{d.qty} pcs</span></span>
-                                  <span>Yield/Batch: <span className="font-mono font-semibold text-zinc-200">{yieldPerBatch} pcs</span></span>
-                                  <span>Expected: <span className="font-mono font-semibold text-emerald-300">{estProdTotal} pcs</span></span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="rounded-xl bg-zinc-800/50 border border-zinc-700 p-3 mb-3">
-                              <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium mb-2">Ingredients Needed</div>
-                              <div className="space-y-1.5">
-                                {recipe.ingredients.map((ing, i) => (
-                                  <div key={i} className="flex items-center justify-between text-[13px]">
-                                    <span className="text-zinc-300">{ing.name}</span>
-                                    <span className="font-mono text-zinc-400">{ing.qtyPerBatch * d.qty}{ing.unit}</span>
-                                  </div>
-                                ))}
-                                {recipe.ingredients.length === 0 && (
-                                  <span className="text-[12px] text-zinc-500">No ingredients listed</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <button onClick={() => setViewingDOSRecipe({ recipe, totalQty: d.qty })} className="rounded-xl border border-zinc-600 px-3 py-2 text-[12px] font-medium text-zinc-300 hover:bg-zinc-800 transition-all">View Recipe</button>
-                              <button onClick={() => { setActivePreparation({ dos: d, recipe, route: "deco" }); setAdditionalIngredients([]); setActualOutput(""); }} className="rounded-xl bg-rose-600 px-4 py-2 text-[12px] font-medium text-white hover:bg-rose-700 transition-all">Start Preparation</button>
-                            </div>
-                          </div>
-                        );
-                      });
-                    })}
-                  </div>
-                </div>
-              )}
-            </>
+                );
+              })}
+            </div>
           )}
 
           {viewingDOSRecipe && (
@@ -1396,25 +1390,22 @@ return (
     }
 
     // PREPARATION VIEW
-    const { dos, recipe, route } = activePreparation;
+    const { dos, recipe, route, demandQty } = activePreparation;
+    const prepDemandQty = demandQty ?? dos.qty;
     const linkedRecipesForPrep = (recipe.linkedIngredients ?? [])
       .map(name => recipes.find(r => r.productName === name))
       .filter((r): r is ProductRecipe => !!r);
-    const allIngredientsForPrep = [
-      ...recipe.ingredients,
-      ...linkedRecipesForPrep.flatMap(lr => lr.ingredients),
-    ];
+    const allIngredientsForPrep = recipe.ingredients;
     const yieldPerBatch = recipe.yield || linkedRecipesForPrep.find(r => r.yield && r.yield > 1)?.yield || 1;
-    const expectedOutput = yieldPerBatch * dos.qty;
+    const expectedOutput = yieldPerBatch * prepDemandQty;
     const prepKey = dos.id + ":::" + dos.product.toLowerCase();
-    const savedAddIngs = productAdditionalIngredients[prepKey] || [];
+    const savedAddIngs = preMixDone.has(prepKey) ? [] : (productAdditionalIngredients[prepKey] || []);
 
     const handleComplete = () => {
       const output = actualOutput === "" ? expectedOutput : Number(actualOutput);
-      const finalAddIngs = [...savedAddIngs, ...additionalIngredients];
+      const oldSavedIngs = productAdditionalIngredients[prepKey] || [];
+      const finalAddIngs = [...oldSavedIngs, ...additionalIngredients];
       setProductAdditionalIngredients(prev => ({ ...prev, [prepKey]: finalAddIngs }));
-      setPreMixDone(prev => new Set([...prev, prepKey]));
-
       // Immediately save deco production prep to Supabase so Admin can see it
       const allLinkedRecipes = (recipe.linkedIngredients ?? [])
         .map(name => recipes.find(r => r.productName === name))
@@ -1427,17 +1418,68 @@ return (
       allLinkedRecipes.forEach(r => {
         allProductKeys.push({ dosId: dos.id, productName: r.productName });
       });
+      // Mark done for ALL keys that task cards check (matches getRecipesForProduct logic)
+      const dosDirect = recipes.find(r => r.productName === dos.product);
+      const taskCardRecipes: ProductRecipe[] = [];
+      const taskCardSeen = new Set<string>();
+      if (dosDirect) {
+        const subRecipes = (dosDirect.linkedIngredients ?? [])
+          .map(n => recipes.find(r => r.productName === n))
+          .filter((r): r is ProductRecipe => !!r);
+        if (subRecipes.length > 0) {
+          subRecipes.forEach(r => { if (!taskCardSeen.has(r.productName)) { taskCardRecipes.push(r); taskCardSeen.add(r.productName); } });
+        } else {
+          taskCardRecipes.push(dosDirect);
+          taskCardSeen.add(dosDirect.productName);
+        }
+      }
+      recipes.forEach(r => {
+        if (r.productName !== dos.product && (r.linkedIngredients ?? []).includes(dos.product) && !taskCardSeen.has(r.productName)) {
+          taskCardRecipes.push(r);
+          taskCardSeen.add(r.productName);
+        }
+      });
+      const taskCardKeys = taskCardRecipes.map(r => `${dos.id}:::${r.productName.toLowerCase()}`);
+      // When demandQty is set (aggregated prep), mark ALL DOS items for this recipe as done in one shot
+      const allRecipeDOSKeys = demandQty
+        ? dosForDeco
+            .filter(d => {
+              const recipes = getRecipesForProduct(d.product);
+              return recipes.some(r => r.productName === recipe.productName);
+            })
+            .map(d => `${d.id}:::${recipe.productName.toLowerCase()}`)
+        : taskCardKeys;
+      setPreMixDone(prev => new Set([...prev, ...allRecipeDOSKeys, ...allProductKeys.map(k => `${k.dosId}:::${k.productName.toLowerCase()}`)]));
       const updatedAddIngs = { ...productAdditionalIngredients, [prepKey]: finalAddIngs };
-      const prepItems = allProductKeys.map(({ dosId, productName }) => {
-        const key = `${dosId}:::${productName.toLowerCase()}`;
-        return {
-          dosId,
-          productName,
-          productQty: productQty[dosId] ?? dos.qty,
-          prepared: true,
-          done: true,
-          additionalIngredients: updatedAddIngs[key] ?? [],
-        };
+      // Collect prep items for ALL DOS items of this recipe when aggregated
+      const prepDosItems = demandQty
+        ? dosForDeco.filter(d => {
+            const recipes = getRecipesForProduct(d.product);
+            return recipes.some(r => r.productName === recipe.productName);
+          })
+        : [dos];
+      const prepItems = prepDosItems.flatMap(d => {
+        const dosId = d.id;
+        return allProductKeys.length > 0
+          ? allProductKeys.map(({ dosId: _, productName }) => {
+              const key = `${dosId}:::${productName.toLowerCase()}`;
+              return {
+                dosId,
+                productName,
+                productQty: productQty[dosId] ?? prepDemandQty,
+                prepared: true,
+                done: true,
+                additionalIngredients: updatedAddIngs[key] ?? [],
+              };
+            })
+          : [{
+              dosId,
+              productName: recipe.productName,
+              productQty: productQty[dosId] ?? prepDemandQty,
+              prepared: true,
+              done: true,
+              additionalIngredients: updatedAddIngs[`${dosId}:::${recipe.productName.toLowerCase()}`] ?? [],
+            }];
       });
       if (prepItems.length > 0) db.saveDecoProductionPrep(prepItems).catch(console.error);
 
@@ -1466,7 +1508,7 @@ return (
           return;
         }
         const idx = newInv.findIndex(i => i.id === match.id);
-        const needed = ing.qtyPerBatch * dos.qty;
+        const needed = ing.qtyPerBatch * prepDemandQty;
         newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - needed) };
         deductedIngredients.push(ing.name + " (-" + needed + " " + ing.unit + ")");
       });
@@ -1507,7 +1549,7 @@ return (
             name: ing.name,
             qtyPerBatch: ing.qtyPerBatch,
             unit: ing.unit,
-            totalUsed: ing.qtyPerBatch * dos.qty,
+            totalUsed: ing.qtyPerBatch * prepDemandQty,
           })),
           additional: finalAddIngs.map(addIng => ({
             name: addIng.name,
@@ -1551,6 +1593,57 @@ return (
         showToast(dos.product + " x" + output + " sent to Baker. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg, missedIngredients.length > 0 ? "error" : "success");
       } else {
         const recipeName = recipe.productName;
+
+        // Save to freezer (Production Recipe) — same pattern as Baker route, using recipe name
+        const existingFreezer = freezerItems.find(
+          i => i.productName === recipeName && i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.status === "stored"
+        );
+        const freezerIngredients = {
+          standard: allIngredientsForPrep.map(ing => ({
+            name: ing.name,
+            qtyPerBatch: ing.qtyPerBatch,
+            unit: ing.unit,
+            totalUsed: ing.qtyPerBatch * prepDemandQty,
+          })),
+          additional: finalAddIngs.map(addIng => ({
+            name: addIng.name,
+            qty: addIng.qty,
+            unit: addIng.unit,
+            reason: addIng.reason,
+          })),
+        };
+        if (existingFreezer) {
+          const updatedItem: FreezerItem = {
+            ...existingFreezer,
+            qty: existingFreezer.qty + output,
+            dateProduced: new Date().toISOString(),
+            ingredients: {
+              standard: [
+                ...(existingFreezer.ingredients?.standard ?? []),
+                ...freezerIngredients.standard,
+              ],
+              additional: [
+                ...(existingFreezer.ingredients?.additional ?? []),
+                ...freezerIngredients.additional,
+              ],
+            },
+          };
+          if (onUpdateFreezer) onUpdateFreezer((prev) => prev.map(i => i.id === existingFreezer.id ? updatedItem : i));
+          db.upsertFreezerItems([updatedItem]).catch(console.error);
+        } else {
+          const freezerItem: FreezerItem = {
+            id: "FRZ-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+            productName: recipeName,
+            batchRef: "DEC-" + Date.now(),
+            qty: output, unit: "pcs", status: "stored", producedBy: "deco",
+            dateProduced: new Date().toISOString(), notes: "Production Recipe",
+            ingredients: freezerIngredients,
+          };
+          if (onUpdateFreezer) onUpdateFreezer((prev) => [...prev, freezerItem]);
+          db.upsertFreezerItems([freezerItem]).catch(console.error);
+        }
+
+        // Save to My Inventory (using recipe name, not product name)
         const existingItem = newInv.find(i => i.name === recipeName && i.accessRoles?.includes("deco") && i.source === "production-prep");
         if (existingItem) {
           const updated = { ...existingItem, onHand: existingItem.onHand + output, lastIn: new Date().toISOString() };
@@ -1569,9 +1662,9 @@ return (
           onUpdateInventory((prev) => [...prev, newItem]);
           db.upsertInventory([newItem]).catch(console.error);
         }
-        onAddAuditLog?.("TASK_COMPLETED", recipeName + " x" + output + " moved to Decoration Inventory. Standard: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
+        onAddAuditLog?.("TASK_COMPLETED", recipeName + " x" + output + " saved to Freezer & moved to Decoration Inventory. Standard ingredients: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional ingredients: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
         const deductMsg2 = missedIngredients.length > 0 ? " Warning: " + missedIngredients.join(", ") + " not found in inventory." : "";
-        showToast(recipeName + " x" + output + " moved to Decoration Inventory. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg2, missedIngredients.length > 0 ? "error" : "success");
+        showToast(recipeName + " x" + output + " saved to Freezer & moved to Decoration Inventory. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg2, missedIngredients.length > 0 ? "error" : "success");
       }
       // Update production task status
       if (onUpdateProduction) {
@@ -1609,14 +1702,34 @@ return (
           <h3 className="text-[14px] font-bold text-zinc-200 mb-4 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-zinc-400"></span> Standard Ingredients
           </h3>
-          <div className="space-y-2">
-            {allIngredientsForPrep.map((ing, i) => (
-              <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/50 px-3 py-2">
-                <span className="text-[13px] text-zinc-300 font-medium">{ing.name}</span>
-                <span className="font-mono text-[13px] text-zinc-400">{ing.qtyPerBatch * dos.qty}{ing.unit}</span>
+          <div className="space-y-4">
+            {/* Main recipe */}
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-2">{recipe.productName}</div>
+              <div className="space-y-1.5">
+                {recipe.ingredients.map((ing, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/50 px-3 py-2">
+                    <span className="text-[13px] text-zinc-300 font-medium">{ing.name}</span>
+                    <span className="font-mono text-[13px] text-zinc-400">{ing.qtyPerBatch * prepDemandQty}{ing.unit}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Linked recipes */}
+            {linkedRecipesForPrep.map(lr => (
+              <div key={lr.productName}>
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-2">↳ {lr.productName}</div>
+                <div className="space-y-1.5">
+                  {lr.ingredients.map((ing, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/30 border border-zinc-700/50 px-3 py-2">
+                      <span className="text-[13px] text-zinc-400 font-medium">{ing.name}</span>
+                      <span className="font-mono text-[13px] text-zinc-500">{ing.qtyPerBatch * prepDemandQty}{ing.unit}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
-            {allIngredientsForPrep.length === 0 && (
+            {recipe.ingredients.length === 0 && linkedRecipesForPrep.length === 0 && (
               <p className="text-[13px] text-zinc-500">No standard ingredients in recipe.</p>
             )}
           </div>
@@ -1635,7 +1748,37 @@ return (
                     <span className="text-[13px] font-medium text-zinc-200">{a.name}</span>
                     <span className="text-[11px] text-amber-400/60">{a.reason}</span>
                   </div>
-                  <span className="font-mono text-[13px] text-amber-200">{a.qty}{a.unit}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[13px] text-amber-200">{a.qty}{a.unit}</span>
+                    <button onClick={() => {
+                      const updated = savedAddIngs.filter((_, idx) => idx !== i);
+                      setProductAdditionalIngredients(prev => {
+                        const next = { ...prev, [prepKey]: updated };
+                        const allRecipesForSave = (recipe.linkedIngredients ?? [])
+                          .map(name => recipes.find(r => r.productName === name))
+                          .filter((r): r is ProductRecipe => !!r)
+                          .filter(r => r.productName !== dos.product);
+                        const allKeys: { dosId: string; productName: string }[] = [];
+                        if (allRecipesForSave.length === 0) {
+                          allKeys.push({ dosId: dos.id, productName: dos.product });
+                        }
+                        allRecipesForSave.forEach(r => {
+                          allKeys.push({ dosId: dos.id, productName: r.productName });
+                        });
+                        allKeys.forEach(({ dosId, productName }) => {
+                          const k = `${dosId}:::${productName.toLowerCase()}`;
+                          db.saveDecoProductionPrep([{
+                            dosId, productName,
+                            productQty: productQty[dosId] ?? prepDemandQty,
+                            prepared: preMixPrepared.has(k),
+                            done: preMixDone.has(k),
+                            additionalIngredients: updated,
+                          }]).catch(console.error);
+                        });
+                        return next;
+                      });
+                    }} className="text-zinc-500 hover:text-red-400 text-[14px]">✕</button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1680,18 +1823,22 @@ return (
                   <p className="text-[13px] text-zinc-500 text-center py-6">No items in Deco Freezer.</p>
                 ) : (
                   <div className="space-y-2">
-                    {inventory.filter(i => i.group === "ingredients" && (!i.accessRoles || i.accessRoles.includes("deco"))).map(item => (
-                      <button key={item.id} onClick={() => {
-                        setAdditionalIngredients(prev => [...prev, { name: item.name, qty: 0, unit: item.unit, reason: "", source: "Deco", timestamp: new Date().toISOString() }]);
-                        setShowAddIngredientModal(false);
-                      }} className="w-full flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-800/50 px-4 py-3 hover:bg-zinc-800 transition-all text-left">
-                        <div>
-                          <div className="text-[13px] font-medium text-white">{item.name}</div>
-                          <div className="text-[11px] text-zinc-400">{item.onHand} {item.unit} available</div>
-                        </div>
-                        <span className="text-[12px] text-amber-400 font-medium">+ Add</span>
-                      </button>
-                    ))}
+                    {inventory.filter(i => i.group === "ingredients" && (!i.accessRoles || i.accessRoles.includes("deco"))).map(item => {
+                      const alreadyExists = savedAddIngs.some(a => a.name === item.name) || additionalIngredients.some(a => a.name === item.name);
+                      return (
+                        <button key={item.id} onClick={() => {
+                          if (alreadyExists) return;
+                          setAdditionalIngredients(prev => [...prev, { name: item.name, qty: 0, unit: item.unit, reason: "", source: "Deco", timestamp: new Date().toISOString() }]);
+                          setShowAddIngredientModal(false);
+                        }} className={`w-full flex items-center justify-between rounded-xl border px-4 py-3 transition-all text-left ${alreadyExists ? "border-zinc-800 bg-zinc-800/30 opacity-50 cursor-not-allowed" : "border-zinc-700 bg-zinc-800/50 hover:bg-zinc-800"}`}>
+                          <div>
+                            <div className="text-[13px] font-medium text-white">{item.name}</div>
+                            <div className="text-[11px] text-zinc-400">{item.onHand} {item.unit} available</div>
+                          </div>
+                          <span className={`text-[12px] font-medium ${alreadyExists ? "text-zinc-500" : "text-amber-400"}`}>{alreadyExists ? "Already Added" : "+ Add"}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1711,6 +1858,9 @@ return (
             <div className="rounded-lg bg-zinc-800/50 p-3">
               <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">Expected Production</div>
               <div className="text-[20px] font-bold text-emerald-300 mt-1">{expectedOutput}</div>
+              <div className="text-[10px] text-zinc-500 mt-1.5 leading-tight">
+                {yieldPerBatch} (yield) × {prepDemandQty} (demand) = {expectedOutput}
+              </div>
             </div>
             <div className="rounded-lg bg-zinc-800/50 p-3">
               <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">Actual Production</div>
@@ -2758,11 +2908,12 @@ return (
                     <th className="px-5 py-3">Unit</th>
                     <th className="px-5 py-3">Section</th>
                     <th className="px-5 py-3">Group</th>
+                    <th className="px-5 py-3 w-10"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
                   {(sortedInventory ?? []).length === 0 ? (
-                    <tr><td colSpan={7} className="px-5 py-12 text-center text-[13px] text-zinc-400">No inventory items with deco-only access.</td></tr>
+                    <tr><td colSpan={8} className="px-5 py-12 text-center text-[13px] text-zinc-400">No inventory items with deco-only access.</td></tr>
                   ) : (() => {
                     const rows: React.ReactNode[] = [];
                     let lastGroup: string | null = null;
@@ -2771,7 +2922,7 @@ return (
                       if (lastGroup !== null && lastGroup !== groupKey) {
                         rows.push(
                           <tr key={`divider-${idx}`}>
-                            <td colSpan={7} className="px-5 py-2 bg-zinc-50/60 border-y border-zinc-100">
+                            <td colSpan={8} className="px-5 py-2 bg-zinc-50/60 border-y border-zinc-100">
                               <div className="flex items-center gap-2">
                                 <span className="h-px flex-1 bg-zinc-200" />
                                 <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-400">Manual</span>
@@ -2784,7 +2935,7 @@ return (
                       if (lastGroup !== groupKey && groupKey === "production-prep") {
                         rows.push(
                           <tr key={`header-production-prep`}>
-                            <td colSpan={7} className="px-5 py-2 bg-emerald-50/60 border-b border-emerald-100">
+                            <td colSpan={8} className="px-5 py-2 bg-emerald-50/60 border-b border-emerald-100">
                               <div className="flex items-center gap-2">
                                 <span className="h-px flex-1 bg-emerald-200" />
                                 <span className="text-[10px] uppercase tracking-wider font-semibold text-emerald-700">From Production Prep</span>
@@ -2813,6 +2964,14 @@ return (
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isPrep ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : "bg-zinc-100 text-zinc-600 border border-zinc-200"}`}>
                               {isPrep ? "Production Prep" : "Manual"}
                             </span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            {isPrep && (
+                              <button onClick={() => {
+                                onUpdateInventory((prev: InventoryItem[]) => prev.filter(i => i.id !== inv.id));
+                                db.deleteInventoryItem(inv.id, inv.group).catch(console.error);
+                              }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[10px] font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
+                            )}
                           </td>
                         </tr>
                       );
