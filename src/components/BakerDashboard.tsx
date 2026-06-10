@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Fragment } from "react";
+import React, { useEffect, useState } from "react";
 import type { ProductionTask, DOSItem, BakerIngredientRequest, ProductRecipe, FreezerItem, FreezerHistory, InventoryItem } from "../types";
 import * as db from "../lib/db";
 
@@ -18,10 +18,17 @@ type Props = {
   onUpdateInventory?: (cb: InventoryItem[] | ((prev: InventoryItem[]) => InventoryItem[])) => void;
 };
 
-const steps = [{ id: "dos", label: "DOS" }];
+const steps = [
+  { id: "dos", label: "📋 DOS Review" },
+  { id: "acknowledge", label: "✅ Acknowledge Task" },
+  { id: "execute", label: "🏭 Execute Batches" },
+];
 
 export default function BakerDashboard({ production, dosItems, onCompleteTask, activeTab, productCatalog, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], inventory = [], onUpdateInventory }: Props) {
   const [step, setStep] = useState(0);
+  const [tasksStarted, setTasksStarted] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [doneBatches, setDoneBatches] = useState<Set<string>>(new Set());
   const [ingredientReqs, setIngredientReqs] = useState<BakerIngredientRequest[]>([]);
   const [sent, setSent] = useState(false);
   const [expandedDOS, setExpandedDOS] = useState<Set<string>>(new Set());
@@ -194,6 +201,39 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     });
     setSent(true);
   };
+
+  const handleStartTask = async () => {
+    setStarting(true);
+    try {
+      await Promise.all(bakerDOS.map(d => db.updateDOS(d.id, { status: "in-progress" })));
+      setTasksStarted(true);
+      setStep(2);
+    } catch (err) {
+      console.error("Failed to start tasks:", err);
+      alert("Failed to start tasks. Please try again.");
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const toggleBatch = (productName: string, batchIndex: number) => {
+    const key = `${productName}::batch-${batchIndex}`;
+    setDoneBatches(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  // Shared helpers for recipe matching — defined once at component scope
+  const getBaseName = (name: string) =>
+    name.toLowerCase().replace(/[\s]*[\(\*\d].*$/, '').trim();
+  const findRecipe = (productName: string) =>
+    recipes.find(r =>
+      r.productName.toLowerCase() === productName.toLowerCase() ||
+      r.linkedIngredients?.some(l => l.toLowerCase() === productName.toLowerCase()) ||
+      getBaseName(r.productName) === getBaseName(productName)
+    );
 
   /* ── Assembly Tab ── */
   if (activeTab === "assembly") {
@@ -844,83 +884,393 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-[28px] font-semibold tracking-tight">Baker Workstation</h1>
-        <p className="mt-1 text-[13px] text-zinc-500">Bake what the DOS says — nothing more, nothing less.</p>
+        <p className="mt-1 text-[13px] text-zinc-500">Today's baking orders grouped by recipe.</p>
       </div>
 
-      <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-6 shadow-sm">
-        <div>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-[21px] font-semibold">Your DOS Orders</h2>
-                <p className="mt-1 text-[13px] text-zinc-500">Admin assigned these items for you to bake. Deco items are hidden — focus on your section.</p>
-              </div>
-  
-            </div>
-            {bakerDOS.length === 0 ? (
-              <div className="mt-8 text-center py-8"><p className="text-[14px] text-zinc-400">No baking orders yet.</p><p className="text-[12px] text-zinc-400 mt-1">Wait for Admin to create a DOS.</p></div>
-            ) : (
-              <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-zinc-700 bg-zinc-800 text-left text-[11px] font-medium text-zinc-300 uppercase tracking-wider">
-                      <th className="w-8 px-3 py-2.5"></th>
-                      <th className="px-2 py-2.5">Product</th>
-                      <th className="px-2 py-2.5">Priority</th>
-                      <th className="px-2 py-2.5">Size</th>
-                      <th className="px-2 py-2.5 text-right">Total</th>
+      {/* Step Navigation */}
+      <div className="flex items-center gap-3">
+        {steps.map((s, i) => (
+          <div key={s.id} className="flex items-center gap-2">
+            {i > 0 && <div className="h-px w-8 bg-zinc-700" />}
+            <button
+              onClick={() => setStep(i)}
+              className={`rounded-full px-4 py-2 text-[12px] font-medium transition-all ${
+                step === i
+                  ? 'bg-white text-zinc-900 shadow-sm'
+                  : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {i === 0 && <span className="mr-1.5">📋</span>}
+              {i === 1 && <span className="mr-1.5">✅</span>}
+              {i === 2 && <span className="mr-1.5">🏭</span>}
+              {s.label}
+            </button>
+          </div>
+        ))}
+      </div>
 
-                      <th className="w-14 px-3 py-2.5 text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bakerDOS.map(d => {
-                      const recipe = recipes.find(r => r.productName === d.product);
-                      const hasIngredients = recipe && recipe.ingredients.length > 0;
-                      const isExpanded = expandedDOS.has(d.id);
-                      const pColor = d.priority === "HIGH" ? "bg-red-100 text-red-700" : d.priority === "MEDIUM" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600";
-                      const sDot = d.status === "completed" ? "bg-emerald-500" : d.status === "in-progress" ? "bg-amber-500" : "bg-zinc-300";
-                      return (
-                        <Fragment key={d.id}>
-                          <tr className={`border-b border-zinc-700 text-[13px] transition-colors ${hasIngredients ? "cursor-pointer hover:bg-zinc-800/60" : ""}`} onClick={() => hasIngredients && toggleDOS(d.id)}>
-                            <td className="px-3 py-2.5 text-zinc-500 text-[10px] text-center">{hasIngredients ? (isExpanded ? "▾" : "▸") : ""}</td>
-                            <td className="px-2 py-2.5 font-medium text-white">{d.product} {newDOSIds?.has(d.id) && <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-800 px-1.5 py-0.5 text-[9px] font-bold text-blue-200 uppercase tracking-wider">New</span>}</td>
-                            <td className="px-2 py-2.5"><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${pColor}`}>{d.priority}</span></td>
-                            <td className="px-2 py-2.5 font-mono text-white">{d.size || ""}</td>
-                            <td className="px-2 py-2.5 text-right font-mono text-white">{d.qty}</td>
-
-                            <td className="px-3 py-2.5 text-right"><span className={`inline-block h-2 w-2 rounded-full ${sDot}`} /></td>
-                          </tr>
-                          {isExpanded && hasIngredients && (
-                            <tr key={`${d.id}-ing`}>
-                              <td colSpan={6} className="px-3 pb-2.5 pt-0 bg-zinc-800/60">
-                                <div className="flex flex-wrap items-center gap-1.5 pl-7">
-                                  <span className="text-[10px] font-medium text-zinc-400 uppercase mr-0.5">Ingredients:</span>
-                                  {recipe!.ingredients.map((ing, i) => (
-                                    <span key={i} className="rounded-lg bg-zinc-800 border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-300">{ing.name} x{ing.qtyPerBatch}{ing.unit}</span>
-                                  ))}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-zinc-700 bg-zinc-800 text-[13px] font-semibold text-white">
-                      <td colSpan={4} className="px-3 py-2.5">Total</td>
-                      <td className="px-2 py-2.5 text-right font-mono">{bakerDOS.reduce((s, d) => s + d.qty, 0)}</td>
-
-                      <td className="px-3 py-2.5" />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-            {bakerScheduledSection}
+      {step === 0 && (
+      <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-[16px] font-semibold text-white" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2>
+            <p className="text-[12px] text-zinc-400">Daily Order Sales — auto-generates production tasks</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-amber-500 border border-amber-900/50">LOCKED</span>
+            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-900">{bakerDOS.length} items</span>
           </div>
         </div>
+        {bakerDOS.length === 0 ? (
+          <div className="mt-8 text-center py-10"><p className="text-[14px] text-zinc-500">No baking orders yet.</p><p className="text-[12px] text-zinc-500 mt-1">Wait for Admin to create a DOS.</p></div>
+        ) : (
+          <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800">
+            <div className="overflow-x-auto">
+              <div className="min-w-[700px]">
+                <div className="grid grid-cols-12 gap-2 border-b border-zinc-800 bg-zinc-950/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                  <div className="col-span-8">Recipe</div>
+                  <div className="col-span-4 text-right">Status</div>
+                </div>
+                <div className="divide-y divide-zinc-800">
+                  {(() => {
+                    // Group by product
+                    const grouped = new Map<string, { dos: DOSItem[]; totalQty: number }>();
+                    bakerDOS.forEach(d => {
+                      if (!grouped.has(d.product)) grouped.set(d.product, { dos: [], totalQty: 0 });
+                      const g = grouped.get(d.product)!;
+                      g.dos.push(d);
+                      g.totalQty += d.qty;
+                    });
+                    return [...grouped.entries()].map(([productName, group]) => {
+                      const recipe = findRecipe(productName);
+                      // Only show recipe ID if it's a short readable ID (e.g. R001 — not a UUID)
+                      const rawId = recipe?.id || '';
+                      const recipeId = rawId.length > 10 ? '' : rawId;
+                      const recipeDisplayName = recipe?.productName || productName;
+                      const hasYield = !!(recipe?.yield && recipe.yield > 0);
+                      const yieldPerBatch = recipe?.yield ?? 1;
+                      const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
+                      const productionOutput = requiredBatches * yieldPerBatch;
+                      const excess = productionOutput - group.totalQty;
+                      const itemStatus = group.dos.every(d => d.status === "completed") ? "completed" : group.dos.some(d => d.status === "in-progress") ? "in-progress" : "pending";
+                      return (
+                        <div key={productName} className="grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-zinc-800/40 transition-colors">
+                          <div className="col-span-8">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[14px] font-semibold text-white">Recipe: {recipeDisplayName}</span>
+                              {recipe && recipeId && <span className="text-[11px] font-mono text-zinc-500 shrink-0">({recipeId})</span>}
+                              {recipe && <span className="text-[10px] text-zinc-600">→ {productName}</span>}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2">
+                              {hasYield ? (
+                                <>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] text-zinc-500">Required Batches:</span>
+                                    <span className="text-[14px] font-bold text-white font-mono">{requiredBatches}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] text-zinc-500">Yield per Batch:</span>
+                                    <span className="text-[14px] font-bold text-amber-400 font-mono">{yieldPerBatch} <span className="text-[11px] font-medium text-amber-600">pcs</span></span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] text-zinc-500">Production Output:</span>
+                                    <span className="text-[14px] font-bold text-emerald-400 font-mono">{productionOutput} <span className="text-[11px] font-medium text-emerald-600">pcs</span></span>
+                                    {excess > 0 && (
+                                      <span className="text-[10px] text-amber-400/70 ml-1">(Excess: {excess} pcs)</span>
+                                    )}
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-[11px] text-amber-400/70 italic">Set recipe yield in Admin &gt; Recipes</span>
+                              )}
+                            </div>
+                            {(group.dos.some(d => d.flavor || d.size)) && (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                {[...new Set(group.dos.map(d => d.flavor).filter(Boolean))].map(f => (
+                                  <span key={f} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-200">{f}</span>
+                                ))}
+                                {[...new Set(group.dos.map(d => d.size).filter(Boolean))].map(s => (
+                                  <span key={s} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-200">{s}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="col-span-4 flex items-center justify-end">
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold ${
+                              itemStatus === "completed" ? "bg-emerald-900/40 text-emerald-300" :
+                              itemStatus === "in-progress" ? "bg-amber-900/40 text-amber-300" :
+                              "bg-zinc-800 text-zinc-400"
+                            }`}>
+                              <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                                itemStatus === "completed" ? "bg-emerald-500" :
+                                itemStatus === "in-progress" ? "bg-amber-500 animate-pulse" :
+                                "bg-zinc-500"
+                              }`} />
+                              {itemStatus === "completed" ? "Completed" : itemStatus === "in-progress" ? "In Progress" : "Pending"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="mt-4 flex items-center justify-between rounded-xl bg-zinc-950/40 px-3 py-2.5">
+          <div className="text-[12px] text-zinc-500">Baker: {bakerDOS.length} items</div>
+          <button onClick={() => setStep(1)} className="rounded-lg bg-white px-5 py-2 text-[12px] font-semibold text-zinc-900 hover:bg-zinc-100 transition-colors">
+            Next →
+          </button>
+        </div>
       </div>
+      )}
+
+      {step === 1 && (
+        <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
+          {!tasksStarted ? (
+            <>
+              <div className="flex items-center gap-4 mb-6">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-900/40 text-amber-300 text-[18px] font-bold">1</span>
+                <div>
+                  <h2 className="text-[20px] font-bold text-white tracking-tight">STEP 1 — ACKNOWLEDGE TASK</h2>
+                  <p className="text-[12px] text-zinc-400 mt-0.5">Review and start today's baking tasks</p>
+                </div>
+              </div>
+
+              {/* Recipe list */}
+              {(() => {
+                const grouped = new Map<string, { dos: DOSItem[]; totalQty: number }>();
+                bakerDOS.forEach(d => {
+                  if (!grouped.has(d.product)) grouped.set(d.product, { dos: [], totalQty: 0 });
+                  const g = grouped.get(d.product)!;
+                  g.dos.push(d);
+                  g.totalQty += d.qty;
+                });
+                return [...grouped.entries()].map(([productName, group]) => {
+                  const recipe = findRecipe(productName);
+                  const hasYield = !!(recipe?.yield && recipe.yield > 0);
+                  const yieldPerBatch = recipe?.yield ?? 1;
+                  const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
+                  const productionOutput = requiredBatches * yieldPerBatch;
+                  const excess = productionOutput - group.totalQty;
+                  const recipeDisplayName = recipe?.productName || productName;
+                  return (
+                    <div key={productName} className="flex items-center justify-between rounded-xl bg-zinc-800/50 px-4 py-3 mb-2 last:mb-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] font-semibold text-white truncate">{recipeDisplayName}</span>
+                          {recipe && <span className="text-[10px] text-zinc-600">→ {productName}</span>}
+                        </div>
+                        {hasYield ? (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[11px]">
+                            <span className="text-zinc-400">{requiredBatches} batch{requiredBatches !== 1 ? 'es' : ''}</span>
+                            <span className="text-zinc-600">·</span>
+                            <span className="text-amber-400/80">{yieldPerBatch} pcs/batch</span>
+                            <span className="text-zinc-600">·</span>
+                            <span className="text-emerald-400/80">{productionOutput} pcs output</span>
+                            {excess > 0 && <span className="text-amber-400/70">· {excess} pcs excess</span>}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-amber-400/60 mt-0.5 block">No yield set</span>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0 ml-4">
+                        <div className="text-[15px] font-bold text-white font-mono">{group.totalQty}</div>
+                        <div className="text-[10px] text-zinc-500">pcs ordered</div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+
+              {/* Summary bar */}
+              <div className="flex items-center justify-between rounded-xl bg-zinc-950/40 px-4 py-2.5 mt-4 mb-5">
+                <span className="text-[12px] text-zinc-500">{bakerDOS.length} recipe{bakerDOS.length !== 1 ? 's' : ''} · {bakerDOS.reduce((s, d) => s + d.qty, 0)} pcs total</span>
+              </div>
+
+              <button
+                onClick={handleStartTask}
+                disabled={starting}
+                className="w-full rounded-xl bg-emerald-600 px-4 py-3.5 text-[15px] font-bold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+              >
+                {starting ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-block h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    Starting...
+                  </span>
+                ) : (
+                  'Start Task'
+                )}
+              </button>
+              <p className="mt-3 text-[11px] text-zinc-500 text-center">System will lock all tasks and set status to <span className="text-amber-400 font-medium">In Progress</span></p>
+
+              {/* Back button */}
+              <div className="mt-4 text-center">
+                <button onClick={() => setStep(0)} className="text-[12px] text-zinc-500 hover:text-zinc-300 transition-colors">
+                  ← Back to DOS Review
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-4 mb-6">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-900/40 text-emerald-300 text-[18px] font-bold">✔</span>
+                <div>
+                  <h2 className="text-[20px] font-bold text-emerald-300 tracking-tight">TASK STARTED</h2>
+                  <p className="text-[12px] text-zinc-400 mt-0.5">System has locked the task</p>
+                </div>
+              </div>
+              <div className="rounded-xl bg-zinc-800/50 p-4 space-y-3">
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-zinc-400">Status:</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-900/40 px-3 py-1 text-[12px] font-semibold text-amber-300">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    In Progress
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-zinc-400">Tasks locked:</span>
+                  <span className="font-mono font-semibold text-emerald-400">{bakerDOS.length}</span>
+                </div>
+              </div>
+              <p className="mt-4 text-[11px] text-zinc-500 text-center">You can now proceed to baking. DOS items are marked in-progress.</p>
+              <div className="mt-4 text-center">
+                <button onClick={() => setStep(0)} className="text-[12px] text-zinc-500 hover:text-zinc-300 transition-colors">
+                  ← Back to DOS Review
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
+          <div className="flex items-center gap-4 mb-6">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-900/40 text-amber-300 text-[18px] font-bold">3</span>
+            <div>
+              <h2 className="text-[20px] font-bold text-white tracking-tight">STEP 3 — EXECUTE BATCHES</h2>
+              <p className="text-[12px] text-zinc-400 mt-0.5">Baker follows physical production only — portion, shape, and bake each batch</p>
+            </div>
+          </div>
+
+          {(() => {
+            // Compute total batches once
+            let totalBatches = 0;
+            const seen = new Set<string>();
+            bakerDOS.forEach(d => {
+              if (!seen.has(d.product)) {
+                seen.add(d.product);
+                const recipe = findRecipe(d.product);
+                const y = recipe?.yield ?? 1;
+                const q = [...bakerDOS.filter(x => x.product === d.product)].reduce((s, x) => s + x.qty, 0);
+                totalBatches += Math.ceil(q / y);
+              }
+            });
+            const pct = totalBatches > 0 ? (doneBatches.size / totalBatches) * 100 : 0;
+
+            return (
+              <>
+                <div className="rounded-xl bg-zinc-950/40 p-3 mb-5">
+                  <div className="flex items-center justify-between text-[12px] text-zinc-400 mb-2">
+                    <span>Overall Progress</span>
+                    <span>{doneBatches.size} / {totalBatches} batches</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                    <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+
+                {(() => {
+                  const grouped = new Map<string, { dos: DOSItem[]; totalQty: number }>();
+                  bakerDOS.forEach(d => {
+                    if (!grouped.has(d.product)) grouped.set(d.product, { dos: [], totalQty: 0 });
+                    const g = grouped.get(d.product)!;
+                    g.dos.push(d);
+                    g.totalQty += d.qty;
+                  });
+                  return [...grouped.entries()].map(([productName, group]) => {
+                    const recipe = findRecipe(productName);
+              const hasYield = !!(recipe?.yield && recipe.yield > 0);
+              const yieldPerBatch = recipe?.yield ?? 1;
+              const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
+              const productionOutput = requiredBatches * yieldPerBatch;
+              const excess = productionOutput - group.totalQty;
+              const recipeDisplayName = recipe?.productName || productName;
+              const doneCount = [...Array(requiredBatches)].filter((_, i) => doneBatches.has(`${productName}::batch-${i}`)).length;
+              const allDone = doneCount >= requiredBatches;
+              return (
+                <div key={productName} className={`rounded-xl border ${allDone ? 'border-emerald-900/50 bg-emerald-900/10' : 'border-zinc-800 bg-zinc-800/30'} p-4 mb-3 last:mb-0 transition-colors`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`text-[14px] font-semibold ${allDone ? 'text-emerald-300' : 'text-white'} truncate`}>{recipeDisplayName}</span>
+                      {recipe && <span className="text-[10px] text-zinc-600 shrink-0">→ {productName}</span>}
+                      {allDone && <span className="text-emerald-400 text-[14px]">✓</span>}
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-medium ml-2 ${allDone ? 'bg-emerald-900/40 text-emerald-300' : 'bg-zinc-700 text-zinc-300'}`}>
+                      {doneCount}/{requiredBatches} batches
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mb-3">
+                    <span>{group.totalQty} pcs demand</span>
+                    <span className="mx-1.5">·</span>
+                    <span className="text-amber-400/70">{yieldPerBatch} pcs/batch</span>
+                    {hasYield && (
+                      <>
+                        <span className="mx-1.5">·</span>
+                        <span className="text-emerald-400/70">{productionOutput} pcs output</span>
+                        {excess > 0 && <span className="ml-1.5 text-amber-400/60">({excess} pcs excess)</span>}
+                      </>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {[...Array(requiredBatches)].map((_, i) => {
+                      const batchKey = `${productName}::batch-${i}`;
+                      const isDone = doneBatches.has(batchKey);
+                      return (
+                        <button
+                          key={batchKey}
+                          onClick={() => toggleBatch(productName, i)}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition-all ${
+                            isDone
+                              ? 'border-emerald-700/50 bg-emerald-900/30 text-emerald-200'
+                              : 'border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-800'
+                          }`}
+                        >
+                          <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                            isDone ? 'bg-emerald-600 text-white' : 'bg-zinc-700 text-zinc-400'
+                          }`}>
+                            {isDone ? '✓' : i + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-medium">Batch {i + 1}</div>
+                            <div className="text-[9px] text-zinc-500">{yieldPerBatch} pcs</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            });
+          })()}
+            </>
+          );
+        })()}
+
+          {/* Back button */}
+          <div className="mt-5 text-center">
+            <button onClick={() => setStep(1)} className="text-[12px] text-zinc-500 hover:text-zinc-300 transition-colors">
+              ← Back to Acknowledge
+            </button>
+          </div>
+        </div>
+      )}
+
+      {bakerScheduledSection}
+    </div>
   );
 
 }

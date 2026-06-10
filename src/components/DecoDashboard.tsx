@@ -33,7 +33,9 @@ type DecoTask = {
 function DOSRecipeDetailModal({ recipe, totalQty, onClose }: {
   recipe: ProductRecipe; totalQty: number; onClose: () => void;
 }) {
-  const estTotal = (recipe.yield ?? 1) * totalQty;
+  const yieldBatch = recipe.yield ?? 1;
+  const batchesNeeded = Math.ceil(totalQty / yieldBatch);
+  const estTotal = batchesNeeded * yieldBatch;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={onClose}>
@@ -48,12 +50,22 @@ function DOSRecipeDetailModal({ recipe, totalQty, onClose }: {
         <div className="overflow-y-auto px-5 py-4 space-y-3">
           {/* Yield Display */}
           <div className="rounded-xl border border-amber-800 bg-amber-950/40 px-4 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] uppercase tracking-wider text-amber-400 font-medium">Yield per Batch</span>
-              <span className="text-[11px] text-amber-500">EST Prod. Total: <span className="font-mono font-semibold text-amber-300">{estTotal}</span></span>
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="text-center">
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Total Demand</div>
+                <div className="text-[16px] font-bold text-white mt-0.5">{totalQty} <span className="text-[11px] font-normal text-zinc-400">pcs</span></div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Yield/Batch</div>
+                <div className="text-[16px] font-bold text-amber-200 mt-0.5">{yieldBatch} <span className="text-[11px] font-normal text-amber-400">pcs</span></div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Expected</div>
+                <div className="text-[16px] font-bold text-emerald-300 mt-0.5">{estTotal} <span className="text-[11px] font-normal text-emerald-400">pcs</span></div>
+              </div>
             </div>
-            <div className="flex items-center justify-center">
-              <span className="font-mono text-[16px] font-bold text-amber-200">{recipe.yield ?? 1}</span>
+            <div className="text-[11px] text-center text-amber-400/80 font-mono bg-amber-950/60 rounded-lg px-3 py-2">
+              CEIL({totalQty} ÷ {yieldBatch}) = {batchesNeeded} batch × {yieldBatch} = {estTotal}
             </div>
           </div>
           {/* Ingredients */}
@@ -64,7 +76,7 @@ function DOSRecipeDetailModal({ recipe, totalQty, onClose }: {
                 <span className="text-[13px] font-medium text-zinc-200">{ing.name}</span>
                 <span className="text-[11px] text-zinc-500 ml-2">{ing.unit}</span>
               </div>
-              <span className="text-[13px] font-mono font-semibold text-zinc-300">{ing.qtyPerBatch * totalQty}</span>
+              <span className="text-[13px] font-mono font-semibold text-zinc-300">{ing.qtyPerBatch * batchesNeeded}</span>
             </div>
           ))}
           {(recipe.packagingMaterials ?? []).length > 0 && (
@@ -73,7 +85,7 @@ function DOSRecipeDetailModal({ recipe, totalQty, onClose }: {
               {recipe.packagingMaterials.map((mat, i) => (
                 <div key={`pkg-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
                   <span className="text-[13px] font-medium text-zinc-200">{mat.name}</span>
-                  <span className="text-[12px] font-mono text-zinc-400">{mat.qtyPerBatch * totalQty} {mat.unit}</span>
+                  <span className="text-[12px] font-mono text-zinc-400">{mat.qtyPerBatch * batchesNeeded} {mat.unit}</span>
                 </div>
               ))}
             </>
@@ -84,7 +96,7 @@ function DOSRecipeDetailModal({ recipe, totalQty, onClose }: {
               {recipe.decorationSupplies.map((sup, i) => (
                 <div key={`deco-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
                   <span className="text-[13px] font-medium text-zinc-200">{sup.name}</span>
-                  <span className="text-[12px] font-mono text-zinc-400">{sup.qtyPerBatch * totalQty} {sup.unit}</span>
+                  <span className="text-[12px] font-mono text-zinc-400">{sup.qtyPerBatch * batchesNeeded} {sup.unit}</span>
                 </div>
               ))}
             </>
@@ -1092,7 +1104,8 @@ return (
               <tbody>
                 {mergedRecipes.map(({ recipe, totalQty }) => {
                   const yieldPerBatch = recipe.yield || 1;
-                  const estProdTotal = yieldPerBatch * totalQty;
+                  const batchesNeeded = Math.ceil(totalQty / yieldPerBatch);
+                  const estProdTotal = batchesNeeded * yieldPerBatch;
                   return (
                   <tr key={recipe.productName} onClick={() => setViewingDOSRecipe({ recipe, totalQty })} className="border-b border-zinc-800 text-[13px] hover:bg-zinc-800/50 transition-colors cursor-pointer">
                     <td className="px-3 py-2.5 font-medium text-zinc-100">{recipe.productName}</td>
@@ -1326,7 +1339,8 @@ return (
               {Array.from(recipeAggMap.entries()).map(([recipeName, entry]) => {
                 const { recipe, totalQty, dosItems, allDone, routes } = entry;
                 const yieldPerBatch = recipe.yield || 1;
-                const estProdTotal = yieldPerBatch * totalQty;
+                const batchesNeeded = Math.ceil(totalQty / yieldPerBatch);
+                const estProdTotal = batchesNeeded * yieldPerBatch;
                 const activeDOS = dosItems.find(d => !preMixDone.has(d.id + ":::" + recipe.productName.toLowerCase())) || dosItems[0];
                 const doneCount = dosItems.filter(d => preMixDone.has(d.id + ":::" + recipe.productName.toLowerCase())).length;
                 return (
@@ -1344,7 +1358,7 @@ return (
                           <span>Yield/Batch: <span className={`font-mono font-semibold ${allDone ? "text-zinc-500" : "text-zinc-200"}`}>{yieldPerBatch} pcs</span></span>
                           <span>Expected: <span className={`font-mono font-semibold ${allDone ? "text-zinc-500" : "text-emerald-300"}`}>{estProdTotal} pcs</span></span>
                         </div>
-                        <div className={`text-[10px] mt-0.5 ${allDone ? "text-zinc-600" : "text-zinc-500"}`}>{yieldPerBatch} × {totalQty} = {estProdTotal}</div>
+                        <div className={`text-[10px] mt-0.5 ${allDone ? "text-zinc-600" : "text-zinc-500"}`}>CEIL({totalQty} ÷ {yieldPerBatch}) = {batchesNeeded} batch × {yieldPerBatch} = {estProdTotal}</div>
                         {dosItems.length > 1 && (
                           <div className={`text-[10px] mt-1.5 leading-relaxed ${allDone ? "text-zinc-600" : "text-zinc-500"}`}>
                             From: {dosItems.map((d, i) => {
@@ -1397,7 +1411,8 @@ return (
       .filter((r): r is ProductRecipe => !!r);
     const allIngredientsForPrep = recipe.ingredients;
     const yieldPerBatch = recipe.yield || linkedRecipesForPrep.find(r => r.yield && r.yield > 1)?.yield || 1;
-    const expectedOutput = yieldPerBatch * prepDemandQty;
+    const batchesNeeded = Math.ceil(prepDemandQty / yieldPerBatch);
+    const expectedOutput = batchesNeeded * yieldPerBatch;
     const prepKey = dos.id + ":::" + dos.product.toLowerCase();
     const savedAddIngs = preMixDone.has(prepKey) ? [] : (productAdditionalIngredients[prepKey] || []);
 
@@ -1809,7 +1824,7 @@ return (
               <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">Expected Production</div>
               <div className="text-[20px] font-bold text-emerald-300 mt-1">{expectedOutput}</div>
               <div className="text-[10px] text-zinc-500 mt-1.5 leading-tight">
-                {yieldPerBatch} (yield) × {prepDemandQty} (demand) = {expectedOutput}
+                CEIL({prepDemandQty} ÷ {yieldPerBatch}) = {batchesNeeded} batch × {yieldPerBatch} (yield) = {expectedOutput}
               </div>
             </div>
             <div className="rounded-lg bg-zinc-800/50 p-3">

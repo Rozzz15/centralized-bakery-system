@@ -4102,6 +4102,10 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
   const [notes, setNotes] = useState(isNew ? "" : (existing?.notes || ""));
   const [group, setGroup] = useState<string>(existing?.group || "");
   const [yieldQty, setYieldQty] = useState<number | "">(existing?.yield ?? "");
+  const [recipeId, setRecipeId] = useState<string>(isNew
+    ? `RCP-${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`
+    : (existing?.id || `RCP-${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`)
+  );
   const [showPicker, setShowPicker] = useState(false);
   const [ingredientSearch, setIngredientSearch] = useState("");
 
@@ -4150,9 +4154,15 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
           </label>
         </div>
 
-        <div className="mb-4">
-          <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Yield</label>
-          <input type="number" min="0" value={yieldQty} onChange={e => setYieldQty(e.target.value === "" ? "" : Number(e.target.value))} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. 50" />
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Recipe ID</label>
+            <input value={recipeId} onChange={e => setRecipeId(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] font-mono text-zinc-700 outline-none focus:border-zinc-400" placeholder="Auto-generated" />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Yield</label>
+            <input type="number" min="0" value={yieldQty} onChange={e => setYieldQty(e.target.value === "" ? "" : Number(e.target.value))} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" placeholder="e.g. 50" />
+          </div>
         </div>
 
         <div className="mb-3 relative">
@@ -4213,7 +4223,7 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
 
         <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
           <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-          <button onClick={() => onSave({ id: existing?.id, productId: isNew ? recipeName : product, productName: product, ingredients, notes, group, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [], yield: yieldQty === "" ? undefined : yieldQty })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
+          <button onClick={() => onSave({ id: recipeId || undefined, productId: isNew ? recipeName : product, productName: product, ingredients, notes, group, packagingMaterials: existing?.packagingMaterials ?? [], decorationSupplies: existing?.decorationSupplies ?? [], yield: yieldQty === "" ? undefined : yieldQty })} disabled={ingredients.length === 0} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed">Save Recipe</button>
         </div>
       </div>
     </div>

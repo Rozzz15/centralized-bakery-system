@@ -177,7 +177,8 @@ const tasksPanel = `  /* ── Tasks to Prepare ── */
                       const recipe = getRecipeForProduct(d.product);
                       if (!recipe) return null;
                       const yieldPerBatch = recipe.yield || 1;
-                      const estProdTotal = yieldPerBatch * d.qty;
+                      const batchesNeeded = Math.ceil(d.qty / yieldPerBatch);
+                      const estProdTotal = batchesNeeded * yieldPerBatch;
                       return (
                         <div key={d.id} className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
                           <div className="flex items-start justify-between mb-3">
@@ -196,7 +197,7 @@ const tasksPanel = `  /* ── Tasks to Prepare ── */
                               {recipe.ingredients.map((ing, i) => (
                                 <div key={i} className="flex items-center justify-between text-[13px]">
                                   <span className="text-zinc-300">{ing.name}</span>
-                                  <span className="font-mono text-zinc-400">{ing.qtyPerBatch * d.qty}{ing.unit}</span>
+                                  <span className="font-mono text-zinc-400">{ing.qtyPerBatch * batchesNeeded}{ing.unit}</span>
                                 </div>
                               ))}
                               {recipe.ingredients.length === 0 && (
@@ -225,7 +226,8 @@ const tasksPanel = `  /* ── Tasks to Prepare ── */
                       const recipe = getRecipeForProduct(d.product);
                       if (!recipe) return null;
                       const yieldPerBatch = recipe.yield || 1;
-                      const estProdTotal = yieldPerBatch * d.qty;
+                      const batchesNeeded = Math.ceil(d.qty / yieldPerBatch);
+                      const estProdTotal = batchesNeeded * yieldPerBatch;
                       return (
                         <div key={d.id} className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
                           <div className="flex items-start justify-between mb-3">
@@ -244,7 +246,7 @@ const tasksPanel = `  /* ── Tasks to Prepare ── */
                               {recipe.ingredients.map((ing, i) => (
                                 <div key={i} className="flex items-center justify-between text-[13px]">
                                   <span className="text-zinc-300">{ing.name}</span>
-                                  <span className="font-mono text-zinc-400">{ing.qtyPerBatch * d.qty}{ing.unit}</span>
+                                  <span className="font-mono text-zinc-400">{ing.qtyPerBatch * batchesNeeded}{ing.unit}</span>
                                 </div>
                               ))}
                               {recipe.ingredients.length === 0 && (
@@ -292,7 +294,8 @@ const tasksPanel = `  /* ── Tasks to Prepare ── */
     // PREPARATION VIEW
     const { dos, recipe, route } = activePreparation;
     const yieldPerBatch = recipe.yield || 1;
-    const expectedOutput = yieldPerBatch * dos.qty;
+    const batchesNeeded = Math.ceil(dos.qty / yieldPerBatch);
+    const expectedOutput = batchesNeeded * yieldPerBatch;
     const prepKey = dos.id + "-" + dos.product.toLowerCase();
     const savedAddIngs = productAdditionalIngredients[prepKey] || [];
 
