@@ -1362,7 +1362,7 @@ return (
                         <button disabled className="rounded-xl bg-emerald-800/40 px-4 py-2 text-[12px] font-medium text-emerald-400/70 cursor-not-allowed">✓ Completed</button>
                       ) : (
                         <>
-                          <button onClick={() => { setActivePreparation({ dos: activeDOS, recipe, route: routes.has("deco") ? "deco" : "baker", demandQty: totalQty }); setAdditionalIngredients([]); setActualOutput(""); }} className={`rounded-xl px-4 py-2 text-[12px] font-medium text-white transition-all ${routes.has("deco") ? "bg-rose-600 hover:bg-rose-700" : "bg-amber-600 hover:bg-amber-700"}`}>{routes.has("deco") ? "Start Preparation" : "Start Pre-Mix"}</button>
+                          <button onClick={() => { const activeRoute: "baker" | "deco" = productRoutes[activeDOS.product] === "deco" ? "deco" : "baker"; setActivePreparation({ dos: activeDOS, recipe, route: activeRoute, demandQty: totalQty }); setAdditionalIngredients([]); setActualOutput(""); }} className={`rounded-xl px-4 py-2 text-[12px] font-medium text-white transition-all ${productRoutes[activeDOS.product] === "deco" ? "bg-rose-600 hover:bg-rose-700" : "bg-amber-600 hover:bg-amber-700"}`}>{productRoutes[activeDOS.product] === "deco" ? "Start Preparation" : "Start Pre-Mix"}</button>
                           {doneCount > 0 && <span className="text-[11px] text-zinc-500">{doneCount}/{dosItems.length} done</span>}
                         </>
                       )}
@@ -1498,6 +1498,7 @@ return (
         return match;
       };
 
+      console.log("[Deco] handleComplete — ingredients:", allIngredientsForPrep.length, "prepDemandQty:", prepDemandQty, "inventory count:", inventory.length);
       const deductedIngredients: string[] = [];
       const missedIngredients: string[] = [];
 
@@ -1505,9 +1506,15 @@ return (
         const match = findMatch(ing);
         if (!match) {
           missedIngredients.push(ing.name);
+          console.warn("[Deco] No inventory match for ingredient:", ing.name, "inventoryId:", ing.inventoryId);
           return;
         }
         const idx = newInv.findIndex(i => i.id === match.id);
+        if (idx === -1) {
+          missedIngredients.push(ing.name + " (idx -1)");
+          console.error("[Deco] findIndex returned -1 for matched ingredient:", ing.name, "match.id:", match.id);
+          return;
+        }
         const needed = ing.qtyPerBatch * prepDemandQty;
         newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - needed) };
         deductedIngredients.push(ing.name + " (-" + needed + " " + ing.unit + ")");
@@ -1517,9 +1524,15 @@ return (
         const match = findMatch({ name: addIng.name });
         if (!match) {
           missedIngredients.push(addIng.name + " (additional)");
+          console.warn("[Deco] No inventory match for additional ingredient:", addIng.name);
           return;
         }
         const idx = newInv.findIndex(i => i.id === match.id);
+        if (idx === -1) {
+          missedIngredients.push(addIng.name + " (additional, idx -1)");
+          console.error("[Deco] findIndex returned -1 for matched additional ingredient:", addIng.name, "match.id:", match.id);
+          return;
+        }
         newInv[idx] = { ...newInv[idx], onHand: Math.max(0, newInv[idx].onHand - addIng.qty) };
         deductedIngredients.push(addIng.name + " (-" + addIng.qty + " " + addIng.unit + " additional)");
       });
@@ -1536,13 +1549,16 @@ return (
         const orig = inventory.find(i => i.id === item.id);
         return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
       });
+      console.log("[Deco] Changed inventory items count:", changed.length, changed.map(c => c.name + ": " + (inventory.find(i => i.id === c.id)?.onHand ?? "?") + " → " + c.onHand));
       if (changed.length > 0) {
-        db.upsertInventory(changed).catch(err => console.error("[Deco] Failed to upsert inventory:", err));
+        db.upsertInventory(changed)
+          .then(() => console.log("[Deco] Upserted", changed.length, "inventory items"))
+          .catch(err => console.error("[Deco] Failed to upsert inventory:", err));
       }
 
       if (route === "baker") {
         const existingFreezer = freezerItems.find(
-          i => i.productName === dos.product && i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.status === "stored"
+          i => i.productName === recipe.productName && i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.status === "stored"
         );
         const newIngredients = {
           standard: allIngredientsForPrep.map(ing => ({
@@ -1579,7 +1595,7 @@ return (
         } else {
           const freezerItem: FreezerItem = {
             id: "FRZ-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
-            productName: dos.product,
+            productName: recipe.productName,
             batchRef: "DEC-" + Date.now(),
             qty: output, unit: "pcs", status: "stored", producedBy: "deco",
             dateProduced: new Date().toISOString(), notes: "Production Recipe",
@@ -1588,60 +1604,11 @@ return (
           if (onUpdateFreezer) onUpdateFreezer((prev) => [...prev, freezerItem]);
           db.upsertFreezerItems([freezerItem]).catch(console.error);
         }
-        onAddAuditLog?.("TASK_COMPLETED", dos.product + " x" + output + " sent to Baker. Standard ingredients: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional ingredients: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
+        onAddAuditLog?.("TASK_COMPLETED", recipe.productName + " x" + output + " sent to Baker. Standard ingredients: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional ingredients: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
         const deductMsg = missedIngredients.length > 0 ? " Warning: " + missedIngredients.join(", ") + " not found in inventory." : "";
         showToast(dos.product + " x" + output + " sent to Baker. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg, missedIngredients.length > 0 ? "error" : "success");
       } else {
         const recipeName = recipe.productName;
-
-        // Save to freezer (Production Recipe) — same pattern as Baker route, using recipe name
-        const existingFreezer = freezerItems.find(
-          i => i.productName === recipeName && i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.status === "stored"
-        );
-        const freezerIngredients = {
-          standard: allIngredientsForPrep.map(ing => ({
-            name: ing.name,
-            qtyPerBatch: ing.qtyPerBatch,
-            unit: ing.unit,
-            totalUsed: ing.qtyPerBatch * prepDemandQty,
-          })),
-          additional: finalAddIngs.map(addIng => ({
-            name: addIng.name,
-            qty: addIng.qty,
-            unit: addIng.unit,
-            reason: addIng.reason,
-          })),
-        };
-        if (existingFreezer) {
-          const updatedItem: FreezerItem = {
-            ...existingFreezer,
-            qty: existingFreezer.qty + output,
-            dateProduced: new Date().toISOString(),
-            ingredients: {
-              standard: [
-                ...(existingFreezer.ingredients?.standard ?? []),
-                ...freezerIngredients.standard,
-              ],
-              additional: [
-                ...(existingFreezer.ingredients?.additional ?? []),
-                ...freezerIngredients.additional,
-              ],
-            },
-          };
-          if (onUpdateFreezer) onUpdateFreezer((prev) => prev.map(i => i.id === existingFreezer.id ? updatedItem : i));
-          db.upsertFreezerItems([updatedItem]).catch(console.error);
-        } else {
-          const freezerItem: FreezerItem = {
-            id: "FRZ-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
-            productName: recipeName,
-            batchRef: "DEC-" + Date.now(),
-            qty: output, unit: "pcs", status: "stored", producedBy: "deco",
-            dateProduced: new Date().toISOString(), notes: "Production Recipe",
-            ingredients: freezerIngredients,
-          };
-          if (onUpdateFreezer) onUpdateFreezer((prev) => [...prev, freezerItem]);
-          db.upsertFreezerItems([freezerItem]).catch(console.error);
-        }
 
         // Save to My Inventory (using recipe name, not product name)
         const existingItem = newInv.find(i => i.name === recipeName && i.accessRoles?.includes("deco") && i.source === "production-prep");
@@ -1662,14 +1629,22 @@ return (
           onUpdateInventory((prev) => [...prev, newItem]);
           db.upsertInventory([newItem]).catch(console.error);
         }
-        onAddAuditLog?.("TASK_COMPLETED", recipeName + " x" + output + " saved to Freezer & moved to Decoration Inventory. Standard ingredients: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional ingredients: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
+        onAddAuditLog?.("TASK_COMPLETED", recipeName + " x" + output + " moved to Decoration Inventory. Standard ingredients: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional ingredients: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
         const deductMsg2 = missedIngredients.length > 0 ? " Warning: " + missedIngredients.join(", ") + " not found in inventory." : "";
-        showToast(recipeName + " x" + output + " saved to Freezer & moved to Decoration Inventory. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg2, missedIngredients.length > 0 ? "error" : "success");
+        showToast(recipeName + " x" + output + " moved to Decoration Inventory. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg2, missedIngredients.length > 0 ? "error" : "success");
       }
-      // Update production task status
+      // Update production task status for all DOS items sharing this recipe
       if (onUpdateProduction) {
-        const task = production.find(t => t.product === dos.product && t.assignedTo === "deco" && t.status !== "completed");
-        if (task) onUpdateProduction(task.id, { status: "completed", completed: output });
+        const recipeDOSList = demandQty
+          ? dosForDeco.filter(d => {
+              const recipes = getRecipesForProduct(d.product);
+              return recipes.some(r => r.productName === recipe.productName);
+            })
+          : [dos];
+        recipeDOSList.forEach(d => {
+          const task = production.find(t => t.product === d.product && t.assignedTo === "deco" && t.status !== "completed");
+          if (task) onUpdateProduction(task.id, { status: "completed", completed: output });
+        });
       }
       setActivePreparation(null);
     };
