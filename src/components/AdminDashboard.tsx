@@ -105,6 +105,9 @@ export default function AdminDashboard({
   const [todayAddOpen, setTodayAddOpen] = useState(false);
   const [dosRoleFilter, setDosRoleFilter] = useState<"all" | "baker" | "deco" | "pastry">("all");
   const [editingInvItem, setEditingInvItem] = useState<InventoryItem | null>(null);
+  const [freezerDetailView, setFreezerDetailView] = useState<"baker" | "pastry" | "deco" | null>(null);
+  const [freezerDetailTab, setFreezerDetailTab] = useState<"baked-products" | "my-inventory" | "deco-production-recipe" | "display-cakes" | "production-recipe" | "advanced-premix">("baked-products");
+  const [freezerDetailSearch, setFreezerDetailSearch] = useState("");
 
   // Finance
   const [showAddPurchase, setShowAddPurchase] = useState(false);
@@ -1406,9 +1409,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                     const roles = relatedTasks.length > 0 ? [...new Set(relatedTasks.map(t => t.assignedTo))] : (item.roles || []);
                     return (
                       <tr key={item.id} className="hover:bg-zinc-800/60">
-                        <td className="px-4 py-3"><div className="font-medium text-white">{item.product}</div><div className="text-[11px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></td>
+                        <td className="px-4 py-3"><div className="font-medium text-white">{item.product}</div>{(item.flavor || item.size || item.themeOccasion) ? <div className="flex flex-wrap items-center gap-1.5 mt-1">{item.flavor ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{item.flavor}</span> : null}{item.size ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{item.size}</span> : null}{item.themeOccasion ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">🎨 {item.themeOccasion}</span> : null}</div> : null}<div className="text-[11px] text-zinc-500 mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></td>
                         <td className="px-4 py-3 text-right font-medium text-white" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty}</td>
-                        
                         
                         <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-700"}`}>{item.priority}</span></td>
                         <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{roles.length > 0 ? roles.map(role => (<span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium text-white ${roleColors[role] || "bg-zinc-500"}`}>{role}</span>)) : <span className="text-zinc-400 text-[11px]">—</span>}</div></td>
@@ -1464,7 +1466,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                             const roles = item.roles || [];
                             return (
                               <tr key={item.id} className="hover:bg-blue-50/40">
-                                <td className="px-4 py-2.5 font-medium text-zinc-900">{item.product}</td>
+                                <td className="px-4 py-2.5"><div className="font-medium text-zinc-900">{item.product}</div>{(item.flavor || item.size || item.themeOccasion) ? <div className="flex flex-wrap items-center gap-1.5 mt-1">{item.flavor ? <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">{item.flavor}</span> : null}{item.size ? <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">{item.size}</span> : null}{item.themeOccasion ? <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">🎨 {item.themeOccasion}</span> : null}</div> : null}</td>
                                 <td className="px-4 py-2.5 text-right font-mono text-zinc-600">{item.qty}</td>
                                 <td className="px-4 py-2.5"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-600 border border-zinc-200"}`}>{item.priority}</span></td>
                                 <td className="px-4 py-2.5">
@@ -1534,10 +1536,9 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                             </thead>
                             <tbody className="divide-y divide-zinc-100">
                               {group.items.map(item => (
-                                <tr key={item.id} className="hover:bg-zinc-800/60">
-                                  <td className="px-4 py-2 font-medium text-zinc-900">{item.product}</td>
+                                <tr key={item.id} className="hover:bg-zinc-50">
+                                  <td className="px-4 py-2"><div className="font-medium text-zinc-900">{item.product}</div>{(item.flavor || item.size || item.themeOccasion) ? <div className="flex flex-wrap items-center gap-1.5 mt-1">{item.flavor ? <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-700">{item.flavor}</span> : null}{item.size ? <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-700">{item.size}</span> : null}{item.themeOccasion ? <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-700">🎨 {item.themeOccasion}</span> : null}</div> : null}</td>
                                   <td className="px-4 py-2 text-right font-mono text-zinc-600">{item.qty}</td>
-                                  
                                   
                                   <td className="px-4 py-2"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{item.priority}</span></td>
                                   <td className="px-4 py-2 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${item.status === "completed" ? "text-emerald-700" : item.status === "in-progress" ? "text-amber-700" : "text-zinc-500"}`}><span className={`h-1.5 w-1.5 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500" : "bg-zinc-300"}`} />{item.status === "in-progress" ? "In Progress" : item.status === "completed" ? "Completed" : "Pending"}</span></td>
@@ -1610,10 +1611,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
   if (activeTab === "production") {
     const todayDate = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
     const todayTasks = production.filter(t => {
-      const ts = t.id.match(/PRD-(\d+)/)?.[1];
-      if (!ts) return false;
-      const taskDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-      return taskDate === todayDate;
+      if (t.dateAssigned) return t.dateAssigned === todayDate;
+      return false;
     });
     const bakerTasks = todayTasks.filter(t => t.assignedTo === "baker");
     const pastryTasks = todayTasks.filter(t => t.assignedTo === "pastry");
@@ -1622,6 +1621,244 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     const bakerFreezer = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.qty > 0);
     const pastryFreezer = freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored" && i.qty > 0);
     const decoFreezer = freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.qty > 0);
+
+    // ── Freezer Detail Drill-Down ──
+    if (freezerDetailView) {
+      const role = freezerDetailView;
+      const roleLabel = role === "baker" ? "Baker" : role === "pastry" ? "Pastry" : "Deco";
+
+      const searchVal = freezerDetailSearch.toLowerCase();
+
+      // Baker data sources
+      const bakerItems = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.qty > 0 && i.notes !== "Production Recipe (Assembled)");
+      const bakerAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"));
+      const decoProductionItems = freezerItems.filter(i => i.status === "stored" && i.qty > 0 && ((i.producedBy === "deco") || (i.producedBy === "baker" && i.notes === "Production Recipe (Assembled)")));
+      // Pastry data sources
+      const pastryItems = freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored" && i.qty > 0);
+      const pastryAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("pastry"));
+      // Deco data sources
+      const myDecoFreezer = freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.qty > 0);
+      const decoAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco"));
+
+      if (role === "deco") {
+        const decoTab = freezerDetailTab as "display-cakes" | "production-recipe" | "advanced-premix" | "my-inventory";
+        if (!["display-cakes", "production-recipe", "advanced-premix", "my-inventory"].includes(freezerDetailTab)) {
+          setFreezerDetailTab("display-cakes");
+        }
+        const displayCakes = myDecoFreezer.filter(i => !i.notes?.startsWith("Production Recipe") && !i.batchRef?.startsWith("ADV-"));
+        const productionRecipe = myDecoFreezer.filter(i => i.notes?.startsWith("Production Recipe") && i.qty > 0);
+        const advancedPremix = myDecoFreezer.filter(i => i.batchRef?.startsWith("ADV-") && i.qty > 0);
+        const tabItemsDeco = decoTab === "display-cakes" ? displayCakes : decoTab === "production-recipe" ? productionRecipe : decoTab === "advanced-premix" ? advancedPremix : decoAccessInventory;
+        const filtered = searchVal ? tabItemsDeco.filter((i: any) => (i.productName || i.name).toLowerCase().includes(searchVal)) : tabItemsDeco;
+        // Group Advanced Premix by product
+        const groupedAdv = new Map<string, { items: FreezerItem[]; totalQty: number }>();
+        if (decoTab === "advanced-premix") {
+          (filtered as FreezerItem[]).forEach(f => {
+            if (!groupedAdv.has(f.productName)) groupedAdv.set(f.productName, { items: [], totalQty: 0 });
+            const g = groupedAdv.get(f.productName)!;
+            g.items.push(f);
+            g.totalQty += f.qty;
+          });
+        }
+        return (
+          <div className="space-y-5">
+            <div className="flex items-center gap-2">
+              <button onClick={() => setFreezerDetailView(null)} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">← Back to Overview</button>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[20px]">🎂</span>
+              <div>
+                <h1 className="text-[22px] font-semibold text-zinc-900">Deco Freezer</h1>
+                <p className="text-[13px] text-zinc-500 mt-0.5">{tabItemsDeco.length} items</p>
+              </div>
+            </div>
+            <div className="flex gap-1.5 rounded-xl bg-zinc-100 p-1">
+              {(["display-cakes", "production-recipe", "advanced-premix", "my-inventory"] as const).map(t => (
+                <button key={t} onClick={() => setFreezerDetailTab(t)} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${decoTab === t ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
+                  {t === "display-cakes" ? "Display Cakes" : t === "production-recipe" ? "Production Recipe" : t === "advanced-premix" ? "Advanced Premix" : "My Inventory"}
+                </button>
+              ))}
+            </div>
+            <div className="relative max-w-[280px]">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
+              <input value={freezerDetailSearch} onChange={e => setFreezerDetailSearch(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+            </div>
+            <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-zinc-50 border-b border-zinc-100">
+                    <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                      {decoTab === "my-inventory" ? (
+                        <><th className="px-5 py-3">Name</th><th className="px-5 py-3">SKU</th><th className="px-5 py-3 text-right">On Hand</th><th className="px-5 py-3 text-right">Threshold</th><th className="px-5 py-3">Unit</th><th className="px-5 py-3">Section</th><th className="px-5 py-3">Group</th><th className="px-5 py-3 text-right">Actions</th></>
+                      ) : decoTab === "advanced-premix" ? (
+                        <><th className="px-5 py-3">Recipe</th><th className="px-5 py-3 text-right">Qty</th><th className="px-5 py-3">Batch</th><th className="px-5 py-3">Date</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Actions</th></>
+                      ) : (
+                        <><th className="px-5 py-3">Product</th><th className="px-5 py-3 text-right">Qty</th><th className="px-5 py-3">Unit</th><th className="px-5 py-3">Date Added</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Actions</th></>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-50">
+                    {filtered.length === 0 ? (
+                      <tr><td colSpan={8} className="px-5 py-12 text-center text-[13px] text-zinc-400">No items in this section.</td></tr>
+                    ) : decoTab === "my-inventory" ? (filtered as unknown as InventoryItem[]).map(inv => (
+                      <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
+                        <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{inv.name}</div></td>
+                        <td className="px-5 py-3.5 text-[12px] font-mono text-zinc-600">{inv.sku}</td>
+                        <td className={`px-5 py-3.5 text-[13px] text-right font-mono ${inv.onHand <= inv.threshold ? "text-red-600" : "text-zinc-900"}`}>{inv.onHand}</td>
+                        <td className="px-5 py-3.5 text-[13px] text-right font-mono text-zinc-500">{inv.threshold}</td>
+                        <td className="px-5 py-3.5 text-[12px] text-zinc-600">{inv.unit}</td>
+                        <td className="px-5 py-3.5 text-[12px] text-zinc-600">{inv.category === "Filling" ? "Filling" : inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
+                        <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category === "Filling" ? "Filling" : inv.group}</span></td>
+                        <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                      </tr>
+                    )) : decoTab === "advanced-premix" ? [...groupedAdv.entries()].map(([productName, g]) => (
+                      <tr key={productName} className="hover:bg-zinc-50/50 transition-colors">
+                        <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{productName}</div></td>
+                        <td className="px-5 py-3.5 text-[13px] text-right font-mono">{g.totalQty} batch</td>
+                        <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{g.items.length} batch{g.items.length > 1 ? "es" : ""}</td>
+                        <td className="px-5 py-3.5 text-[12px] text-zinc-500">{g.items.map(f => f.dateProduced).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</td>
+                        <td className="px-5 py-3.5"><span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">✓ In Stock</span></td>
+                        <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                      </tr>
+                    )) : (filtered as FreezerItem[]).map(f => (
+                      <tr key={f.id} className="hover:bg-zinc-50/50 transition-colors">
+                        <td className="px-5 py-3.5">
+                          <div className="text-[13px] font-medium text-zinc-900">{f.productName}</div>
+                          {f.notes && <div className="text-[11px] text-zinc-400 mt-0.5">{f.notes}</div>}
+                        </td>
+                        <td className="px-5 py-3.5 text-[13px] text-right font-mono">{f.qty}</td>
+                        <td className="px-5 py-3.5 text-[12px] text-zinc-600">{f.unit}</td>
+                        <td className="px-5 py-3.5 text-[12px] text-zinc-500">{f.dateProduced}</td>
+                        <td className="px-5 py-3.5"><span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">✓ In Stock</span></td>
+                        <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      const tabItems = role === "baker"
+        ? (freezerDetailTab === "baked-products" ? bakerItems : freezerDetailTab === "my-inventory" ? bakerAccessInventory : decoProductionItems)
+        : (freezerDetailTab === "baked-products" ? pastryItems : freezerDetailTab === "my-inventory" ? pastryAccessInventory : []);
+
+      const filtered = searchVal ? tabItems.filter((i: any) => (i.productName || i.name).toLowerCase().includes(searchVal)) : tabItems;
+
+      const grouped = new Map<string, { items: FreezerItem[]; totalQty: number }>();
+      if (freezerDetailTab !== "my-inventory") {
+        (filtered as FreezerItem[]).forEach(f => {
+          if (!grouped.has(f.productName)) grouped.set(f.productName, { items: [], totalQty: 0 });
+          const g = grouped.get(f.productName)!;
+          g.items.push(f);
+          g.totalQty += f.qty;
+        });
+      }
+
+      const bakerTabs: { key: typeof freezerDetailTab; label: string }[] = [
+        { key: "baked-products", label: "Baked Products" },
+        { key: "my-inventory", label: "My Inventory" },
+        { key: "deco-production-recipe", label: "Deco Production Recipe" },
+      ];
+      const pastryTabs: { key: typeof freezerDetailTab; label: string }[] = [
+        { key: "baked-products", label: "Baked Products" },
+        { key: "my-inventory", label: "My Inventory" },
+      ];
+
+      return (
+        <div className="space-y-5">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setFreezerDetailView(null)} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">← Back to Overview</button>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[20px]">{role === "baker" ? "🍞" : "🧁"}</span>
+            <div>
+              <h1 className="text-[22px] font-semibold text-zinc-900">{roleLabel} Freezer</h1>
+              <p className="text-[13px] text-zinc-500 mt-0.5">{tabItems.length} items</p>
+            </div>
+          </div>
+
+          <div className="flex gap-1.5 rounded-xl bg-zinc-100 p-1">
+            {(role === "baker" ? bakerTabs : pastryTabs).map(t => (
+              <button key={t.key} onClick={() => setFreezerDetailTab(t.key)} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerDetailTab === t.key ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>{t.label}</button>
+            ))}
+          </div>
+
+          <div className="relative max-w-[280px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
+            <input value={freezerDetailSearch} onChange={e => setFreezerDetailSearch(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+          </div>
+
+          <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-zinc-50 border-b border-zinc-100">
+                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                    <th className="px-5 py-3">Product</th>
+                    <th className="px-5 py-3 text-right">Qty</th>
+                    {freezerDetailTab !== "my-inventory" && <th className="px-5 py-3">Batch</th>}
+                    <th className="px-5 py-3">{freezerDetailTab === "my-inventory" ? "Category" : "Date"}</th>
+                    <th className="px-5 py-3">Section</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50">
+                  {filtered.length === 0 ? (
+                    <tr><td colSpan={freezerDetailTab === "my-inventory" ? 5 : 6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No items in this section.</td></tr>
+                  ) : freezerDetailTab === "baked-products" ? [...grouped.entries()].map(([productName, g]) => (
+                    <tr key={productName} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{productName}</div></td>
+                      <td className="px-5 py-3.5 text-[13px] text-right font-mono">{g.totalQty} pcs</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-600">{g.items.length} batch{g.items.length > 1 ? "es" : ""}</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{g.items[0]?.dateProduced || "—"}</td>
+                      <td className="px-5 py-3.5"><span className="rounded-full bg-stone-100 text-stone-700 px-2 py-0.5 text-[10px] font-medium">{roleLabel}</span></td>
+                      <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                    </tr>
+                  )) : freezerDetailTab === "deco-production-recipe" ? [...grouped.entries()].map(([productName, g]) => (
+                    <tr key={productName} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <div className="text-[13px] font-medium text-zinc-900">{productName}</div>
+                        <div className="text-[11px] text-zinc-400 mt-0.5 flex flex-wrap gap-1.5">
+                          {(() => {
+                            const bySource = new Map<string, { label: string; total: number }>();
+                            g.items.forEach(f => {
+                              const key = f.notes === "Production Recipe (Assembled)" ? "assembled" : "deco";
+                              if (!bySource.has(key)) bySource.set(key, { label: key === "assembled" ? "Assembled" : "Deco PR", total: 0 });
+                              bySource.get(key)!.total += f.qty;
+                            });
+                            return [...bySource.entries()].map(([key, s]) => (
+                              <span key={key} className="inline-flex items-center gap-1">
+                                <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${key === "assembled" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>{s.label}</span>
+                                <span className="font-mono text-zinc-500">{s.total} pcs</span>
+                              </span>
+                            ));
+                          })()}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 text-[13px] text-right font-mono">{g.totalQty} pcs</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{g.items.map(f => f.batchRef).filter(Boolean).join(", ")}</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{g.items.map(f => f.dateProduced).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</td>
+                      <td className="px-5 py-3.5"><span className="rounded-full bg-rose-100 text-rose-700 px-2 py-0.5 text-[10px] font-medium">Deco</span></td>
+                      <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                    </tr>
+                  )) : (filtered as unknown as InventoryItem[]).map(inv => (
+                    <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{inv.name}</div></td>
+                      <td className="px-5 py-3.5 text-[13px] text-right font-mono">{inv.onHand} {inv.unit}</td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{inv.category === "Filling" ? "Filling" : inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
+                      <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category === "Filling" ? "Filling" : inv.group}</span></td>
+                      <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="space-y-6">
@@ -1725,11 +1962,11 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           <h2 className="text-[16px] font-semibold text-zinc-900 mb-3">Freezer Status</h2>
           <div className="grid gap-4 lg:grid-cols-3">
             {[
-              { items: bakerFreezer, label: "Baker Freezer", accent: "bg-stone-500", icon: "🍞", emptyMsg: "No items in baker freezer" },
-              { items: pastryFreezer, label: "Pastry Freezer", accent: "bg-amber-500", icon: "🧁", emptyMsg: "No items in pastry freezer" },
-              { items: decoFreezer, label: "Deco Freezer", accent: "bg-rose-500", icon: "🎂", emptyMsg: "No items in deco freezer" },
-            ].map(({ items, label, accent, icon, emptyMsg }) => (
-              <div key={label} className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+              { items: bakerFreezer, label: "Baker Freezer", role: "baker" as const, accent: "bg-stone-500", icon: "🍞", emptyMsg: "No items in baker freezer" },
+              { items: pastryFreezer, label: "Pastry Freezer", role: "pastry" as const, accent: "bg-amber-500", icon: "🧁", emptyMsg: "No items in pastry freezer" },
+              { items: decoFreezer, label: "Deco Freezer", role: "deco" as const, accent: "bg-rose-500", icon: "🎂", emptyMsg: "No items in deco freezer" },
+            ].map(({ items, label, role, accent, icon, emptyMsg }) => (
+              <button key={label} type="button" onClick={() => { setFreezerDetailView(role); setFreezerDetailTab("baked-products"); setFreezerDetailSearch(""); }} className="w-full text-left rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden hover:shadow-md hover:border-zinc-300 transition-all cursor-pointer">
                 <div className={`h-1 ${accent}`} />
                 <div className="px-4 pt-3 pb-2">
                   <div className="flex items-center justify-between">
@@ -1744,8 +1981,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   <p className="text-[12px] text-zinc-400 text-center py-6 px-4">{emptyMsg}</p>
                 ) : (
                   <div className="divide-y divide-zinc-100 border-t border-zinc-100 max-h-[200px] overflow-y-auto">
-                    {items.map(item => (
-                      <div key={item.id} className="flex items-center justify-between px-4 py-2 hover:bg-zinc-50 transition-colors">
+                    {items.slice(0, 5).map(item => (
+                      <div key={item.id} className="flex items-center justify-between px-4 py-2">
                         <div className="min-w-0">
                           <div className="text-[12px] font-medium text-zinc-900 truncate">{item.productName}</div>
                           <div className="text-[10px] text-zinc-500">{item.batchRef}</div>
@@ -1755,7 +1992,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                     ))}
                   </div>
                 )}
-              </div>
+                <div className="border-t border-zinc-100 px-4 py-2 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 text-center">Click to view full details →</div>
+              </button>
             ))}
           </div>
         </div>
@@ -3657,9 +3895,8 @@ dosItems.forEach(d => rows.push([d.id, d.product, String(d.qty), d.priority, d.s
                   const roles = relatedTasks.length > 0 ? [...new Set(relatedTasks.map(t => t.assignedTo))] : (item.roles || []);
                   return (
                     <div key={item.id} className="grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-zinc-800/40 transition-colors">
-                      <div className="col-span-4"><div className="text-[13px] font-medium text-white truncate">{item.product}</div><div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></div>
+                      <div className="col-span-4"><div className="text-[13px] font-medium text-white truncate">{item.product}</div>{(item.flavor || item.size || item.themeOccasion) ? <div className="flex flex-wrap items-center gap-1.5 mt-1">{item.flavor ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{item.flavor}</span> : null}{item.size ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{item.size}</span> : null}{item.themeOccasion ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">🎨 {item.themeOccasion}</span> : null}</div> : null}<div className="text-[11px] text-zinc-500 mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></div>
                       <div className="col-span-2 text-right text-[13px] font-medium text-white font-mono">{item.qty}</div>
-                      
                       
                       <div className="col-span-2 flex justify-center gap-1 flex-wrap">{roles.map(r => <span key={r} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${r === "baker" ? "bg-stone-800 text-stone-300" : r === "deco" ? "bg-rose-900/40 text-rose-300" : r === "pastry" ? "bg-amber-900/40 text-amber-300" : "bg-sky-900/40 text-sky-300"}`}>{r === "baker" ? "Baker" : r === "deco" ? "Deco" : r === "pastry" ? "Pastry" : "Kitchen"}</span>)}{roles.length === 0 && <span className="text-[11px] text-zinc-600">—</span>}</div>
                       <div className="col-span-2 text-right"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-950 text-red-400 border border-red-900/50" : item.priority === "MEDIUM" ? "bg-amber-950 text-amber-400 border border-amber-900/50" : "bg-zinc-800 text-zinc-400"}`}>{item.priority === "HIGH" ? "H" : item.priority === "MEDIUM" ? "M" : "L"}</span></div>
@@ -4221,37 +4458,39 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
 }
 
 function EditDOSModal({ item, onClose, onSave }: { item: DOSItem; onClose: () => void; onSave: (item: DOSItem) => void }) {
+  const uploadRef = useRef<HTMLInputElement>(null);
   const [product, setProduct] = useState(item.product); 
   const [qty, setQty] = useState(item.qty);
   const [priority, setPriority] = useState(item.priority);
   const [scheduledDate, setScheduledDate] = useState(item.scheduledDate || "");
   const [selectedRoles, setSelectedRoles] = useState<Set<"baker" | "pastry" | "deco">>(new Set(item.roles || []));
-  
-  // Debug effect to log roles on modal open
-  useEffect(() => {
-    console.log("EditDOSModal: Initializing with roles:", item.roles);
-  }, [item.roles]);
+  const [flavor, setFlavor] = useState(item.flavor || "");
+  const [size, setSize] = useState(item.size || "");
+  const [themeOccasion, setThemeOccasion] = useState(item.themeOccasion || "");
+  const [colorScheme, setColorScheme] = useState(item.colorScheme || "");
+  const [cakeDesignNotes, setCakeDesignNotes] = useState(item.cakeDesignNotes || "");
+  const [topper, setTopper] = useState(item.topper || "");
+  const [referenceImage, setReferenceImage] = useState(item.referenceImage || "");
+  const [messageCaption, setMessageCaption] = useState(item.messageCaption || "");
+  const [showCustomization, setShowCustomization] = useState(!!(item.themeOccasion || item.colorScheme || item.cakeDesignNotes || item.topper || item.referenceImage || item.messageCaption));
+
+  const FLAVORS = ["", "Chocolate", "Vanilla", "Red Velvet", "Ube", "Mocha", "Carrot", "Lemon", "Strawberry", "Cookies & Cream", "Salted Caramel", "Banana", "Blueberry", "Coffee"];
+  const SIZES = ["", "6x1", "6x2", "6x3", "8x1", "8x2", "8x3", "10x1", "10x2", "10x3", "12x1", "12x2", "14x1", "14x2", "16x1", "Sheet"];
+  const THEMES = ["", "Baptism Cake", "Birthday Cake", "Wedding Cake", "Anniversary Cake", "Graduation Cake", "Christmas Cake", "Easter Cake", "Valentine Cake", "Halloween Cake", "Baby Shower Cake", "Christening Cake", "First Communion Cake", "Corporate Event Cake", "Custom Design"];
 
   const isScheduled = item.status === "scheduled";
   const handleSubmit = (e: React.FormEvent) => { 
     e.preventDefault(); 
     const rolesArray = Array.from(selectedRoles);
-    console.log("EditDOSModal: Submitting. Roles:", rolesArray);
-    onSave({ ...item, product, qty, priority, scheduledDate: isScheduled ? scheduledDate : undefined, roles: rolesArray }); 
+    onSave({ ...item, product, qty, priority, scheduledDate: isScheduled ? scheduledDate : undefined, roles: rolesArray, flavor: flavor || undefined, size: size || undefined, themeOccasion: themeOccasion || undefined, colorScheme: colorScheme || undefined, cakeDesignNotes: cakeDesignNotes || undefined, topper: topper || undefined, referenceImage: referenceImage || undefined, messageCaption: messageCaption || undefined }); 
     onClose(); 
   };
 
   const toggleRole = (role: "baker" | "pastry" | "deco") => {
-    console.log("Toggling role:", role);
     setSelectedRoles(prev => {
       const next = new Set(prev);
-      if (next.has(role)) {
-        console.log("Removing role:", role);
-        next.delete(role);
-      } else {
-        console.log("Adding role:", role);
-        next.add(role);
-      }
+      if (next.has(role)) next.delete(role);
+      else next.add(role);
       return next;
     });
   };
@@ -4282,12 +4521,60 @@ function EditDOSModal({ item, onClose, onSave }: { item: DOSItem; onClose: () =>
           </div>
           <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Product Name</label><input required value={product} onChange={e => setProduct(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" /></div>
           <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Flavor</label><select value={flavor} onChange={e => setFlavor(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">{FLAVORS.map(f => <option key={f} value={f}>{f || "—"}</option>)}</select></div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Size</label><select value={size} onChange={e => setSize(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">{SIZES.map(s => <option key={s} value={s}>{s || "—"}</option>)}</select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Total</label><input type="number" value={qty} onChange={e => setQty(Number(e.target.value))} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} /></div>
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Priority</label><select value={priority} onChange={e => setPriority(e.target.value as typeof priority)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400"><option value="HIGH">HIGH</option><option value="MEDIUM">MEDIUM</option><option value="LOW">LOW</option></select></div>
           </div>
           {isScheduled && (
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Schedule Date</label><input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" /></div>
           )}
+          <div className="border-t border-zinc-100 pt-3 mt-3">
+            <button type="button" onClick={() => setShowCustomization(!showCustomization)} className={`flex items-center gap-1.5 text-[12px] font-medium transition-all ${showCustomization ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'}`}>
+              {showCustomization ? "▲" : "🎨"} Customization {showCustomization ? '' : <span className="text-zinc-400 font-normal">(optional)</span>}
+            </button>
+            {showCustomization && (
+              <div className="mt-3 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🎨 Theme / Occasion</label>
+                    <select value={themeOccasion} onChange={e => setThemeOccasion(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">{THEMES.map(t => <option key={t} value={t}>{t || "Select theme…"}</option>)}</select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🎨 Color Scheme</label>
+                    <input value={colorScheme} onChange={e => setColorScheme(e.target.value)} placeholder="e.g. White, Sky Blue (as reference image)" className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🎂 Cake Design Notes</label>
+                  <textarea value={cakeDesignNotes} onChange={e => setCakeDesignNotes(e.target.value)} placeholder="e.g. Please copy same design from reference image" rows={2} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300 resize-none" />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🧁 Topper</label>
+                    <input value={topper} onChange={e => setTopper(e.target.value)} placeholder="e.g. Baptism Topper (cross / baby theme)" className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                  </div>
+                    <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🖼️ Reference Image</label>
+                    <div className="mt-1 flex items-center gap-2">
+                      <input ref={uploadRef} type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { const url = await db.uploadReferenceImage(f, `edit-${item.id}`); setReferenceImage(url); } catch (err) { console.error("Upload failed", err); } if (e.target) e.target.value = ""; }} className="hidden" />
+                      <button type="button" onClick={() => uploadRef.current?.click()} className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300 transition-all">📁 Choose Image</button>
+                      {referenceImage && (
+                        <><a href={referenceImage} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-600 underline underline-offset-2 hover:text-blue-800">Preview</a>
+                        <button type="button" onClick={() => setReferenceImage("")} className="text-[11px] text-red-500 hover:text-red-700">✕</button></>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">✍️ Message / Caption <span className="font-normal text-zinc-400">(optional)</span></label>
+                    <input value={messageCaption} onChange={e => setMessageCaption(e.target.value)} placeholder='e.g. "Welcome Baby Liam"' className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="flex gap-2 pt-1"><button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button><button type="submit" className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">Save Changes</button></div>
         </form>
       </div>

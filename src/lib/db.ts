@@ -5,14 +5,14 @@ import type {
   StockTransaction, DeliveryValidation, VerificationResult,
   BranchBatch, DeliveryReport, KitchenFeedback, DecoSubTask, DecoQCResult,
   ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog,
-  PromoPackage, ProductionPlan, BufferStockEntry,
+  PromoPackage, ProductionPlan,
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
-  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduledDate: d.scheduled_date || undefined, roles: d.roles || undefined };
+  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduledDate: d.scheduled_date || undefined, roles: d.roles || undefined, flavor: d.flavor || undefined, size: d.size || undefined, themeOccasion: d.theme_occasion || undefined, colorScheme: d.color_scheme || undefined, cakeDesignNotes: d.cake_design_notes || undefined, topper: d.topper || undefined, referenceImage: d.reference_image || undefined, messageCaption: d.message_caption || undefined };
 }
 function toDOSRow(d: DOSItem) {
-  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduled_date: d.scheduledDate || null, roles: d.roles ?? [] };
+  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduled_date: d.scheduledDate || null, roles: d.roles ?? [], flavor: d.flavor || null, size: d.size || null, theme_occasion: d.themeOccasion || null, color_scheme: d.colorScheme || null, cake_design_notes: d.cakeDesignNotes || null, topper: d.topper || null, reference_image: d.referenceImage || null, message_caption: d.messageCaption || null };
 }
 
 function parseProduction(p: any): ProductionTask {
@@ -150,6 +150,14 @@ export async function updateDOS(id: string, updates: Partial<DOSItem>) {
   if ("priority" in updates) row.priority = updates.priority;
   if ("scheduledDate" in updates) row.scheduled_date = updates.scheduledDate || null;
   if ("roles" in updates) row.roles = updates.roles ?? [];
+  if ("flavor" in updates) row.flavor = updates.flavor || null;
+  if ("size" in updates) row.size = updates.size || null;
+  if ("themeOccasion" in updates) row.theme_occasion = updates.themeOccasion || null;
+  if ("colorScheme" in updates) row.color_scheme = updates.colorScheme || null;
+  if ("cakeDesignNotes" in updates) row.cake_design_notes = updates.cakeDesignNotes || null;
+  if ("topper" in updates) row.topper = updates.topper || null;
+  if ("referenceImage" in updates) row.reference_image = updates.referenceImage || null;
+  if ("messageCaption" in updates) row.message_caption = updates.messageCaption || null;
   const { error } = await supabase.from("dos_items").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -257,7 +265,7 @@ export async function saveDecoProductionPrep(items: { dosId: string; productName
   if (error) throw error;
 }
 
-// ─── Decoration Queue ───
+// ─── Cake Productions (Deco Queue) ───
 export type DecoQueueRow = {
   id: string;
   product: string;
@@ -265,7 +273,7 @@ export type DecoQueueRow = {
   theme: string;
   status: "pending" | "in-progress" | "completed";
   notes: string;
-  freezerItemId?: string;
+  sourceInventoryId?: string;
   sourceQty?: number;
   sourceBatchRef?: string;
   sourceProducedBy?: string;
@@ -283,7 +291,7 @@ export async function fetchDecorationQueue(): Promise<DecoQueueRow[]> {
     theme: d.theme ?? "Standard",
     status: d.status ?? "pending",
     notes: d.notes ?? "",
-    freezerItemId: d.freezer_item_id || undefined,
+    sourceInventoryId: d.freezer_item_id || undefined,
     sourceQty: d.source_qty ?? undefined,
     sourceBatchRef: d.source_batch_ref || undefined,
     sourceProducedBy: d.source_produced_by || undefined,
@@ -300,7 +308,7 @@ export async function upsertDecorationQueueTask(task: DecoQueueRow) {
     theme: task.theme,
     status: task.status,
     notes: task.notes,
-    freezer_item_id: task.freezerItemId ?? null,
+    freezer_item_id: task.sourceInventoryId ?? null,
     source_qty: task.sourceQty ?? null,
     source_batch_ref: task.sourceBatchRef ?? null,
     source_produced_by: task.sourceProducedBy ?? null,
@@ -313,6 +321,11 @@ export async function upsertDecorationQueueTask(task: DecoQueueRow) {
 export async function deleteDecorationQueueTask(id: string) {
   const { error } = await supabase.from("decoration_queue").delete().eq("id", id);
   if (error) throw error;
+}
+
+export function subscribeDecorationQueue(onChange: () => void) {
+  const channel = supabase.channel("decoration-queue-realtime").on("postgres_changes", { event: "*", schema: "public", table: "decoration_queue" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
 }
 
 // ─── Audit Logs ───
@@ -1179,8 +1192,6 @@ function parseProductionPlan(d: any): ProductionPlan {
     recipeDemands: d.recipe_demands ?? [],
     batchCalculations: d.batch_calculations ?? [],
     outputAllocations: d.output_allocations ?? [],
-    bufferStockCreated: d.buffer_stock_created ?? [],
-    bufferStockUsed: d.buffer_stock_used ?? [],
     status: d.status,
     createdBy: d.created_by ?? "",
     createdAt: d.created_at ?? "",
@@ -1196,8 +1207,6 @@ function toProductionPlanRow(p: ProductionPlan) {
     recipe_demands: p.recipeDemands,
     batch_calculations: p.batchCalculations,
     output_allocations: p.outputAllocations,
-    buffer_stock_created: p.bufferStockCreated,
-    buffer_stock_used: p.bufferStockUsed,
     status: p.status,
     created_by: p.createdBy,
     confirmed_at: p.confirmedAt || null,
@@ -1226,55 +1235,12 @@ export async function deleteProductionPlan(id: string) {
   if (error) throw error;
 }
 
-// ─── Buffer Stock ───
-function parseBufferStock(d: any): BufferStockEntry {
-  return {
-    id: d.id,
-    recipeName: d.recipe_name,
-    productName: d.product_name || undefined,
-    qty: d.qty,
-    unit: d.unit,
-    source: d.source,
-    batchRef: d.batch_ref || undefined,
-    dateCreated: d.date_created,
-    status: d.status,
-    usedIn: d.used_in || undefined,
-  };
-}
 
-function toBufferStockRow(b: BufferStockEntry) {
-  return {
-    id: b.id,
-    recipe_name: b.recipeName,
-    product_name: b.productName ?? null,
-    qty: b.qty,
-    unit: b.unit,
-    source: b.source,
-    batch_ref: b.batchRef ?? null,
-    date_created: b.dateCreated,
-    status: b.status,
-    used_in: b.usedIn ?? null,
-  };
-}
-
-export async function fetchBufferStock(): Promise<BufferStockEntry[]> {
-  const { data, error } = await supabase.from("buffer_stock").select("*").order("created_at", { ascending: false });
+export async function uploadReferenceImage(file: File, dosItemId: string): Promise<string> {
+  const ext = file.name.split(".").pop() || "png";
+  const path = `${dosItemId}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("reference-images").upload(path, file, { upsert: true });
   if (error) throw error;
-  return (data ?? []).map(parseBufferStock);
-}
-
-export async function fetchAvailableBufferStock(): Promise<BufferStockEntry[]> {
-  const { data, error } = await supabase.from("buffer_stock").select("*").eq("status", "available").gt("qty", 0);
-  if (error) throw error;
-  return (data ?? []).map(parseBufferStock);
-}
-
-export async function upsertBufferStock(items: BufferStockEntry[]) {
-  const { error } = await supabase.from("buffer_stock").upsert(items.map(toBufferStockRow), { onConflict: "id" });
-  if (error) throw error;
-}
-
-export async function deleteBufferStockItem(id: string) {
-  const { error } = await supabase.from("buffer_stock").delete().eq("id", id);
-  if (error) throw error;
+  const { data } = supabase.storage.from("reference-images").getPublicUrl(path);
+  return data.publicUrl;
 }

@@ -1,12 +1,8 @@
 import type {
-  DOSItem, ProductRecipe, InventoryItem, BufferStockEntry,
+  DOSItem, ProductRecipe, InventoryItem,
   RecipeDemand, BatchCalculation, OutputAllocation, ProductionPlan,
 } from "../types";
 
-/**
- * Step 1: Aggregate DOS items by recipe.
- * Groups multiple products that share the same recipe and sums their demand.
- */
 export function aggregateRecipeDemand(
   dosItems: DOSItem[],
   recipes: ProductRecipe[]
@@ -16,12 +12,10 @@ export function aggregateRecipeDemand(
   dosItems.forEach(dos => {
     const directRecipe = recipes.find(r => r.productName === dos.product);
 
-    // Collect all recipes for this DOS item: direct + linked
     const allRecipes: ProductRecipe[] = [];
     if (directRecipe && directRecipe.ingredients.length > 0) {
       allRecipes.push(directRecipe);
     }
-    // Follow linked recipes
     (directRecipe?.linkedIngredients ?? [])
       .map(name => recipes.find(r => r.productName === name))
       .filter((r): r is ProductRecipe => r !== undefined && r.productName !== dos.product)
@@ -56,30 +50,12 @@ export function aggregateRecipeDemand(
   return Array.from(demandMap.values());
 }
 
-/**
- * Check existing buffer stock for a recipe and return the available amount.
- */
-export function getAvailableBuffer(
-  recipeName: string,
-  bufferStock: BufferStockEntry[]
-): number {
-  return bufferStock
-    .filter(b => b.recipeName === recipeName && b.status === "available" && b.qty > 0)
-    .reduce((sum, b) => sum + b.qty, 0);
-}
-
-/**
- * Step 2: Calculate batches needed for a recipe demand, considering buffer stock.
- * Applies yield logic: ceil(netDemand / yield) = batches
- */
 export function calculateBatches(
   demand: RecipeDemand,
   recipe: ProductRecipe,
   inventory: InventoryItem[],
-  existingBuffer: BufferStockEntry[]
 ): BatchCalculation {
-  const bufferAvailable = getAvailableBuffer(demand.recipeName, existingBuffer);
-  const netDemand = Math.max(0, demand.totalDemand - bufferAvailable);
+  const netDemand = demand.totalDemand;
   const yieldPerBatch = demand.recipeYield || 1;
   const batchesNeeded = netDemand > 0 ? Math.ceil(netDemand / yieldPerBatch) : 0;
   const expectedOutput = batchesNeeded * yieldPerBatch;
@@ -96,7 +72,6 @@ export function calculateBatches(
     recipeYield: yieldPerBatch,
     batchesNeeded,
     expectedOutput,
-    bufferFromPrevious: bufferAvailable,
     netDemand,
     requiredIngredients: scaleIngredients(recipe.ingredients),
     requiredPackaging: scaleIngredients(recipe.packagingMaterials ?? []),
@@ -104,10 +79,6 @@ export function calculateBatches(
   };
 }
 
-/**
- * Step 3: Allocate produced output back to individual products.
- * Any excess becomes buffer stock.
- */
 export function allocateOutput(
   batch: BatchCalculation,
   demands: RecipeDemand["demandedBy"]
@@ -115,7 +86,6 @@ export function allocateOutput(
   let remaining = batch.expectedOutput;
   const allocations: OutputAllocation["allocations"] = [];
 
-  // Sort demands: fulfill smallest first to maximize distribution
   const sorted = [...demands].sort((a, b) => a.qty - b.qty);
 
   sorted.forEach((d, i) => {
@@ -133,73 +103,20 @@ export function allocateOutput(
     recipeName: batch.recipeName,
     producedQty: batch.expectedOutput,
     allocations,
-    bufferStock: remaining,
   };
 }
 
-/**
- * Create buffer stock entries from output allocation excess.
- */
-export function createBufferStockEntries(
-  allocation: OutputAllocation,
-  batchRef: string,
-  date: string
-): BufferStockEntry[] {
-  if (allocation.bufferStock <= 0) return [];
-
-  return [
-    {
-      id: `BUF-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      recipeName: allocation.recipeName,
-      qty: allocation.bufferStock,
-      unit: "pcs",
-      source: "production-plan",
-      batchRef,
-      dateCreated: date,
-      status: "available" as const,
-    },
-  ];
-}
-
-/**
- * Consume buffer stock for a recipe (marks as used).
- */
-export function consumeBufferStock(
-  recipeName: string,
-  qtyToConsume: number,
-  bufferStock: BufferStockEntry[],
-  usedIn: string
-): { updated: BufferStockEntry[]; consumed: number } {
-  let remaining = qtyToConsume;
-  const updated = bufferStock.map(b => {
-    if (remaining <= 0 || b.recipeName !== recipeName || b.status !== "available" || b.qty <= 0) return b;
-    const take = Math.min(b.qty, remaining);
-    remaining -= take;
-    return {
-      ...b,
-      qty: b.qty - take,
-      status: b.qty - take <= 0 ? "used" as const : "available" as const,
-      usedIn: usedIn || b.usedIn,
-    };
-  });
-  return { updated, consumed: qtyToConsume - remaining };
-}
-
-/**
- * Build a complete ProductionPlan from DOS items.
- */
 export function buildProductionPlan(
   dosItems: DOSItem[],
   recipes: ProductRecipe[],
   inventory: InventoryItem[],
-  existingBuffer: BufferStockEntry[],
   createdBy: string
 ): Omit<ProductionPlan, "id" | "createdAt"> {
   const recipeDemands = aggregateRecipeDemand(dosItems, recipes);
 
   const batchCalculations = recipeDemands.map(demand => {
     const recipe = recipes.find(r => r.productName === demand.recipeName)!;
-    return calculateBatches(demand, recipe, inventory, existingBuffer);
+    return calculateBatches(demand, recipe, inventory);
   });
 
   const outputAllocations = batchCalculations.map((batch, i) =>
@@ -207,11 +124,6 @@ export function buildProductionPlan(
   );
 
   const date = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-  const batchRef = `PP-${Date.now()}`;
-
-  const bufferStockCreated = outputAllocations.flatMap(a =>
-    createBufferStockEntries(a, batchRef, date)
-  );
 
   return {
     date,
@@ -219,16 +131,11 @@ export function buildProductionPlan(
     recipeDemands,
     batchCalculations,
     outputAllocations,
-    bufferStockCreated,
-    bufferStockUsed: [],
     status: "draft",
     createdBy,
   };
 }
 
-/**
- * Sum total ingredients needed across all batch calculations.
- */
 export function sumIngredients(batches: BatchCalculation[]) {
   const map = new Map<string, { name: string; totalQty: number; unit: string; inventoryId: string }>();
   batches.forEach(b => {
@@ -244,9 +151,6 @@ export function sumIngredients(batches: BatchCalculation[]) {
   return Array.from(map.values());
 }
 
-/**
- * Sum total packaging needed across all batch calculations.
- */
 export function sumPackaging(batches: BatchCalculation[]) {
   const map = new Map<string, { name: string; totalQty: number; unit: string; inventoryId: string }>();
   batches.forEach(b => {
@@ -262,9 +166,6 @@ export function sumPackaging(batches: BatchCalculation[]) {
   return Array.from(map.values());
 }
 
-/**
- * Sum total decoration supplies needed across all batch calculations.
- */
 export function sumDecoSupplies(batches: BatchCalculation[]) {
   const map = new Map<string, { name: string; totalQty: number; unit: string; inventoryId: string }>();
   batches.forEach(b => {

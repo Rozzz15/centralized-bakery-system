@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from "react";
-import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog, BufferStockEntry } from "../types";
+import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog } from "../types";
 import * as db from "../lib/db";
 import type { AdditionalIngredient } from "../lib/db";
-import { aggregateRecipeDemand, calculateBatches, allocateOutput, createBufferStockEntries, getAvailableBuffer, sumIngredients, sumPackaging, sumDecoSupplies } from "../utils/production-calculation";
+import { aggregateRecipeDemand, calculateBatches, allocateOutput, sumIngredients, sumPackaging, sumDecoSupplies } from "../utils/production-calculation";
 
 type DecoProductionPrep = { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean; additionalIngredients: AdditionalIngredient[] };
 
@@ -22,7 +22,7 @@ type DecoTask = {
   theme: string;
   status: "pending" | "in-progress" | "completed";
   notes: string;
-  freezerItemId?: string;
+  sourceInventoryId?: string;
   sourceQty?: number;
   sourceBatchRef?: string;
   sourceProducedBy?: string;
@@ -236,8 +236,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [newBatch, setNewBatch] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [freezerSearch, setFreezerSearch] = useState("");
-  const [freezerTab, setFreezerTab] = useState<"Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory" | "Buffer Stock">("Display Cakes");
-  const [bufferStockItems, setBufferStockItems] = useState<BufferStockEntry[]>([]);
+  const [freezerTab, setFreezerTab] = useState<"Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory">("Display Cakes");
 
   const [customOrders, setCustomOrders] = useState<CustomOrder[]>([
     { id: "CO-001", customer: "Anna Santos", product: "Chocolate Cake", request: "Pink ribbon + gold topper + #21 candle", status: "pending", createdAt: "May 28, 10:30 AM" },
@@ -247,7 +246,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   const [decoQueue, setDecoQueue] = useState<DecoTask[]>([]);
 
-  // Load decoration queue from Supabase on mount
+  // Load decoration queue from Supabase on mount with real-time subscription
   useEffect(() => {
     db.fetchDecorationQueue().then(rows => {
       setDecoQueue(rows.map(r => ({
@@ -257,7 +256,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         theme: r.theme,
         status: r.status,
         notes: r.notes,
-        freezerItemId: r.freezerItemId,
+        sourceInventoryId: r.sourceInventoryId,
         sourceQty: r.sourceQty,
         sourceBatchRef: r.sourceBatchRef,
         sourceProducedBy: r.sourceProducedBy,
@@ -265,9 +264,28 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         createdAt: r.createdAt,
       })));
     }).catch(console.error);
+    const unsub = db.subscribeDecorationQueue(() => {
+      db.fetchDecorationQueue().then(rows => {
+        setDecoQueue(rows.map(r => ({
+          id: r.id,
+          product: r.product,
+          orderRef: r.orderRef,
+          theme: r.theme,
+          status: r.status,
+          notes: r.notes,
+          sourceInventoryId: r.sourceInventoryId,
+          sourceQty: r.sourceQty,
+          sourceBatchRef: r.sourceBatchRef,
+          sourceProducedBy: r.sourceProducedBy,
+          sourceSnapshot: r.sourceSnapshot,
+          createdAt: r.createdAt,
+        })));
+      }).catch(console.error);
+    });
+    return unsub;
   }, []);
 
-  const [designModal, setDesignModal] = useState<{ product: string; inventoryId: string; qty: number } | null>(null);
+  const [designModal, setDesignModal] = useState<{ product: string; inventoryId: string; qty: number; theme?: string; notes?: string; colorScheme?: string; designNotes?: string; topper?: string; referenceImage?: string; messageCaption?: string } | null>(null);
   const [designTheme, setDesignTheme] = useState("");
   const [designNotes, setDesignNotes] = useState("");
   const [designQty, setDesignQty] = useState(1);
@@ -300,20 +318,11 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   };
 
   // Production Plan state
-  const [planBufferStock, setPlanBufferStock] = useState<BufferStockEntry[]>([]);
   const [planDraft, setPlanDraft] = useState<{
     demands: RecipeDemand[];
     batches: BatchCalculation[];
     allocations: OutputAllocation[];
-    bufferCreated: BufferStockEntry[];
   } | null>(null);
-  const [confirmingPlan, setConfirmingPlan] = useState(false);
-
-
-  // Load buffer stock on mount
-  useEffect(() => {
-    db.fetchAvailableBufferStock().then(setPlanBufferStock).catch(console.error);
-  }, []);
 
   // Build production plan draft when DOS items or recipes change
   useEffect(() => {
@@ -329,14 +338,11 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     const demands = aggregateRecipeDemand(todayDOSForPlan, recipes);
     const batches = demands.map(d => {
       const recipe = recipes.find(r => r.productName === d.recipeName)!;
-      return calculateBatches(d, recipe, inventory, planBufferStock);
+      return calculateBatches(d, recipe, inventory);
     });
     const allocations = batches.map((b, i) => allocateOutput(b, demands[i].demandedBy));
-    const date = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-    const batchRef = `PP-${Date.now()}`;
-    const bufferCreated = allocations.flatMap(a => createBufferStockEntries(a, batchRef, date));
-    setPlanDraft({ demands, batches, allocations, bufferCreated });
-  }, [dosItems, recipes, inventory, planBufferStock]);
+    setPlanDraft({ demands, batches, allocations });
+  }, [dosItems, recipes, inventory]);
   const [wasteReason, setWasteReason] = useState("Spoilage");
 
   const [wasteSearch, setWasteSearch] = useState("");
@@ -351,11 +357,6 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Load buffer stock on mount
-  useEffect(() => {
-    db.fetchAvailableBufferStock().then(setBufferStockItems).catch(console.error);
   }, []);
 
   const allIngredients = inventory.filter(i => i.group === "ingredients" || i.group === "decoration-supplies" || i.group === "packaging-materials");
@@ -441,8 +442,8 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         db.upsertDecorationQueueTask({
           id: task.id, product: task.product, orderRef: task.orderRef,
           theme: task.theme, status: task.status, notes: task.notes,
-          freezerItemId: task.freezerItemId, sourceQty: task.sourceQty,
-          sourceBatchRef: task.sourceBatchRef, sourceProducedBy: undefined, createdAt: task.createdAt,
+          sourceInventoryId: task.sourceInventoryId, sourceQty: task.sourceQty,
+          sourceBatchRef: task.sourceBatchRef, sourceProducedBy: task.sourceProducedBy ?? undefined, createdAt: task.createdAt,
           sourceSnapshot: task.sourceSnapshot,
         }).catch(console.error);
 
@@ -528,7 +529,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const deleteDecoTask = (id: string) => {
     setDecoQueue(prev => {
       const task = prev.find(t => t.id === id);
-      if (task && task.freezerItemId && task.sourceQty && task.sourceQty > 0) {
+      if (task && task.sourceInventoryId && task.sourceQty && task.sourceQty > 0) {
         // StrictMode dedup
         const dedupKey = `delete-${id}`;
         if (isAlreadyProcessed(dedupKey)) {
@@ -544,7 +545,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
           const snap = task.sourceSnapshot;
           defer(() => onUpdateInventory(prevInv => {
             const existingDup = prevInv.find(i =>
-              i.id === task.freezerItemId
+              i.id === task.sourceInventoryId
               || (i.name.toLowerCase() === snap.name.toLowerCase() && i.group === snap.group && i.source === snap.source)
             );
             if (existingDup) {
@@ -558,7 +559,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
               return prevInv.map(i => i.id === existingDup.id ? restored : i);
             } else {
               // Source is genuinely gone — re-add with snapshot data
-              const restored: InventoryItem = { ...snap, id: task.freezerItemId! };
+              const restored: InventoryItem = { ...snap, id: task.sourceInventoryId! };
               db.upsertInventoryItem(restored).catch(err => {
                 console.error("Inventory re-add failed:", err);
               });
@@ -568,7 +569,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
           }));
         } else {
           // No snapshot (older task) — use the partial-use restore path
-          const sourceItem = inventory.find(i => i.id === task.freezerItemId);
+          const sourceItem = inventory.find(i => i.id === task.sourceInventoryId);
           if (sourceItem) {
 defer(() => onUpdateInventory(prevInv => {
               const existing = prevInv.find(i => i.id === sourceItem.id);
@@ -639,7 +640,7 @@ defer(() => onUpdateInventory(prevInv => {
     { id: "tasks-to-prepare", label: "Tasks to Prepare" },
     { id: "production-plan", label: "Production Plan" },
     { id: "advanced-premix", label: "Advanced Premix" },
-    { id: "deco-queue", label: "Decoration Queue" },
+    { id: "deco-queue", label: "Cake Productions" },
     { id: "freezer", label: "Finished Products" },
   ];
   const currentStepIdx = workflowSteps.findIndex(s => s.id === activeTab);
@@ -1389,7 +1390,7 @@ return (
     }
 
     // PREPARATION VIEW
-    const { dos, recipe, route, demandQty } = activePreparation;
+    const { dos, recipe, demandQty } = activePreparation;
     const prepDemandQty = demandQty ?? dos.qty;
     const linkedRecipesForPrep = (recipe.linkedIngredients ?? [])
       .map(name => recipes.find(r => r.productName === name))
@@ -1555,7 +1556,7 @@ return (
           .catch(err => console.error("[Deco] Failed to upsert inventory:", err));
       }
 
-      if (route === "baker") {
+      {
         const existingFreezer = freezerItems.find(
           i => i.productName === recipe.productName && i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.status === "stored"
         );
@@ -1606,31 +1607,6 @@ return (
         onAddAuditLog?.("TASK_COMPLETED", recipe.productName + " x" + output + " sent to Baker. Standard ingredients: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional ingredients: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
         const deductMsg = missedIngredients.length > 0 ? " Warning: " + missedIngredients.join(", ") + " not found in inventory." : "";
         showToast(dos.product + " x" + output + " sent to Baker. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg, missedIngredients.length > 0 ? "error" : "success");
-      } else {
-        const recipeName = recipe.productName;
-
-        // Save to My Inventory (using recipe name, not product name)
-        const existingItem = newInv.find(i => i.name === recipeName && i.accessRoles?.includes("deco") && i.source === "production-prep");
-        if (existingItem) {
-          const updated = { ...existingItem, onHand: existingItem.onHand + output, lastIn: new Date().toISOString() };
-          const idx = newInv.findIndex(i => i.id === existingItem.id);
-          newInv[idx] = updated;
-          db.upsertInventory([updated]).catch(console.error);
-        } else {
-          const newItem: InventoryItem = {
-            id: "INV-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
-            name: recipeName,
-            sku: "DECO-" + recipeName.substring(0, 8).toUpperCase() + "-" + Date.now(),
-            unit: "pcs", onHand: output, threshold: 0, cost: 0, supplier: "",
-            lastIn: new Date().toISOString(), category: "dry", group: "ingredients",
-            accessRoles: ["deco"] as Role[], source: "production-prep",
-          };
-          onUpdateInventory((prev) => [...prev, newItem]);
-          db.upsertInventory([newItem]).catch(console.error);
-        }
-        onAddAuditLog?.("TASK_COMPLETED", recipeName + " x" + output + " moved to Decoration Inventory. Standard ingredients: " + allIngredientsForPrep.map(i => i.name).join(", ") + ". Additional ingredients: " + (finalAddIngs.length > 0 ? finalAddIngs.map(i => i.name).join(", ") : "None"));
-        const deductMsg2 = missedIngredients.length > 0 ? " Warning: " + missedIngredients.join(", ") + " not found in inventory." : "";
-        showToast(recipeName + " x" + output + " moved to Decoration Inventory. " + deductedIngredients.length + " ingredient(s) deducted." + deductMsg2, missedIngredients.length > 0 ? "error" : "success");
       }
       // Update production task status for all DOS items sharing this recipe
       if (onUpdateProduction) {
@@ -1669,7 +1645,7 @@ return (
 
         <div>
           <h1 className="text-[24px] font-semibold text-white">{recipe.productName}</h1>
-          <p className="text-[13px] text-zinc-400 mt-1">Route: {route === "baker" ? "Bakery" : "Decoration"}</p>
+          <p className="text-[13px] text-zinc-400 mt-1">Route: Bakery</p>
         </div>
 
         <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
@@ -1848,7 +1824,7 @@ return (
         <div className="flex items-center justify-between pt-4 border-t border-zinc-700">
           <div className="text-[12px] text-zinc-500">Step 2 of 5</div>
           <button onClick={handleComplete} className="rounded-xl bg-emerald-600 px-6 py-2.5 text-[13px] font-medium text-white hover:bg-emerald-700 transition-all">
-            {route === "baker" ? "Save & Send to Baker" : "Move to Decoration Inventory"}
+            Save & Send to Baker
           </button>
         </div>
       </div>
@@ -2191,7 +2167,7 @@ return (
     );
   }
 
-  /* ── Decoration Queue ── */
+  /* ── Cake Productions ── */
   if (activeTab === "deco-queue") {
     const prepInventory = inventory.filter(i => i.source === "production-prep" && (!i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco")));
     const activeDesignItem = selectedDesignId ? inventory.find(i => i.id === selectedDesignId) ?? null : null;
@@ -2290,7 +2266,7 @@ return (
         );
       }
 
-      // Full card (Active Decoration Queue)
+      // Full card (Active Cake Productions)
       return (
         <div key={task.id} className={`rounded-2xl border p-5 ${isCompleted ? "border-emerald-200 bg-emerald-50/30" : "border-zinc-200 bg-white"}`}>
           <div className="flex items-center justify-between mb-2">
@@ -2362,8 +2338,16 @@ return (
       setDesignModal({ product, inventoryId, qty });
       setDesignTheme("");
       setDesignNotes("");
-      // Default designQty to the source on-hand qty (capped at qty, floor of 1)
       setDesignQty(Math.max(1, qty));
+    };
+
+    const openDesignFromDOS = (dos: DOSItem) => {
+      const inv = inventory.find(i => i.name === dos.product && i.source === "production-prep");
+      if (!inv) { alert(`No "${dos.product}" available in My Inventory. Complete Tasks to Prepare first.`); return; }
+      setDesignModal({ product: dos.product, inventoryId: inv.id, qty: inv.onHand, theme: dos.themeOccasion, notes: dos.cakeDesignNotes, colorScheme: dos.colorScheme, topper: dos.topper, referenceImage: dos.referenceImage, messageCaption: dos.messageCaption });
+      setDesignTheme(dos.themeOccasion || "");
+      setDesignNotes(dos.cakeDesignNotes || "");
+      setDesignQty(Math.max(1, dos.qty));
     };
 
     const confirmDesign = () => {
@@ -2378,13 +2362,13 @@ return (
       }
 
       const newTask: DecoTask = {
-        id: `DQ-${Date.now()}`,
+        id: `DQ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         product: designModal.product,
         orderRef: `INV-${designModal.inventoryId.slice(-6).toUpperCase()}`,
         theme: designTheme.trim() || "Custom Design",
         status: "pending",
         notes: designNotes.trim() || "Designed from My Inventory",
-        freezerItemId: designModal.inventoryId,
+        sourceInventoryId: designModal.inventoryId,
         sourceQty: designQty,
         sourceSnapshot: { ...sourceItem },
         createdAt: new Date().toISOString(),
@@ -2395,7 +2379,7 @@ return (
       db.upsertDecorationQueueTask({
         id: newTask.id, product: newTask.product, orderRef: newTask.orderRef,
         theme: newTask.theme, status: newTask.status, notes: newTask.notes,
-        freezerItemId: newTask.freezerItemId, sourceQty: newTask.sourceQty,
+        sourceInventoryId: newTask.sourceInventoryId, sourceQty: newTask.sourceQty,
         sourceBatchRef: undefined, sourceProducedBy: undefined, createdAt: newTask.createdAt,
         sourceSnapshot: newTask.sourceSnapshot,
       }).catch(console.error);
@@ -2423,8 +2407,8 @@ return (
     return (
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
-          <h1 className="text-[28px] font-semibold tracking-tight">Decoration Queue</h1>
-          <p className="mt-1 text-[13px] text-zinc-500">Pick a product from My Inventory (Production Prep), design it, then add to the queue.</p>
+          <h1 className="text-[28px] font-semibold tracking-tight">Cake Productions</h1>
+          <p className="mt-1 text-[13px] text-zinc-500">Pick a product from My Inventory (Production Prep), design it, then start production.</p>
         </div>
 
         {/* Available from My Inventory — Production Prep group */}
@@ -2537,13 +2521,59 @@ return (
           )}
         </div>
 
-        {/* Active Decoration Queue */}
+        {/* DOS Items with Customization */}
+        {(() => {
+          const customDOS = dosForDeco.filter(d => d.themeOccasion || d.colorScheme || d.cakeDesignNotes || d.topper || d.referenceImage || d.messageCaption);
+          if (customDOS.length === 0) return null;
+          return (
+            <div className="mb-6">
+              <h2 className="text-[15px] font-semibold text-zinc-900 mb-3">🎨 Custom Orders from DOS</h2>
+              <div className="space-y-3">
+                {customDOS.map(dos => {
+                  const alreadyDesigned = decoQueue.some(t => t.product === dos.product && t.status !== "completed");
+                  return (
+                    <div key={dos.id} className={`rounded-2xl border p-4 ${alreadyDesigned ? 'border-zinc-200 bg-zinc-50/50' : 'border-violet-200 bg-white shadow-sm'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[15px] font-semibold text-zinc-900">{dos.product}</span>
+                            {dos.flavor && <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">{dos.flavor}</span>}
+                            {dos.size && <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">{dos.size}</span>}
+                            <span className="text-[11px] text-zinc-400 font-mono">×{dos.qty}</span>
+                            {alreadyDesigned && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">In Queue</span>}
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {dos.themeOccasion && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Theme:</span> {dos.themeOccasion}</div>}
+                            {dos.colorScheme && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Colors:</span> {dos.colorScheme}</div>}
+                            {dos.cakeDesignNotes && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Notes:</span> <span className="text-zinc-500">{dos.cakeDesignNotes}</span></div>}
+                            {dos.topper && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Topper:</span> {dos.topper}</div>}
+                            {dos.messageCaption && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Message:</span> {dos.messageCaption}</div>}
+                            {dos.referenceImage && <div className="text-[12px]"><a href={dos.referenceImage} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline underline-offset-2 hover:text-blue-800">🖼️ View Reference Image</a></div>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => openDesignFromDOS(dos)}
+                          disabled={alreadyDesigned}
+                          className={`shrink-0 rounded-lg px-4 py-2 text-[12px] font-medium transition-all ${alreadyDesigned ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed' : 'bg-violet-600 text-white hover:bg-violet-700 shadow-sm'}`}
+                        >
+                          {alreadyDesigned ? "In Queue" : "Start Design →"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Active Cake Productions */}
         <div>
-          <h2 className="text-[15px] font-semibold text-zinc-900 mb-3">Active Decoration Queue</h2>
+          <h2 className="text-[15px] font-semibold text-zinc-900 mb-3">Active Cake Productions</h2>
           {(() => {
             const activeTasks = decoQueue.filter(t => t.status !== "completed");
             if (activeTasks.length === 0) {
-              return <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No active decoration tasks.</p></div>;
+              return <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No active cake productions.</p></div>;
             }
             return (
               <div className="space-y-3">
@@ -2643,6 +2673,21 @@ return (
                       <span className="text-[11px] text-zinc-400 font-mono">/ {designModal.qty} avail</span>
                     </div>
                   </div>
+
+                  {/* DOS Customization Info */}
+                  {(designModal.theme || designModal.colorScheme || designModal.notes || designModal.topper || designModal.referenceImage || designModal.messageCaption) && (
+                    <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-3">
+                      <label className="text-[11px] font-medium uppercase tracking-wider text-violet-600 mb-2 block">🎨 Customer Customization</label>
+                      <div className="space-y-1.5">
+                        {designModal.theme && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Theme:</span> {designModal.theme}</div>}
+                        {designModal.colorScheme && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Colors:</span> {designModal.colorScheme}</div>}
+                        {designModal.notes && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Notes:</span> {designModal.notes}</div>}
+                        {designModal.topper && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Topper:</span> {designModal.topper}</div>}
+                        {designModal.messageCaption && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Message:</span> {designModal.messageCaption}</div>}
+                        {designModal.referenceImage && <div className="text-[12px]"><a href={designModal.referenceImage} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline underline-offset-2 hover:text-blue-800">🖼️ View Reference Image</a></div>}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Linked Packaging */}
                   <div>
@@ -2843,7 +2888,7 @@ return (
     const decoOnlyInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco"));
     
     // Categorization logic
-    const tabs: ("Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory" | "Buffer Stock")[] = ["Display Cakes", "Production Recipe", "Advanced Premix", "My Inventory", "Buffer Stock"];
+    const tabs: ("Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "Advanced Premix", "My Inventory"];
     const displayCakes = myFreezer.filter(i => !i.notes?.startsWith("Production Recipe") && !i.batchRef?.startsWith("ADV-"));
     const productionRecipes = myFreezer.filter(i => i.notes?.startsWith("Production Recipe") && i.qty > 0);
     const advancedPremix = myFreezer.filter(i => i.batchRef?.startsWith("ADV-") && i.qty > 0);
@@ -3124,58 +3169,6 @@ return (
             )}
           </div>
         </div>
-
-        {/* Buffer Stock Tab Content */}
-        {freezerTab === "Buffer Stock" && (
-          <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-zinc-50 border-b border-zinc-100">
-                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                    <th className="px-5 py-3">Recipe</th>
-                    <th className="px-5 py-3 text-right">Qty</th>
-                    <th className="px-5 py-3">Unit</th>
-                    <th className="px-5 py-3">Batch Ref</th>
-                    <th className="px-5 py-3">Date</th>
-                    <th className="px-5 py-3 text-center">Status</th>
-                    <th className="px-5 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-50">
-                  {bufferStockItems.length === 0 ? (
-                    <tr><td colSpan={7} className="px-5 py-12 text-center text-[13px] text-zinc-400">No buffer stock available. Confirm a production plan to generate buffer stock.</td></tr>
-                  ) : bufferStockItems.map(item => (
-                    <tr key={item.id} className="hover:bg-emerald-50/30 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="text-[13px] font-medium text-zinc-900">{item.recipeName}</div>
-                        {item.productName && <div className="text-[11px] text-zinc-400 mt-0.5">{item.productName}</div>}
-                      </td>
-                      <td className="px-5 py-3.5 text-[13px] text-right font-mono font-semibold text-emerald-700">{item.qty}</td>
-                      <td className="px-5 py-3.5 text-[13px] text-zinc-500">{item.unit}</td>
-                      <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{item.batchRef || "—"}</td>
-                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{item.dateCreated}</td>
-                      <td className="px-5 py-3.5 text-center">
-                        <span className={`text-[11px] font-medium ${item.status === "available" ? "text-emerald-600" : item.status === "used" ? "text-zinc-400" : "text-amber-600"}`}>
-                          {item.status === "available" ? "✓ Available" : item.status === "used" ? "Used" : "⚠ Expired"}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        {item.status === "available" && (
-                          <button onClick={async () => {
-                            if (confirm(`Delete ${item.qty} ${item.unit} of ${item.recipeName} buffer stock?`)) {
-                              setBufferStockItems(prev => prev.filter(b => b.id !== item.id));
-                              db.deleteBufferStockItem(item.id).catch(console.error);
-                            }
-                          }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del</button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
 
         {showAddFreezer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddFreezer(false)}>

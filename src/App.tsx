@@ -50,7 +50,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   deco: [
     { id: "dashboard", label: "Dashboard", icon: "" },
     { id: "advanced-premix", label: "Advanced Premix", icon: "" },
-    { id: "deco-queue", label: "Decoration Queue", icon: "" },
+    { id: "deco-queue", label: "Cake Productions", icon: "" },
     { id: "custom-orders", label: "Custom Orders", icon: "" },
     { id: "freezer", label: "Freezer", icon: "" },
     { id: "waste-adjustment", label: "Waste/Adjustment", icon: "" },
@@ -417,6 +417,7 @@ export default function App() {
               completed: 0,
               assignedTo: entry.role as "baker" | "deco" | "pastry" | "kitchen",
               status: "in-progress" as const,
+              dateAssigned: getPHToday(),
             }));
             await db.upsertDOS(updated);
             await db.upsertProduction(tasks);
@@ -521,6 +522,7 @@ export default function App() {
           completed: 0,
           assignedTo: entry.role as "baker" | "deco" | "pastry" | "kitchen",
           status: "in-progress" as const,
+          dateAssigned: getPHToday(),
         }));
         db.upsertDOS(updated).catch(console.error);
         db.upsertProduction(tasks).catch(console.error);
@@ -652,6 +654,7 @@ export default function App() {
             completed: 0,
             assignedTo: role as "baker" | "deco" | "pastry" | "kitchen",
             status: "in-progress" as const,
+            dateAssigned: getPHToday(),
           });
         });
       });

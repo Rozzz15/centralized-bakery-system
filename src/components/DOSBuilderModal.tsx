@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { DOSItem, ProductionTask, PromoPackage } from "../types";
 import type { ProductRoute } from "../lib/db";
+import { uploadReferenceImage } from "../lib/db";
 
 type Props = {
   onClose: () => void;
@@ -14,10 +15,45 @@ type Props = {
   promosPackages?: PromoPackage[];
 };
 
-type Row = { product: string; qty: number; roles: Set<"baker" | "pastry" | "deco"> };
+type Row = { product: string; qty: number; roles: Set<"baker" | "pastry" | "deco">; flavor: string; size: string; themeOccasion: string; colorScheme: string; cakeDesignNotes: string; topper: string; referenceImage: string; messageCaption: string; showCustomization: boolean };
+
+const FLAVORS = ["", "Chocolate", "Vanilla", "Red Velvet", "Ube", "Mocha", "Carrot", "Lemon", "Strawberry", "Cookies & Cream", "Salted Caramel", "Banana", "Blueberry", "Coffee"];
+const SIZES = ["", "6x1", "6x2", "6x3", "8x1", "8x2", "8x3", "10x1", "10x2", "10x3", "12x1", "12x2", "14x1", "14x2", "16x1", "Sheet"];
+const THEMES = ["", "Baptism Cake", "Birthday Cake", "Wedding Cake", "Anniversary Cake", "Graduation Cake", "Christmas Cake", "Easter Cake", "Valentine Cake", "Halloween Cake", "Baby Shower Cake", "Christening Cake", "First Communion Cake", "Corporate Event Cake", "Custom Design"];
+
+function FileUploadRow({ value, onUpload, onClear }: { value: string; onUpload: (file: File) => Promise<void>; onClear: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      await onUpload(file);
+    } catch (err) {
+      console.error("Upload failed", err);
+    }
+    setUploading(false);
+    if (inputRef.current) inputRef.current.value = "";
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <input ref={inputRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+      <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading} className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300 disabled:opacity-50 transition-all">
+        {uploading ? "Uploading…" : "📁 Choose Image"}
+      </button>
+      {value && (
+        <>
+          <a href={value} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-600 underline underline-offset-2 hover:text-blue-800">Preview</a>
+          <button type="button" onClick={onClear} className="text-[11px] text-red-500 hover:text-red-700">✕</button>
+        </>
+      )}
+    </div>
+  );
+}
 
 function defaultRow(): Row {
-  return { product: "", qty: 0, roles: new Set(["baker"]) };
+  return { product: "", qty: 0, roles: new Set(["baker"]), flavor: "", size: "", themeOccasion: "", colorScheme: "", cakeDesignNotes: "", topper: "", referenceImage: "", messageCaption: "", showCustomization: false };
 }
 
 export default function DOSBuilderModal({ onClose, onSave, productCatalog, productRoutes, onAddToCatalog, hasTodayItems, presetDate, scheduledDates, promosPackages = [] }: Props) {
@@ -45,7 +81,7 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
   const updateRow = (index: number, field: keyof Row, value: string | number) => {
     setRows(prev => prev.map((r, i) => {
       if (i !== index) return r;
-      const val = field === "product" ? String(value) : (value === "" ? 0 : Number(value));
+      const val = field === "qty" ? (value === "" ? 0 : Number(value)) : String(value);
       return { ...r, [field]: val };
     }));
   };
@@ -72,6 +108,14 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
       status: isFuture ? "scheduled" : "pending",
       scheduledDate: isFuture ? scheduledDate : undefined,
       roles: Array.from(val.roles),
+      flavor: val.flavor || undefined,
+      size: val.size || undefined,
+      themeOccasion: val.themeOccasion || undefined,
+      colorScheme: val.colorScheme || undefined,
+      cakeDesignNotes: val.cakeDesignNotes || undefined,
+      topper: val.topper || undefined,
+      referenceImage: val.referenceImage || undefined,
+      messageCaption: val.messageCaption || undefined,
     }));
 
     const tasksMap = new Map<string, { product: string; role: "baker" | "pastry" | "deco" | "kitchen"; target: number; itemIdx: number }>();
@@ -92,6 +136,7 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
       completed: 0,
       assignedTo: val.role,
       status: "pending" as const,
+      dateAssigned: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
     }));
 
     onSave(items, tasks);
@@ -142,20 +187,20 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
           {/* Products table */}
           <div className="rounded-2xl border border-zinc-200">
             <div className="overflow-visible">
-              <div className="min-w-[600px]">
-                <div className="grid grid-cols-11 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-              <div className="col-span-4">Product</div>
+              <div className="min-w-[700px]">
+                <div className="grid grid-cols-12 gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+              <div className="col-span-3">Product</div>
+              <div className="col-span-2">Flavor</div>
+              <div className="col-span-1">Size</div>
               <div className="col-span-2 text-right">Qty</div>
-              <div className="col-span-1 text-center">Baker</div>
-              <div className="col-span-1 text-center">Pastry</div>
-              <div className="col-span-1 text-center">Deco</div>
-              <div className="col-span-1" />
-              <div className="col-span-1" />
+              <div className="col-span-2 text-center">Roles</div>
+              <div className="col-span-2 text-right">Options</div>
             </div>
             <div className="divide-y divide-zinc-100">
               {rows.map((row, i) => (
-                <div key={i} className="grid grid-cols-11 items-center gap-2 px-3 py-2">
-                  <div className="col-span-4 relative">
+                <div key={i}>
+                <div className="grid grid-cols-12 items-center gap-2 px-3 py-2">
+                  <div className="col-span-3 relative">
                     <input
                       value={productSearch[i] ?? row.product}
                       onChange={e => {
@@ -166,7 +211,6 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
                           updateRow(i, "product", "");
                         } else if (val && productCatalog.some(p => p.toLowerCase() === val.toLowerCase())) {
                           updateRow(i, "product", val);
-                          // Auto-set role from product route
                           const matched = productCatalog.find(p => p.toLowerCase() === val.toLowerCase());
                           const route = matched ? productRoutes[matched] : undefined;
                           if (route) {
@@ -222,7 +266,6 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
                                     updateRow(i, "product", p);
                                     setProductSearch(prev => ({ ...prev, [i]: p }));
                                     setShowSuggestions(prev => ({ ...prev, [i]: false }));
-                                    // Auto-set role from product route
                                     const route = productRoutes[p];
                                     if (route) {
                                       setRows(prev => prev.map((r, idx) => idx === i ? { ...r, roles: new Set([route]) } : r));
@@ -256,6 +299,28 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
                     })()}
                   </div>
                   <div className="col-span-2">
+                    <select
+                      value={row.flavor}
+                      onChange={e => updateRow(i, "flavor", e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-zinc-400"
+                    >
+                      {FLAVORS.map(f => (
+                        <option key={f} value={f}>{f || "—"}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-span-1">
+                    <select
+                      value={row.size}
+                      onChange={e => updateRow(i, "size", e.target.value)}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-zinc-400"
+                    >
+                      {SIZES.map(s => (
+                        <option key={s} value={s}>{s || "—"}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
                     <input
                       type="number"
                       min="0"
@@ -266,10 +331,10 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
                       style={{ fontFamily: "Fragment Mono, monospace" }}
                     />
                   </div>
-                  {(["baker", "pastry", "deco"] as const).map(role => {
-                    return (
-                    <div key={role} className="col-span-1 flex justify-center">
+                  <div className="col-span-2 flex items-center justify-center gap-1">
+                    {(["baker", "pastry", "deco"] as const).map(role => (
                       <button
+                        key={role}
                         type="button"
                         onClick={() => toggleRowRole(i, role)}
                         className={`grid h-6 w-6 place-items-center rounded-md border text-[10px] font-bold transition-all ${
@@ -282,15 +347,92 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
                       >
                         {row.roles.has(role) ? "✓" : ""}
                       </button>
-                    </div>
-                    );
-                  })}
-                  <div className="col-span-1" />
-                  <div className="col-span-1 text-right">
+                    ))}
+                  </div>
+                  <div className="col-span-2 flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, showCustomization: !r.showCustomization } : r))}
+                      className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-all ${
+                        row.showCustomization
+                          ? 'bg-zinc-100 border-zinc-300 text-zinc-800'
+                          : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:border-zinc-300'
+                      }`}
+                    >
+                      <span className="text-[13px]">{row.showCustomization ? "▲" : "🎨"}</span>
+                      {row.showCustomization ? "Hide" : "Custom"}
+                    </button>
                     {rows.length > 1 && (
-                      <button onClick={() => removeRow(i)} className="text-[14px] text-zinc-400 hover:text-red-500">✕</button>
+                      <button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded-lg border border-zinc-200 text-[13px] text-zinc-400 hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-all">✕</button>
                     )}
                   </div>
+                </div>
+                {row.showCustomization && (
+                  <div className="border-t border-zinc-100 bg-zinc-50/50 px-4 py-3">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🎨 Theme / Occasion</label>
+                        <select
+                          value={row.themeOccasion}
+                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, themeOccasion: e.target.value } : r))}
+                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400"
+                        >
+                          {THEMES.map(t => (
+                            <option key={t} value={t}>{t || "Select theme…"}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🎨 Color Scheme</label>
+                        <input
+                          value={row.colorScheme}
+                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, colorScheme: e.target.value } : r))}
+                          placeholder="e.g. White, Sky Blue (as reference image)"
+                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🎂 Cake Design Notes</label>
+                        <textarea
+                          value={row.cakeDesignNotes}
+                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, cakeDesignNotes: e.target.value } : r))}
+                          placeholder="e.g. Please copy same design from reference image"
+                          rows={2}
+                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300 resize-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🧁 Topper</label>
+                        <input
+                          value={row.topper}
+                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, topper: e.target.value } : r))}
+                          placeholder="e.g. Baptism Topper (cross / baby theme)"
+                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🖼️ Reference Image</label>
+                        <FileUploadRow
+                          value={row.referenceImage}
+                          onUpload={async (file) => {
+                            const url = await uploadReferenceImage(file, `dos-${Date.now()}-${i}`);
+                            setRows(prev => prev.map((r, idx) => idx === i ? { ...r, referenceImage: url } : r));
+                          }}
+                          onClear={() => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, referenceImage: "" } : r))}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">✍️ Message / Caption <span className="font-normal text-zinc-400">(optional)</span></label>
+                        <input
+                          value={row.messageCaption}
+                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, messageCaption: e.target.value } : r))}
+                          placeholder='e.g. "Welcome Baby Liam"'
+                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
                 </div>
               ))}
             </div>

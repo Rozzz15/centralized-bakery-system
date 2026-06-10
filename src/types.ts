@@ -25,6 +25,14 @@ export type DOSItem = {
   status: "pending" | "in-progress" | "completed" | "scheduled";
   scheduledDate?: string;
   roles?: ("baker" | "pastry" | "deco")[];
+  flavor?: string;
+  size?: string;
+  themeOccasion?: string;
+  colorScheme?: string;
+  cakeDesignNotes?: string;
+  topper?: string;
+  referenceImage?: string;
+  messageCaption?: string;
 };
 
 export type ProductionTask = {
@@ -34,6 +42,7 @@ export type ProductionTask = {
   completed: number;
   assignedTo: "baker" | "deco" | "kitchen" | "pastry";
   status: "pending" | "in-progress" | "completed";
+  dateAssigned?: string;
 };
 
 export type Delivery = {
@@ -337,7 +346,6 @@ export type BatchCalculation = {
   recipeYield: number;
   batchesNeeded: number;
   expectedOutput: number;
-  bufferFromPrevious: number;
   netDemand: number;
   requiredIngredients: {
     name: string;
@@ -371,20 +379,6 @@ export type OutputAllocation = {
     allocatedQty: number;
     priority: number;
   }[];
-  bufferStock: number;
-};
-
-export type BufferStockEntry = {
-  id: string;
-  recipeName: string;
-  productName?: string;
-  qty: number;
-  unit: string;
-  source: "production-plan";
-  batchRef: string;
-  dateCreated: string;
-  status: "available" | "used" | "expired";
-  usedIn?: string;
 };
 
 export type ProductionPlan = {
@@ -394,8 +388,6 @@ export type ProductionPlan = {
   recipeDemands: RecipeDemand[];
   batchCalculations: BatchCalculation[];
   outputAllocations: OutputAllocation[];
-  bufferStockCreated: BufferStockEntry[];
-  bufferStockUsed: { bufferId: string; usedFor: string; qtyUsed: number }[];
   status: "draft" | "confirmed" | "in-progress" | "completed";
   createdBy: string;
   createdAt: string;
