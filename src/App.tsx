@@ -43,7 +43,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   ],
   baker: [
     { id: "dashboard", label: "My Tasks", icon: "◼" },
-    { id: "assembly", label: "Assembly", icon: "●" },
+    { id: "conversion", label: "Conversion", icon: "↻" },
     { id: "filling", label: "Filling", icon: "○" },
     { id: "freezer", label: "Freezer", icon: "◇" },
   ],
@@ -1018,7 +1018,7 @@ export default function App() {
                 decoProductionPrep={decoProductionPrep}
               />
             )}
-            {role === "baker" && ["dashboard", "assembly", "freezer", "filling"].includes(activeTab) && (
+            {role === "baker" && ["dashboard", "conversion", "freezer", "filling"].includes(activeTab) && (
               <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} />
             )}
             {role === "deco" && ["dashboard", "tasks-to-prepare", "recipe-analysis", "pre-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer", "waste-adjustment"].includes(activeTab) && (
