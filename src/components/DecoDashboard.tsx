@@ -248,7 +248,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [newBatch, setNewBatch] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [freezerSearch, setFreezerSearch] = useState("");
-  const [freezerTab, setFreezerTab] = useState<"Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory">("Display Cakes");
+  const [freezerTab, setFreezerTab] = useState<"Display Cakes" | "Production Recipe" | "My Inventory">("Display Cakes");
 
   const [customOrders, setCustomOrders] = useState<CustomOrder[]>([
     { id: "CO-001", customer: "Anna Santos", product: "Chocolate Cake", request: "Pink ribbon + gold topper + #21 candle", status: "pending", createdAt: "May 28, 10:30 AM" },
@@ -2903,14 +2903,12 @@ return (
     const decoOnlyInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco"));
     
     // Categorization logic
-    const tabs: ("Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "Advanced Premix", "My Inventory"];
+    const tabs: ("Display Cakes" | "Production Recipe" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "My Inventory"];
     const displayCakes = myFreezer.filter(i => !i.notes?.startsWith("Production Recipe") && !i.batchRef?.startsWith("ADV-"));
     const productionRecipes = myFreezer.filter(i => i.notes?.startsWith("Production Recipe") && i.qty > 0);
-    const advancedPremix = myFreezer.filter(i => i.batchRef?.startsWith("ADV-") && i.qty > 0);
     const getFilteredItems = () => {
         if (freezerTab === "Display Cakes") return displayCakes;
         if (freezerTab === "Production Recipe") return productionRecipes;
-        if (freezerTab === "Advanced Premix") return advancedPremix;
         return decoOnlyInventory as unknown as FreezerItem[];
     };
     
@@ -3102,51 +3100,6 @@ return (
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            ) : freezerTab === "Advanced Premix" ? (
-              <table className="w-full text-left">
-                <thead className="bg-zinc-50 border-b border-zinc-100">
-                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                    <th className="px-5 py-3">Recipe</th>
-                    <th className="px-5 py-3 text-right">Qty</th>
-                    <th className="px-5 py-3">Batch</th>
-                    <th className="px-5 py-3">Date</th>
-                    <th className="px-5 py-3 text-center">Status</th>
-                    <th className="px-5 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-50">
-                  {(filtered as FreezerItem[]).length === 0 ? (
-                    <tr><td colSpan={6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No Advanced Premix batches saved.</td></tr>
-                  ) : (() => {
-                    const grouped = new Map<string, { items: FreezerItem[]; totalQty: number }>();
-                    (filtered as FreezerItem[]).forEach(f => {
-                      if (!grouped.has(f.productName)) grouped.set(f.productName, { items: [], totalQty: 0 });
-                      const g = grouped.get(f.productName)!;
-                      g.items.push(f);
-                      g.totalQty += f.qty;
-                    });
-                    return [...grouped.entries()].map(([productName, g]) => (
-                      <tr key={productName} className="hover:bg-zinc-50/50 transition-colors">
-                        <td className="px-5 py-3.5">
-                          <div className="text-[13px] font-medium text-zinc-900">{productName}</div>
-                          <div className="text-[11px] text-zinc-400 mt-0.5 flex flex-wrap gap-1.5">
-                            {g.items.map(f => (
-                              <span key={f.id} className="text-[10px] font-mono">{f.batchRef?.replace("ADV-", "") || "—"}: {f.qty}</span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{g.totalQty} batch</td>
-                        <td className="px-5 py-3.5 text-[12px] text-zinc-600">{g.items.length} batch{g.items.length > 1 ? "es" : ""}</td>
-                        <td className="px-5 py-3.5 text-[12px] text-zinc-500">{g.items.map(f => f.dateProduced).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</td>
-                        <td className="px-5 py-3.5 text-center"><span className="text-[11px] text-emerald-600 font-medium">✓ In Stock</span></td>
-                        <td className="px-5 py-3.5 text-right">
-                          <button onClick={() => { if (confirm(`Delete ALL batches of ${productName}?`)) { const ids = new Set(g.items.map(x => x.id)); const updated = freezerItems.filter(f => !ids.has(f.id)); onUpdateFreezer?.(updated); ids.forEach(id => db.deleteFreezerItem(id).catch(console.error)); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del All</button>
-                        </td>
-                      </tr>
-                    ));
-                  })()}
                 </tbody>
               </table>
             ) : (

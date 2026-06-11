@@ -743,25 +743,40 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       </div>
 
       {/* Step Navigation */}
-      <div className="flex items-center gap-3">
-        {steps.map((s, i) => (
-          <div key={s.id} className="flex items-center gap-2">
-            {i > 0 && <div className="h-px w-8 bg-zinc-700" />}
-            <button
-              onClick={() => setStep(i)}
-              className={`rounded-full px-4 py-2 text-[12px] font-medium transition-all ${
-                step === i
-                  ? 'bg-white text-zinc-900 shadow-sm'
-                  : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              {i === 0 && <span className="mr-1.5">📋</span>}
-              {i === 1 && <span className="mr-1.5">✅</span>}
-              {i === 2 && <span className="mr-1.5">🏭</span>}
-              {s.label}
-            </button>
-          </div>
-        ))}
+      <div className="relative">
+        {/* Progress bar track */}
+        <div className="absolute top-[14px] left-0 right-0 h-[2px] bg-zinc-800 rounded-full" />
+        <div
+          className="absolute top-[14px] left-0 h-[2px] bg-gradient-to-r from-amber-400 to-white rounded-full transition-all duration-500"
+          style={{ width: `${(step / (steps.length - 1)) * 100}%` }}
+        />
+        <div className="relative flex items-center justify-between">
+          {steps.map((s, i) => {
+            const isActive = step === i;
+            const isPast = step > i;
+            return (
+              <div key={s.id} className="flex flex-col items-center">
+                <button
+                  onClick={() => setStep(i)}
+                  className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold transition-all duration-300 ${
+                    isActive
+                      ? 'bg-white text-zinc-900 shadow-[0_0_0_3px_rgba(255,255,255,0.15)] scale-110'
+                      : isPast
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-zinc-800/50 text-zinc-600 border border-zinc-700/50'
+                  }`}
+                >
+                  {isPast ? '✓' : i + 1}
+                </button>
+                <span className={`mt-2 text-[10px] font-medium tracking-wide text-center transition-colors duration-300 ${
+                  isActive ? 'text-white' : isPast ? 'text-zinc-400' : 'text-zinc-600'
+                }`}>
+                  {s.label.replace(/^[^\s]+\s/, '')}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {step === 0 && (
@@ -1059,8 +1074,16 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
               const expectedOutput = requiredBatches * yieldPerBatch;
               const recipeDisplayName = recipe?.productName || productName;
-              const actual = actualProduction[productName] ?? expectedOutput;
-              const diff = actual - group.totalQty;
+              const hasActual = actualProduction[productName] !== undefined;
+              const actual = hasActual ? actualProduction[productName]! : 0;
+              // Deco stock from Production Recipe
+              const decoStock = freezerItems.filter(i =>
+                i.status === "stored" && i.qty > 0 && i.producedBy === "deco" &&
+                (i.productName === productName || i.productName === recipeDisplayName)
+              );
+              const decoAvailable = decoStock.reduce((sum, i) => sum + i.qty, 0);
+              const decoExcess = decoAvailable - (hasActual ? actual : 0);
+              const bakerNeeded = Math.max(0, group.totalQty - decoAvailable);
               return (
                 <div key={productName} className="rounded-xl border border-zinc-800 bg-zinc-800/30 p-4 mb-3 last:mb-0">
                   <div className="flex items-center justify-between mb-3">
@@ -1082,35 +1105,55 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   </div>
 
                   <div className="rounded-lg bg-zinc-950/40 p-3 mb-3">
-                    <label className="text-[11px] text-zinc-400 block mb-1.5">How many pieces were produced?</label>
+                    <label className="text-[11px] text-zinc-400 block mb-1.5">
+                      How many pieces will you produce?
+                      {decoAvailable >= group.totalQty && bakerNeeded === 0 && (
+                        <span className="text-emerald-400/60 ml-1">(Deco has enough — optional)</span>
+                      )}
+                      {decoAvailable < group.totalQty && (
+                        <span className="text-zinc-600 ml-1">(need {bakerNeeded} more)</span>
+                      )}
+                    </label>
                     <div className="flex items-center gap-3">
                       <input
-                        type="number"
-                        min={0}
-                        value={actual}
+                        type="text"
+                        inputMode="numeric"
+                        value={actualProduction[productName] !== undefined ? String(actualProduction[productName]) : ''}
+                        placeholder={`${expectedOutput}`}
                         onChange={e => {
-                          const v = parseInt(e.target.value) || 0;
-                          setActualProduction(prev => ({ ...prev, [productName]: v }));
+                          const raw = e.target.value;
+                          if (raw === '') {
+                            const { [productName]: _, ...rest } = actualProduction;
+                            setActualProduction(rest);
+                          } else {
+                            setActualProduction(prev => ({ ...prev, [productName]: parseInt(raw) || 0 }));
+                          }
                         }}
-                        className="w-28 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-[15px] font-mono font-bold text-white focus:outline-none focus:border-amber-500 transition-colors"
+                        className="w-28 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-[15px] font-mono font-bold text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 transition-colors"
                       />
                       <span className="text-[12px] text-zinc-500">pcs</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 text-[11px]">
+                  <div className="grid grid-cols-4 gap-2 text-[11px]">
                     <div className="rounded-lg bg-zinc-950/40 p-2 text-center">
-                      <div className="text-zinc-500 mb-0.5">DOS Demand</div>
+                      <div className="text-zinc-500 mb-0.5">Orders</div>
                       <div className="font-mono font-bold text-white text-[13px]">{group.totalQty}</div>
                     </div>
                     <div className="rounded-lg bg-zinc-950/40 p-2 text-center">
-                      <div className="text-zinc-500 mb-0.5">Produced</div>
-                      <div className="font-mono font-bold text-amber-300 text-[13px]">{actual}</div>
+                      <div className="text-zinc-500 mb-0.5">Deco Has</div>
+                      <div className={`font-mono font-bold text-[13px] ${decoAvailable > 0 ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                        {decoAvailable > 0 ? decoAvailable : '—'}
+                      </div>
                     </div>
                     <div className="rounded-lg bg-zinc-950/40 p-2 text-center">
-                      <div className="text-zinc-500 mb-0.5">Remaining</div>
-                      <div className={`font-mono font-bold text-[13px] ${diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-red-400' : 'text-zinc-300'}`}>
-                        {diff > 0 ? `+${diff}` : diff}
+                      <div className="text-zinc-500 mb-0.5">I Make</div>
+                      <div className="font-mono font-bold text-amber-300 text-[13px]">{hasActual ? actual : '—'}</div>
+                    </div>
+                    <div className="rounded-lg bg-zinc-950/40 p-2 text-center">
+                      <div className="text-zinc-500 mb-0.5">Excess</div>
+                      <div className={`font-mono font-bold text-[13px] ${hasActual ? (decoExcess > 0 ? 'text-emerald-400' : decoExcess < 0 ? 'text-red-400' : 'text-zinc-300') : 'text-zinc-600'}`}>
+                        {hasActual ? (decoExcess > 0 ? `+${decoExcess}` : decoExcess) : '—'}
                       </div>
                     </div>
                   </div>
@@ -1154,10 +1197,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
             return [...grouped.entries()].map(([productName, group]) => {
               const recipe = findRecipe(productName);
               const recipeDisplayName = recipe?.productName || productName;
-              const produced = actualProduction[productName] ?? 0;
+              const bakerProduced = actualProduction[productName] ?? 0;
               const demand = group.totalQty;
-              const allocated = Math.min(produced, demand);
-              const remaining = produced - demand;
+              const bakerUsed = Math.min(bakerProduced, demand);
+              const bakerRemaining = bakerProduced - bakerUsed;
+              const notMade = Math.max(0, demand - bakerProduced);
               return (
                 <div key={productName} className="rounded-xl border border-zinc-800 bg-zinc-800/30 p-4 mb-3 last:mb-0">
                   <div className="flex items-center gap-2 mb-3">
@@ -1166,29 +1210,47 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   </div>
 
                   <div className="rounded-lg bg-zinc-950/40 p-3 mb-3">
-                    <div className="text-[11px] text-zinc-500 mb-2">DOS Allocation — Reserved for Orders</div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[12px] text-zinc-400">{recipeDisplayName}</span>
-                      <span className="font-mono font-bold text-emerald-400 text-[14px]">{allocated} pcs</span>
+                    <div className="text-[11px] text-zinc-500 mb-2">Orders Allocation</div>
+                    {bakerUsed > 0 && (
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[12px] text-zinc-400">I Made</span>
+                        <span className="font-mono font-bold text-amber-400 text-[14px]">{bakerUsed} pcs</span>
+                      </div>
+                    )}
+                    {notMade > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[12px] text-zinc-400">Not Made</span>
+                        <span className="font-mono font-bold text-zinc-500 text-[14px]">{notMade} pcs</span>
+                      </div>
+                    )}
+                    {bakerUsed === 0 && notMade === 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[12px] text-red-400/70">Nothing produced</span>
+                        <span className="font-mono font-bold text-red-400 text-[14px]">0 pcs</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-zinc-800">
+                      <span className="text-[12px] text-zinc-400 font-medium">Orders</span>
+                      <span className="font-mono font-bold text-white text-[14px]">{demand} pcs</span>
                     </div>
                   </div>
 
-                  {remaining > 0 && (
+                  {bakerRemaining > 0 && (
                     <div className="rounded-lg bg-zinc-950/40 p-3">
-                      <div className="text-[11px] text-zinc-500 mb-2">Available Stock — For Future DOS</div>
+                      <div className="text-[11px] text-zinc-500 mb-2">My Extra</div>
                       <div className="flex items-center justify-between">
                         <span className="text-[12px] text-zinc-400">{recipeDisplayName}</span>
-                        <span className="font-mono font-bold text-amber-400 text-[14px]">{remaining} pcs</span>
+                        <span className="font-mono font-bold text-amber-400 text-[14px]">{bakerRemaining} pcs</span>
                       </div>
                     </div>
                   )}
 
-                  {remaining < 0 && (
+                  {bakerProduced < demand && (
                     <div className="rounded-lg bg-red-950/30 border border-red-900/30 p-3">
-                      <div className="text-[11px] text-red-400/70 mb-1">Shortage</div>
+                      <div className="text-[11px] text-red-400/70 mb-1">Short on Orders</div>
                       <div className="flex items-center justify-between">
-                        <span className="text-[12px] text-red-300/80">Under-produced by {Math.abs(remaining)} pcs</span>
-                        <span className="font-mono font-bold text-red-400 text-[14px]">{remaining} pcs</span>
+                        <span className="text-[12px] text-red-300/80">I made {bakerUsed} of {demand} — short {demand - bakerProduced}</span>
+                        <span className="font-mono font-bold text-red-400 text-[14px]">-{demand - bakerProduced} pcs</span>
                       </div>
                     </div>
                   )}
@@ -1211,19 +1273,20 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               const newHistory: FreezerHistory[] = [];
 
               [...grouped.entries()].forEach(([productName, group]) => {
-                const produced = actualProduction[productName] ?? 0;
+                const recipe = findRecipe(productName);
+                const recipeDisplayName = recipe?.productName || productName;
+                const bakerProduced = actualProduction[productName] ?? 0;
                 const demand = group.totalQty;
-                const allocated = Math.min(produced, demand);
-                const remaining = produced - demand;
+                const bakerUsed = Math.min(bakerProduced, demand);
+                const bakerRemaining = bakerProduced - bakerUsed;
 
-                // Deduct allocated qty from Deco Production Recipe items (FIFO)
-                if (allocated > 0) {
-                  let toDeduct = allocated;
+                // Deduct bakerProduced from Deco Production Recipe items (FIFO)
+                if (bakerProduced > 0) {
+                  let toDeduct = bakerProduced;
                   const decoItems = freezerItems
                     .filter(i =>
-                      i.status === "stored" && i.qty > 0 &&
-                      i.productName === productName &&
-                      (i.producedBy === "deco" || (i.producedBy === "baker" && i.notes === "Production Recipe (Assembled)"))
+                      i.status === "stored" && i.qty > 0 && i.producedBy === "deco" &&
+                      (i.productName === productName || i.productName === recipeDisplayName)
                     )
                     .sort((a, b) => (a.dateProduced || "").localeCompare(b.dateProduced || ""));
                   for (const item of decoItems) {
@@ -1238,58 +1301,55 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                       producedBy: "baker",
                       qtyChanged: -deduct,
                       action: "deducted",
-                      reference: `Used ${deduct} pcs from Deco Production Recipe for baking`,
+                      reference: `Used ${deduct} pcs from Deco stock for baking`,
                       timestamp: new Date().toISOString(),
                     });
                   }
                 }
 
-                // Save allocated portion to freezer
-                if (allocated > 0) {
-                  const allocItem: FreezerItem = {
-                    id: `FRZ-${Date.now()}-${productName.replace(/[^a-zA0-9]/g, "")}`,
-                    productName,
-                    qty: allocated,
+                // Save baker's output to Baked Products tab
+                if (bakerUsed > 0) {
+                  newFreezerItems.push({
+                    id: `FRZ-${Date.now()}-${recipeDisplayName.replace(/[^a-zA0-9]/g, "")}`,
+                    productName: recipeDisplayName,
+                    qty: bakerUsed,
                     unit: "pcs",
                     batchRef: `BAKE-${Date.now()}`,
                     producedBy: "baker",
                     dateProduced: today,
                     status: "stored",
                     notes: `Baked — Allocated for DOS`,
-                  };
-                  newFreezerItems.push(allocItem);
+                  });
                   newHistory.push({
                     id: `FH-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                    productName,
+                    productName: recipeDisplayName,
                     producedBy: "baker",
-                    qtyChanged: allocated,
+                    qtyChanged: bakerUsed,
                     action: "added",
-                    reference: `Baked ${allocated} pcs for ${demand} DOS demand`,
+                    reference: `Baked ${bakerUsed} pcs for ${demand} DOS demand`,
                     timestamp: new Date().toISOString(),
                   });
                 }
 
-                // Save remaining stock to freezer
-                if (remaining > 0) {
-                  const stockItem: FreezerItem = {
-                    id: `FRZ-${Date.now()}-STOCK-${productName.replace(/[^a-zA0-9]/g, "")}`,
-                    productName,
-                    qty: remaining,
+                if (bakerRemaining > 0) {
+                  newFreezerItems.push({
+                    id: `FRZ-${Date.now()}-STOCK-${recipeDisplayName.replace(/[^a-zA0-9]/g, "")}`,
+                    productName: recipeDisplayName,
+                    qty: bakerRemaining,
                     unit: "pcs",
                     batchRef: `BAKE-STOCK-${Date.now()}`,
                     producedBy: "baker",
                     dateProduced: today,
                     status: "stored",
                     notes: `Baked — Available Stock`,
-                  };
-                  newFreezerItems.push(stockItem);
+                  });
                   newHistory.push({
                     id: `FH-${Date.now()}-STOCK-${Math.random().toString(36).slice(2, 6)}`,
-                    productName,
+                    productName: recipeDisplayName,
                     producedBy: "baker",
-                    qtyChanged: remaining,
+                    qtyChanged: bakerRemaining,
                     action: "added",
-                    reference: `Available stock ${remaining} pcs after DOS allocation`,
+                    reference: `Available stock ${bakerRemaining} pcs after DOS allocation`,
                     timestamp: new Date().toISOString(),
                   });
                 }
