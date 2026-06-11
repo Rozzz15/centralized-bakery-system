@@ -97,6 +97,16 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     )
   );
 
+  // Shared helpers for recipe matching
+  const getBaseName = (name: string) =>
+    name.toLowerCase().replace(/[\s]*[\(\*\d].*$/, '').trim();
+  const findRecipe = (productName: string) =>
+    recipes.find(r =>
+      r.productName.toLowerCase() === productName.toLowerCase() ||
+      r.linkedIngredients?.some(l => l.toLowerCase() === productName.toLowerCase()) ||
+      getBaseName(r.productName) === getBaseName(productName)
+    );
+
   const bakerDOS = todayDOS.filter(d => (d.roles ?? []).includes("baker"));
   const decoProductSet = new Set(decoProductionItems.map(i => i.productName));
   // Total DOS qty per product (for display)
@@ -106,6 +116,22 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const bakedQtyMap = new Map<string, number>();
   freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.notes !== "Production Recipe (Assembled)").forEach(i => {
     bakedQtyMap.set(i.productName, (bakedQtyMap.get(i.productName) || 0) + i.qty);
+  });
+  // Actual Deco production output per product (only if Deco has completed their DOS)
+  const decoOutputMap = new Map<string, number>();
+  const decoCompletedProducts = new Set<string>();
+  dosItems.filter(d => d.roles?.includes("deco")).forEach(d => {
+    if (d.status === "completed") {
+      const recipe = findRecipe(d.product);
+      const recipeName = recipe?.productName || d.product;
+      decoCompletedProducts.add(recipeName);
+    }
+  });
+  decoProductionItems.forEach(i => {
+    // Only count Deco output if Deco has completed their DOS for this product
+    if (decoCompletedProducts.has(i.productName)) {
+      decoOutputMap.set(i.productName, (decoOutputMap.get(i.productName) || 0) + i.qty);
+    }
   });
 
   // Show all today's DOS products for the baker
@@ -213,16 +239,6 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       setStartingRecipe(null);
     }
   };
-
-  // Shared helpers for recipe matching — defined once at component scope
-  const getBaseName = (name: string) =>
-    name.toLowerCase().replace(/[\s]*[\(\*\d].*$/, '').trim();
-  const findRecipe = (productName: string) =>
-    recipes.find(r =>
-      r.productName.toLowerCase() === productName.toLowerCase() ||
-      r.linkedIngredients?.some(l => l.toLowerCase() === productName.toLowerCase()) ||
-      getBaseName(r.productName) === getBaseName(productName)
-    );
 
   /* ── Conversion Tab ── */
   if (activeTab === "conversion") {
@@ -370,7 +386,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       // Add to My Inventory (or increment existing)
       const existingInv = inventory.find(i => i.name === fillingName.trim() && i.group === "ingredients");
       if (existingInv) {
-        db.updateInventoryItem(existingInv.id, { onHand: existingInv.onHand + batchQty }).catch(console.error);
+        db.updateInventoryItem(existingInv.id, { onHand: existingInv.onHand + batchQty, group: "ingredients" }).catch(console.error);
         onUpdateInventory?.(prev => prev.map(i => i.id === existingInv.id ? { ...i, onHand: i.onHand + batchQty } : i));
       } else {
         const newInv: InventoryItem = {
@@ -378,6 +394,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
           name: fillingName.trim(),
           onHand: batchQty,
           unit: "batches",
+          sku: `FILL-${Date.now()}`,
+          threshold: 0,
+          cost: 0,
+          supplier: "",
+          lastIn: "",
           category: "produce",
           group: "ingredients",
           accessRoles: ["baker"],
@@ -401,7 +422,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Filling Name</label>
               <input value={fillingName} onChange={e => setFillingName(e.target.value)} placeholder="e.g. Vanilla Custard" list="filling-list" className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
               <datalist id="filling-list">
-                {recipes.map(r => <option key={r.productName} value={r.productName} />)}
+                {recipes.filter(r => r.group === "filling").map(r => <option key={r.productName} value={r.productName} />)}
               </datalist>
             </div>
             <div>
@@ -458,8 +479,15 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
 
   /* ── Freezer Tab ── */
   if (activeTab === "freezer") {
-    const bakerItems = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.notes !== "Production Recipe (Assembled)");
-    const bakerAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"));
+    const bakerItems = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.notes !== "Production Recipe (Assembled)" && i.notes !== "Filling");
+    const bakerAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"))
+      .sort((a, b) => {
+        const aIsFilling = recipes.some(r => r.productName === a.name && r.group === "filling");
+        const bIsFilling = recipes.some(r => r.productName === b.name && r.group === "filling");
+        if (aIsFilling && !bIsFilling) return -1;
+        if (!aIsFilling && bIsFilling) return 1;
+        return a.name.localeCompare(b.name);
+      });
     const decoItems = freezerItems.filter(i => i.status === "stored" && i.qty > 0 && (
       i.producedBy === "deco" ||
       (i.producedBy === "baker" && i.notes === "Production Recipe (Assembled)")
@@ -598,12 +626,13 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 })() : filtered.map(item => {
                   if (freezerTab === "my-inventory") {
                     const inv = item as unknown as InventoryItem;
+                    const isFilling = recipes.some(r => r.productName === inv.name && r.group === "filling");
                     return (
                       <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
                         <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{inv.name}</div></td>
                         <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{inv.onHand} {inv.unit}</td>
-                        <td className="px-5 py-3.5 text-[12px] text-zinc-500">{inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
-                        <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.group}</span></td>
+                        <td className="px-5 py-3.5 text-[12px] text-zinc-500">{isFilling ? "Filling" : inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
+                        <td className="px-5 py-3.5"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isFilling ? "bg-violet-50 text-violet-700" : "bg-zinc-100 text-zinc-600"}`}>{isFilling ? "Filling" : inv.group}</span></td>
                         <td className="px-5 py-3.5 text-right">
                           <span className="text-[11px] text-zinc-400">View only</span>
                         </td>
@@ -736,117 +765,146 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       </div>
 
       {step === 0 && (
-      <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-[16px] font-semibold text-white" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2>
-            <p className="text-[12px] text-zinc-400">Daily Order Sales — auto-generates production tasks</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-amber-500 border border-amber-900/50">LOCKED</span>
-            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-900">{bakerDOS.length} items</span>
-          </div>
+      <div className="space-y-4">
+        {/* Summary stats */}
+        <div className="grid grid-cols-4 gap-3">
+          {(() => {
+            const all = bakerDOS.length;
+            const pending = bakerDOS.filter(d => d.status === "pending").length;
+            const inProgress = bakerDOS.filter(d => d.status === "in-progress").length;
+            const completed = bakerDOS.filter(d => d.status === "completed").length;
+            return [
+              { label: "Total Items", value: all, color: "text-white" },
+              { label: "Pending", value: pending, color: "text-zinc-400" },
+              { label: "In Progress", value: inProgress, color: "text-amber-400" },
+              { label: "Completed", value: completed, color: "text-emerald-400" },
+            ].map((stat, i) => (
+              <div key={i} className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-center">
+                <div className={`text-[22px] font-bold font-mono ${stat.color}`}>{stat.value}</div>
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider mt-1">{stat.label}</div>
+              </div>
+            ));
+          })()}
         </div>
+
         {bakerDOS.length === 0 ? (
-          <div className="mt-8 text-center py-10"><p className="text-[14px] text-zinc-500">No baking orders yet.</p><p className="text-[12px] text-zinc-500 mt-1">Wait for Admin to create a DOS.</p></div>
+          <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-6 text-center">
+            <p className="text-[14px] text-zinc-500">No baking orders yet.</p>
+            <p className="text-[12px] text-zinc-500 mt-1">Wait for Admin to create a DOS.</p>
+          </div>
         ) : (
-          <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800">
-            <div className="overflow-x-auto">
-              <div className="min-w-[700px]">
-                <div className="grid grid-cols-12 gap-2 border-b border-zinc-800 bg-zinc-950/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                  <div className="col-span-8">Recipe</div>
-                  <div className="col-span-4 text-right">Status</div>
-                </div>
-                <div className="divide-y divide-zinc-800">
-                  {(() => {
-                    // Group by product
-                    const grouped = new Map<string, { dos: DOSItem[]; totalQty: number }>();
-                    bakerDOS.forEach(d => {
-                      if (!grouped.has(d.product)) grouped.set(d.product, { dos: [], totalQty: 0 });
-                      const g = grouped.get(d.product)!;
-                      g.dos.push(d);
-                      g.totalQty += d.qty;
-                    });
-                    return [...grouped.entries()].map(([productName, group]) => {
-                      const recipe = findRecipe(productName);
-                      // Only show recipe ID if it's a short readable ID (e.g. R001 — not a UUID)
-                      const rawId = recipe?.id || '';
-                      const recipeId = rawId.length > 10 ? '' : rawId;
-                      const recipeDisplayName = recipe?.productName || productName;
-                      const hasYield = !!(recipe?.yield && recipe.yield > 0);
-                      const yieldPerBatch = recipe?.yield ?? 1;
-                      const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
-                      const productionOutput = requiredBatches * yieldPerBatch;
-                      const excess = productionOutput - group.totalQty;
-                      const itemStatus = group.dos.every(d => d.status === "completed") ? "completed" : group.dos.some(d => d.status === "in-progress") ? "in-progress" : "pending";
-                      return (
-                        <div key={productName} className="grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-zinc-800/40 transition-colors">
-                          <div className="col-span-8">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[14px] font-semibold text-white">Recipe: {recipeDisplayName}</span>
-                              {recipe && recipeId && <span className="text-[11px] font-mono text-zinc-500 shrink-0">({recipeId})</span>}
-                              {recipe && <span className="text-[10px] text-zinc-600">→ {productName}</span>}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2">
-                              {hasYield ? (
-                                <>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[11px] text-zinc-500">Required Batches:</span>
-                                    <span className="text-[14px] font-bold text-white font-mono">{requiredBatches}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[11px] text-zinc-500">Yield per Batch:</span>
-                                    <span className="text-[14px] font-bold text-amber-400 font-mono">{yieldPerBatch} <span className="text-[11px] font-medium text-amber-600">pcs</span></span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[11px] text-zinc-500">Production Output:</span>
-                                    <span className="text-[14px] font-bold text-emerald-400 font-mono">{productionOutput} <span className="text-[11px] font-medium text-emerald-600">pcs</span></span>
-                                    {excess > 0 && (
-                                      <span className="text-[10px] text-amber-400/70 ml-1">(Excess: {excess} pcs)</span>
-                                    )}
-                                  </div>
-                                </>
-                              ) : (
-                                <span className="text-[11px] text-amber-400/70 italic">Set recipe yield in Admin &gt; Recipes</span>
-                              )}
-                            </div>
-                            {(group.dos.some(d => d.flavor || d.size)) && (
-                              <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                                {[...new Set(group.dos.map(d => d.flavor).filter(Boolean))].map(f => (
-                                  <span key={f} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-200">{f}</span>
-                                ))}
-                                {[...new Set(group.dos.map(d => d.size).filter(Boolean))].map(s => (
-                                  <span key={s} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-200">{s}</span>
-                                ))}
-                              </div>
+          <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="text-[16px] font-semibold text-white" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2>
+                <p className="text-[12px] text-zinc-400 mt-0.5">Daily Order Sales — auto-generates production tasks</p>
+              </div>
+            
+            </div>
+            <div className="space-y-3">
+              {(() => {
+                const grouped = new Map<string, { dos: DOSItem[]; totalQty: number }>();
+                bakerDOS.forEach(d => {
+                  if (!grouped.has(d.product)) grouped.set(d.product, { dos: [], totalQty: 0 });
+                  const g = grouped.get(d.product)!;
+                  g.dos.push(d);
+                  g.totalQty += d.qty;
+                });
+                return [...grouped.entries()].map(([productName, group]) => {
+                  const recipe = findRecipe(productName);
+                  const hasYield = !!(recipe?.yield && recipe.yield > 0);
+                  const yieldPerBatch = recipe?.yield ?? 1;
+                  const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
+                  const recipeDisplayName = recipe?.productName || productName;
+                  const actualDecoOutput = decoOutputMap.get(recipeDisplayName) || 0;
+                  const actualExcess = actualDecoOutput > 0 ? Math.max(0, actualDecoOutput - group.totalQty) : 0;
+                  const itemStatus = group.dos.every(d => d.status === "completed") ? "completed" : group.dos.some(d => d.status === "in-progress") ? "in-progress" : actualDecoOutput > 0 ? "ready" : "pending";
+                  return (
+                    <div key={productName} className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 hover:border-zinc-700 transition-colors">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[15px] font-bold text-white truncate">{recipeDisplayName}</span>
+                            {recipe && recipe.productName !== productName && (
+                              <span className="text-[10px] text-zinc-500 truncate shrink-0">→ {productName}</span>
                             )}
                           </div>
-                          <div className="col-span-4 flex items-center justify-end">
-                            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold ${
-                              itemStatus === "completed" ? "bg-emerald-900/40 text-emerald-300" :
-                              itemStatus === "in-progress" ? "bg-amber-900/40 text-amber-300" :
-                              "bg-zinc-800 text-zinc-400"
-                            }`}>
-                              <span className={`inline-block h-1.5 w-1.5 rounded-full ${
-                                itemStatus === "completed" ? "bg-emerald-500" :
-                                itemStatus === "in-progress" ? "bg-amber-500 animate-pulse" :
-                                "bg-zinc-500"
-                              }`} />
-                              {itemStatus === "completed" ? "Completed" : itemStatus === "in-progress" ? "In Progress" : "Pending"}
-                            </span>
+                          <div className="flex items-center gap-3 mt-2">
+                            {hasYield ? (
+                              <>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Demand</span>
+                                  <span className="text-[15px] font-bold text-white font-mono">{group.totalQty}<span className="text-[10px] font-medium text-zinc-500 ml-0.5">pcs</span></span>
+                                </div>
+                                <div className="w-px h-4 bg-zinc-800" />
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Batches</span>
+                                  <span className="text-[15px] font-bold text-white font-mono">{requiredBatches}</span>
+                                </div>
+                                <div className="w-px h-4 bg-zinc-800" />
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Yield</span>
+                                  <span className="text-[15px] font-bold text-amber-400 font-mono">{yieldPerBatch}<span className="text-[10px] font-medium text-amber-600 ml-0.5">pcs</span></span>
+                                </div>
+                                {actualDecoOutput > 0 && (
+                                  <>
+                                    <div className="w-px h-4 bg-zinc-800" />
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Deco Output</span>
+                                      <span className="text-[15px] font-bold text-emerald-400 font-mono">{actualDecoOutput}<span className="text-[10px] font-medium text-emerald-600 ml-0.5">pcs</span></span>
+                                    </div>
+                                    {actualExcess > 0 && (
+                                      <>
+                                        <div className="w-px h-4 bg-zinc-800" />
+                                        <span className="text-[10px] text-amber-400/70">+{actualExcess} excess</span>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+                                {actualDecoOutput === 0 && (
+                                  <span className="text-[10px] text-zinc-500 italic">Awaiting Deco production</span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-amber-400/70 italic">Set recipe yield in Admin &gt; Recipes</span>
+                            )}
                           </div>
+                          {(group.dos.some(d => d.flavor || d.size)) && (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                              {[...new Set(group.dos.map(d => d.flavor).filter(Boolean))].map(f => (
+                                <span key={f} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-200">{f}</span>
+                              ))}
+                              {[...new Set(group.dos.map(d => d.size).filter(Boolean))].map(s => (
+                                <span key={s} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-200">{s}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold shrink-0 ${
+                          itemStatus === "completed" ? "bg-emerald-900/40 text-emerald-300" :
+                          itemStatus === "in-progress" ? "bg-amber-900/40 text-amber-300" :
+                          itemStatus === "ready" ? "bg-blue-900/40 text-blue-300" :
+                          "bg-zinc-800 text-zinc-400"
+                        }`}>
+                          <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                            itemStatus === "completed" ? "bg-emerald-500" :
+                            itemStatus === "in-progress" ? "bg-amber-500 animate-pulse" :
+                            itemStatus === "ready" ? "bg-blue-500" :
+                            "bg-zinc-500"
+                          }`} />
+                          {itemStatus === "completed" ? "Completed" : itemStatus === "in-progress" ? "In Progress" : itemStatus === "ready" ? "Ready" : "Pending"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         )}
-        <div className="mt-4 flex items-center justify-between rounded-xl bg-zinc-950/40 px-3 py-2.5">
+        <div className="text-center space-y-3">
           <div className="text-[12px] text-zinc-500">Baker: {bakerDOS.length} items</div>
-          <button onClick={() => setStep(1)} className="rounded-lg bg-white px-5 py-2 text-[12px] font-semibold text-zinc-900 hover:bg-zinc-100 transition-colors">
+          <button onClick={() => setStep(1)} className="w-full rounded-2xl border border-zinc-700 bg-white px-8 py-3.5 text-[15px] font-bold text-zinc-900 hover:bg-zinc-100 hover:shadow-xl transition-all active:scale-[0.98]">
             Next →
           </button>
         </div>
@@ -871,19 +929,34 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               g.dos.push(d);
               g.totalQty += d.qty;
             });
-            const allStarted = grouped.size > 0 && [...grouped.keys()].every(k => startedRecipes.has(k));
+            // Only show products where Deco has completed their DOS
+            const readyGrouped = new Map([...grouped.entries()].filter(([productName]) => {
+              const recipe = findRecipe(productName);
+              const recipeName = recipe?.productName || productName;
+              return (decoOutputMap.get(recipeName) || 0) > 0;
+            }));
+            const allStarted = readyGrouped.size > 0 && [...readyGrouped.keys()].every(k => startedRecipes.has(k));
+            const isWaiting = readyGrouped.size === 0;
+            if (isWaiting) {
+              return (
+                <div className="rounded-xl border border-zinc-800 p-8 text-center">
+                  <p className="text-[14px] text-zinc-400">Waiting for Deco to complete production...</p>
+                  <p className="text-[12px] text-zinc-500 mt-1">Please check back once Deco has finished setting up the DOS recipe.</p>
+                </div>
+              );
+            }
             return (
               <>
                 <div className="rounded-xl border border-zinc-800 overflow-hidden mb-4">
-                  {[...grouped.entries()].map(([productName, group], idx) => {
+                    {[...readyGrouped.entries()].map(([productName, group], idx) => {
                     const recipe = findRecipe(productName);
                     const hasYield = !!(recipe?.yield && recipe.yield > 0);
                     const yieldPerBatch = recipe?.yield ?? 1;
                     const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
-                    const productionOutput = requiredBatches * yieldPerBatch;
-                    const excess = productionOutput - group.totalQty;
                     const recipeDisplayName = recipe?.productName || productName;
                     const isStarted = startedRecipes.has(productName);
+                    const actualDecoOutput = decoOutputMap.get(recipeDisplayName) || 0;
+                    const actualExcess = actualDecoOutput > 0 ? Math.max(0, actualDecoOutput - group.totalQty) : 0;
                     return (
                       <div
                         key={productName}
@@ -897,6 +970,10 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                           </div>
                           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2">
                             <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] text-zinc-500">Demand:</span>
+                              <span className="text-[14px] font-bold text-white font-mono">{group.totalQty} <span className="text-[11px] font-medium text-zinc-500">pcs</span></span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
                               <span className="text-[11px] text-zinc-500">Required Batches:</span>
                               <span className="text-[14px] font-bold text-white font-mono">{requiredBatches}</span>
                             </div>
@@ -906,11 +983,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                                 <span className="text-[14px] font-bold text-amber-400 font-mono">{yieldPerBatch} <span className="text-[11px] font-medium text-amber-600">pcs</span></span>
                               </div>
                             )}
-                            {hasYield && (
+                            {hasYield && actualDecoOutput > 0 && (
                               <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] text-zinc-500">Production Output:</span>
-                                <span className="text-[14px] font-bold text-emerald-400 font-mono">{productionOutput} <span className="text-[11px] font-medium text-emerald-600">pcs</span></span>
-                                {excess > 0 && <span className="text-[10px] text-amber-400/70 ml-1">(Excess: {excess} pcs)</span>}
+                                <span className="text-[11px] text-zinc-500">Deco Output:</span>
+                                <span className="text-[14px] font-bold text-emerald-400 font-mono">{actualDecoOutput} <span className="text-[11px] font-medium text-emerald-600">pcs</span></span>
+                                {actualExcess > 0 && <span className="text-[10px] text-amber-400/70 ml-1">(Excess: {actualExcess} pcs)</span>}
                               </div>
                             )}
                           </div>
@@ -922,9 +999,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                               In Progress
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold bg-zinc-800 text-zinc-400">
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-500"></span>
-                              Pending
+                            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold bg-blue-900/40 text-blue-300">
+                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                              Ready
                             </span>
                           )}
                         </div>
@@ -934,8 +1011,8 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 </div>
 
                 <div className="flex items-center justify-between rounded-xl bg-zinc-950/40 px-4 py-2.5 mt-4 mb-5">
-                  <span className="text-[12px] text-zinc-500">{grouped.size} recipe{grouped.size !== 1 ? 's' : ''} · {bakerDOS.reduce((s, d) => s + d.qty, 0)} pcs total</span>
-                  <span className="text-[12px] text-emerald-400">{startedRecipes.size}/{grouped.size} started</span>
+                  <span className="text-[12px] text-zinc-500">{readyGrouped.size} recipe{readyGrouped.size !== 1 ? 's' : ''} · {bakerDOS.reduce((s, d) => s + d.qty, 0)} pcs total</span>
+                  <span className="text-[12px] text-emerald-400">{startedRecipes.size}/{readyGrouped.size} started</span>
                 </div>
 
                 <button
@@ -943,7 +1020,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   disabled={!allStarted}
                   className="w-full rounded-xl bg-white px-4 py-3.5 text-[15px] font-bold text-zinc-900 hover:bg-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
                 >
-                  {allStarted ? 'Next → Record Production' : `Start each recipe first (${startedRecipes.size}/${grouped.size})`}
+                  {allStarted ? 'Next → Record Production' : `Start each recipe first (${startedRecipes.size}/${readyGrouped.size})`}
                 </button>
 
                 <div className="mt-4 text-center">
@@ -1270,9 +1347,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         const hasYield = !!(recipe?.yield && recipe.yield > 0);
         const yieldPerBatch = recipe?.yield ?? 1;
         const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
-        const productionOutput = requiredBatches * yieldPerBatch;
-        const excess = productionOutput - group.totalQty;
         const recipeDisplayName = recipe?.productName || selectedRecipe;
+        const actualDecoOutput = decoOutputMap.get(recipeDisplayName) || 0;
+        const actualExcess = actualDecoOutput > 0 ? Math.max(0, actualDecoOutput - group.totalQty) : 0;
         const isStarted = startedRecipes.has(selectedRecipe);
         const isStarting = startingRecipe === selectedRecipe;
         return (
@@ -1299,13 +1376,13 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                     <div className="text-[10px] text-zinc-500">pcs</div>
                   </div>
                   <div className="rounded-xl bg-zinc-800/50 p-3 text-center">
-                    <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wider">Expected Output</div>
-                    <div className="text-[22px] font-bold text-emerald-400 font-mono">{productionOutput}</div>
+                    <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wider">Deco Output</div>
+                    <div className="text-[22px] font-bold text-emerald-400 font-mono">{actualDecoOutput || '—'}</div>
                     <div className="text-[10px] text-zinc-500">pcs</div>
                   </div>
                   <div className="rounded-xl bg-zinc-800/50 p-3 text-center">
                     <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wider">Excess</div>
-                    <div className={`text-[22px] font-bold font-mono ${excess > 0 ? 'text-amber-400' : 'text-zinc-400'}`}>{excess}</div>
+                    <div className={`text-[22px] font-bold font-mono ${actualExcess > 0 ? 'text-amber-400' : 'text-zinc-400'}`}>{actualExcess}</div>
                     <div className="text-[10px] text-zinc-500">pcs</div>
                   </div>
                 </div>
@@ -1424,7 +1501,14 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         );
       })(), document.body)}
       {showIngredientPicker && selectedRecipe && createPortal((() => {
-        const bakerAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"));
+    const bakerAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"))
+      .sort((a, b) => {
+        const aIsFilling = recipes.some(r => r.productName === a.name && r.group === "filling");
+        const bIsFilling = recipes.some(r => r.productName === b.name && r.group === "filling");
+        if (aIsFilling && !bIsFilling) return -1;
+        if (!aIsFilling && bIsFilling) return 1;
+        return a.name.localeCompare(b.name);
+      });
         const pickerItems = bakerAccessInventory
           .filter(i => i.group === "ingredients")
           .map(i => ({ id: i.id, name: i.name, qty: i.onHand, unit: i.unit, sourceType: "inventory" as const }));
