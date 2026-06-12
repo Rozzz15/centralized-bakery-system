@@ -230,6 +230,7 @@ export type FreezerItem = {
   status: "stored" | "dispatched" | "expired";
   notes?: string;
   ingredients?: FreezerItemIngredients;
+  size?: string;
 };
 
 export type FreezerHistory = {

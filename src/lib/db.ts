@@ -850,6 +850,8 @@ export async function deleteProductPricing(id: string) {
 
 // ─── Freezer / Finished Products ───
 function parseFreezerItem(d: any): FreezerItem {
+  const notes = d.notes ?? "";
+  const sizeMatch = notes.match(/ \| Size: (.+)$/);
   return {
     id: d.id,
     productName: d.product_name,
@@ -859,7 +861,8 @@ function parseFreezerItem(d: any): FreezerItem {
     producedBy: d.produced_by ?? "",
     dateProduced: d.date_produced ?? "",
     status: d.status ?? "stored",
-    notes: d.notes ?? "",
+    notes: sizeMatch ? notes.slice(0, -(sizeMatch[0].length)) : notes,
+    size: d.size || (sizeMatch ? sizeMatch[1] : undefined),
   };
 }
 function toFreezerRow(i: FreezerItem) {
@@ -873,6 +876,7 @@ function toFreezerRow(i: FreezerItem) {
     date_produced: i.dateProduced,
     status: i.status,
     notes: i.notes ?? "",
+    size: i.size ?? "",
   };
 }
 export async function fetchFreezerItems(): Promise<FreezerItem[]> {

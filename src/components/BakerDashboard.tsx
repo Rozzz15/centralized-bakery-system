@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ProductionTask, DOSItem, BakerIngredientRequest, ProductRecipe, FreezerItem, FreezerHistory, InventoryItem } from "../types";
+import type { ProductionTask, DOSItem, BakerIngredientRequest, ProductRecipe, FreezerItem, FreezerHistory, InventoryItem, ProductPricing } from "../types";
 import * as db from "../lib/db";
 
 type Props = {
@@ -18,6 +18,7 @@ type Props = {
   inventory?: InventoryItem[];
   onUpdateInventory?: (cb: InventoryItem[] | ((prev: InventoryItem[]) => InventoryItem[])) => void;
   onUpdateDOS?: (cb: DOSItem[] | ((prev: DOSItem[]) => DOSItem[])) => void;
+  productPricing?: ProductPricing[];
 };
 
 const steps = [
@@ -27,7 +28,7 @@ const steps = [
   { id: "complete", label: "✅ Complete Production" },
 ];
 
-export default function BakerDashboard({ production, dosItems, onCompleteTask, activeTab, productCatalog, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], inventory = [], onUpdateInventory, onUpdateDOS }: Props) {
+export default function BakerDashboard({ production, dosItems, onCompleteTask, activeTab, productCatalog, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], inventory = [], onUpdateInventory, onUpdateDOS, productPricing = [] }: Props) {
   const [step, setStep] = useState(0);
   const [startedRecipes, setStartedRecipes] = useState<Set<string>>(new Set());
   const [startingRecipe, setStartingRecipe] = useState<string | null>(null);
@@ -61,6 +62,20 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const [freezerSearch, setFreezerSearch] = useState("");
   const [freezerTab, setFreezerTab] = useState<"baked-products" | "my-inventory" | "deco-production-recipe">("baked-products");
 
+  // Conversion-to-Product state
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [convertProduct, setConvertProduct] = useState<string | null>(null);
+  const [convertTargetProduct, setConvertTargetProduct] = useState("");
+  const [convertQty, setConvertQty] = useState<number>(0);
+  const [converting, setConverting] = useState(false);
+  const [convertAddedIngredients, setConvertAddedIngredients] = useState<{ name: string; qty: number; unit: string; sourceId: string }[]>([]);
+  const [convertSelectedFilling, setConvertSelectedFilling] = useState("");
+  const [convertFillingQty, setConvertFillingQty] = useState<number>(0);
+  const [convertSize, setConvertSize] = useState("");
+  const [showConvertIngredientPicker, setShowConvertIngredientPicker] = useState(false);
+  const [convertIngredientSearch, setConvertIngredientSearch] = useState("");
+  const [convertPickQuantities, setConvertPickQuantities] = useState<Record<string, number>>({});
+
   // Bake selection flow state
   const [bakerBakeQty, setBakerBakeQty] = useState<Record<string, number>>({});
   const [selectedForBaking, setSelectedForBaking] = useState<Set<string>>(new Set());
@@ -68,6 +83,13 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const [modalSearch, setModalSearch] = useState("");
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+
+  // Toast state
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   useEffect(() => {
     db.fetchBakerIngredientRequests().then(setIngredientReqs).catch(() => {});
@@ -80,14 +102,14 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     }
   }, [step]);
 
+  const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
   const todayDOS = dosItems.filter(d => {
-    if (d.status === "scheduled") return false;
-    // Include items that were activated from scheduled (scheduledDate is still set but status !== "scheduled")
-    if (d.scheduledDate && d.scheduledDate <= new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]) return true;
+    if (d.status === "scheduled" && d.scheduledDate && d.scheduledDate > todayStr) return false;
+    if (d.scheduledDate) return d.scheduledDate === todayStr;
     const ts = d.id.match(/DOS-(\d+)/)?.[1];
-    if (!ts) return false;
+    if (!ts) return true;
     const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-    return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    return itemDate === todayStr;
   });
   // Compute Deco Production Recipe items for the step wizard
   // Also include items assembled from Advanced Premix by the baker
@@ -251,10 +273,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   /* ── Conversion Tab ── */
   if (activeTab === "conversion") {
     const decoProductionItems = freezerItems.filter(i =>
-      i.status === "stored" && i.qty > 0 && (
-        i.producedBy === "deco" ||
-        (i.producedBy === "baker" && i.notes === "Production Recipe (Assembled)")
-      )
+      i.status === "stored" && i.qty > 0 && i.producedBy === "deco" && i.notes?.startsWith("Production Recipe")
     );
     const grouped = new Map<string, { items: FreezerItem[]; totalQty: number }>();
     decoProductionItems.forEach(i => {
@@ -264,11 +283,120 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       g.totalQty += i.qty;
     });
 
+    const handleConvert = async () => {
+      if (!convertProduct || convertQty <= 0 || !convertTargetProduct) return;
+      setConverting(true);
+      try {
+        const today = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+
+        const group = grouped.get(convertProduct);
+        if (!group) return;
+        const sortedItems = [...group.items].sort(
+          (a, b) => (a.dateProduced || "").localeCompare(b.dateProduced || "")
+        );
+
+        let toDeduct = convertQty;
+        const updatedDecoItems: FreezerItem[] = [];
+        const newHistory: FreezerHistory[] = [];
+
+        for (const item of sortedItems) {
+          if (toDeduct <= 0) break;
+          const deduct = Math.min(toDeduct, item.qty);
+          updatedDecoItems.push({ ...item, qty: item.qty - deduct });
+          toDeduct -= deduct;
+          newHistory.push({
+            id: `FH-${Date.now()}-CNV-${Math.random().toString(36).slice(2, 6)}`,
+            productName: convertProduct,
+            producedBy: "baker",
+            qtyChanged: -deduct,
+            action: "deducted",
+            reference: `Used ${deduct} pcs from ${convertProduct} premix for baking`,
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        // Deduct filling from inventory
+        if (convertSelectedFilling && convertFillingQty > 0) {
+          const fillingInvItem = inventory.find(i =>
+            i.name === convertSelectedFilling &&
+            (!i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"))
+          );
+          if (fillingInvItem) {
+            const deduct = Math.min(convertFillingQty, fillingInvItem.onHand);
+            if (deduct > 0) {
+              onUpdateInventory?.(prev => prev.map(i => i.id === fillingInvItem.id ? { ...i, onHand: Math.max(0, i.onHand - deduct) } : i));
+              db.updateInventoryItem(fillingInvItem.id, { onHand: Math.max(0, fillingInvItem.onHand - deduct), group: fillingInvItem.group }).catch(console.error);
+              newHistory.push({
+                id: `FH-${Date.now()}-FILL-${Math.random().toString(36).slice(2, 6)}`,
+                productName: convertSelectedFilling,
+                producedBy: "baker",
+                qtyChanged: -deduct,
+                action: "deducted",
+                reference: `Used ${deduct} of ${convertSelectedFilling} filling for ${convertTargetProduct}`,
+                timestamp: new Date().toISOString(),
+              });
+            }
+          }
+        }
+
+        // Add finished product to freezer
+        const newItem: FreezerItem = {
+          id: `FRZ-${Date.now()}-CNV-${convertTargetProduct.replace(/[^a-zA-Z0-9]/g, "")}`,
+          productName: convertTargetProduct,
+          qty: convertQty,
+          unit: "pcs",
+          batchRef: `BAKE-${Date.now()}`,
+          producedBy: "baker",
+          dateProduced: today,
+          status: "stored",
+          notes: `Baked — Converted from ${convertProduct} premix${convertSelectedFilling ? ` + ${convertSelectedFilling} filling` : ""}`,
+          size: convertSize || undefined,
+        };
+
+        newHistory.push({
+          id: `FH-${Date.now()}-CNV-${Math.random().toString(36).slice(2, 6)}`,
+          productName: convertTargetProduct,
+          producedBy: "baker",
+          qtyChanged: convertQty,
+          action: "added",
+          reference: `Baked ${convertQty} pcs from ${convertProduct} premix${convertSelectedFilling ? ` + ${convertSelectedFilling} filling` : ""}`,
+          timestamp: new Date().toISOString(),
+        });
+
+        onUpdateFreezer?.((prev: FreezerItem[]) => {
+          const updated = new Map(prev.map(i => [i.id, i]));
+          updatedDecoItems.forEach(i => updated.set(i.id, i));
+          updated.set(newItem.id, newItem);
+          return [...updated.values()];
+        });
+
+        await db.upsertFreezerItems([...updatedDecoItems, newItem]).catch(console.error);
+        newHistory.forEach(h => db.insertFreezerHistory(h).catch(console.error));
+
+        const ingredientMsg = convertAddedIngredients.length > 0 ? ` + ${convertAddedIngredients.length} ingredient(s)` : "";
+        const fillingMsg = convertSelectedFilling ? ` + ${convertFillingQty} ${convertSelectedFilling} filling` : "";
+        const sizeMsg = convertSize ? ` (${convertSize})` : "";
+        showToast(`Converted ${convertQty} pcs of ${convertTargetProduct}${sizeMsg} from ${convertProduct} premix${ingredientMsg}${fillingMsg}. Saved to Baked Products.`, "success");
+
+        setShowConvertModal(false);
+        setConvertQty(0);
+        setConvertAddedIngredients([]);
+        setConvertSelectedFilling("");
+        setConvertFillingQty(0);
+        setConvertSize("");
+      } catch (err) {
+        console.error("Conversion failed:", err);
+        showToast("Failed to convert. Please try again.", "error");
+      } finally {
+        setConverting(false);
+      }
+    };
+
     return (
       <div className="space-y-5">
         <div>
           <h1 className="text-[24px] font-semibold">Conversion</h1>
-          <p className="mt-1 text-[13px] text-zinc-600">Deco Production Recipe items available for baking. Stock is consumed when you complete production.</p>
+          <p className="mt-1 text-[13px] text-zinc-600">Deco Production Recipe items available for baking. Use as Product to convert premix into finished baked goods.</p>
         </div>
 
         {decoProductionItems.length === 0 ? (
@@ -284,11 +412,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               return (
                 <div key={productName} className={`${idx > 0 ? 'border-t border-[#E8E0D5]' : ''}`}>
                   <div className="grid grid-cols-12 items-center gap-2 px-5 py-4">
-                    <div className="col-span-5">
+                    <div className="col-span-4">
                       <div className="text-[14px] font-semibold text-zinc-900">{productName}</div>
                       <div className="text-[11px] text-zinc-400 mt-0.5">{g.items.length} batch{g.items.length !== 1 ? 'es' : ''}</div>
                     </div>
-                    <div className="col-span-3 text-right">
+                    <div className="col-span-2 text-right">
                       <div className="text-[18px] font-bold text-zinc-800 font-mono">{g.totalQty}</div>
                       <div className="text-[10px] text-zinc-400">pcs available</div>
                     </div>
@@ -308,6 +436,14 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                           Shortage
                         </span>
                       )}
+                    </div>
+                    <div className="col-span-2 text-right">
+                      <button
+                        onClick={() => { const r = findRecipe(productName); setConvertProduct(productName); setConvertTargetProduct(r?.productName || productName); setConvertQty(g.totalQty); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setShowConvertModal(true); }}
+                        className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-zinc-800 transition-colors"
+                      >
+                        Use as Product
+                      </button>
                     </div>
                   </div>
                   {g.items.length > 0 && (
@@ -329,6 +465,255 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
             })}
           </div>
         )}
+
+        {/* Conversion Modal */}
+        {showConvertModal && convertProduct && createPortal((
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowConvertModal(false); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setConvertSize(""); }}>
+            <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-[18px] font-semibold">Use as Product</h2>
+                <span className="text-[12px] text-zinc-400 font-mono bg-zinc-50 rounded-lg px-2 py-1">{convertProduct} premix</span>
+              </div>
+              <p className="text-[13px] text-zinc-500 mb-4">Convert premix into a finished baked product.</p>
+
+              <div className="space-y-4">
+                {/* Product Dropdown + Sizing */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Target Product</label>
+                    <select
+                      value={convertTargetProduct}
+                      onChange={e => { setConvertTargetProduct(e.target.value); setConvertSize(""); }}
+                      className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400"
+                    >
+                      <option value="">Select product...</option>
+                    {productCatalog.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Sizing</label>
+                    <select
+                      value={convertSize}
+                      onChange={e => setConvertSize(e.target.value)}
+                      className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400"
+                      disabled={!convertTargetProduct}
+                    >
+                      <option value="">No size</option>
+                      {["Small","Regular","Large","6x1","6x2","6x3","8x1","8x2","8x3","10x1","10x2","10x3","12x1","12x2","14x1","14x2","16x1","Sheet"].map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-zinc-50 p-3">
+                    <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1">Available Premix</div>
+                    <div className="text-[18px] font-bold text-zinc-800 font-mono">{grouped.get(convertProduct)?.totalQty ?? 0}</div>
+                    <div className="text-[10px] text-zinc-400">pcs</div>
+                  </div>
+                  <div className="rounded-xl bg-zinc-50 p-3">
+                    <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1">DOS Demand</div>
+                    <div className="text-[18px] font-bold text-zinc-800 font-mono">{dosQtyMap.get(convertProduct) || 0}</div>
+                    <div className="text-[10px] text-zinc-400">pcs</div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Qty to Produce</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={grouped.get(convertProduct)?.totalQty ?? 0}
+                    value={convertQty || ""}
+                    onChange={e => setConvertQty(Math.min(Number(e.target.value) || 0, grouped.get(convertProduct)?.totalQty ?? 0))}
+                    placeholder="0"
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[15px] font-mono font-semibold outline-none focus:border-zinc-400"
+                  />
+                </div>
+
+                {/* Additional Ingredients */}
+                <div className="rounded-xl border border-zinc-200 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-50 border-b border-zinc-200">
+                    <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Additional Ingredients</span>
+                    <button
+                      onClick={() => { setShowConvertIngredientPicker(true); setConvertIngredientSearch(""); setConvertPickQuantities({}); }}
+                      className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-zinc-800 transition-colors"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                  {convertAddedIngredients.length === 0 ? (
+                    <div className="px-4 py-3 text-[12px] text-zinc-400 text-center">No additional ingredients added.</div>
+                  ) : (
+                    <div className="divide-y divide-zinc-100">
+                      {convertAddedIngredients.map((ing, i) => (
+                        <div key={i} className="flex items-center justify-between px-4 py-2">
+                          <span className="text-[13px] text-zinc-700">{ing.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[12px] text-zinc-500 font-mono">{ing.qty} {ing.unit}</span>
+                            <button
+                              onClick={() => {
+                                const removed = convertAddedIngredients[i];
+                                const invItem = inventory.find(inv => inv.id === removed.sourceId);
+                                const oldOnHand = invItem?.onHand ?? 0;
+                                onUpdateInventory?.(prev => prev.map(inv => inv.id === removed.sourceId ? { ...inv, onHand: inv.onHand + removed.qty } : inv));
+                                db.updateInventoryItem(removed.sourceId, { onHand: oldOnHand + removed.qty, group: invItem?.group ?? "ingredients" }).catch(console.error);
+                                setConvertAddedIngredients(prev => prev.filter((_, idx) => idx !== i));
+                              }}
+                              className="text-red-400 text-[12px] hover:text-red-600"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Filling Selection */}
+                <div className="rounded-xl border border-zinc-200 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-zinc-50 border-b border-zinc-200">
+                    <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Filling</span>
+                  </div>
+                  <div className="px-4 py-3 space-y-3">
+                    {(() => {
+                      const fillingRecipes = recipes.filter(r => r.group === "filling");
+                      const bakerInv = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"));
+                      const fillingOptions = fillingRecipes.map(fr => {
+                        const invItem = bakerInv.find(i => i.name === fr.productName);
+                        return { name: fr.productName, qty: invItem ? Math.max(0, invItem.onHand) : 0, unit: invItem?.unit || "pcs" };
+                      }).filter(f => f.qty > 0);
+                      if (fillingOptions.length === 0) {
+                        return <div className="text-[12px] text-zinc-400 text-center">No fillings available in My Inventory.</div>;
+                      }
+                      const maxFillingQty = convertSelectedFilling ? (fillingOptions.find(fo => fo.name === convertSelectedFilling)?.qty ?? 0) : 0;
+                      return (
+                        <>
+                          <div className="grid grid-cols-2 gap-2">
+                            <select
+                              value={convertSelectedFilling}
+                              onChange={e => {
+                                setConvertSelectedFilling(e.target.value);
+                                const f = fillingOptions.find(fo => fo.name === e.target.value);
+                                setConvertFillingQty(f?.qty ?? 0);
+                              }}
+                              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-zinc-400"
+                            >
+                              <option value="">No filling</option>
+                              {fillingOptions.map(fo => (
+                                <option key={fo.name} value={fo.name}>{fo.name} ({fo.qty} {fo.unit} available)</option>
+                              ))}
+                            </select>
+                            <div>
+                              <input
+                                type="number"
+                                min={1}
+                                max={maxFillingQty}
+                                disabled={!convertSelectedFilling}
+                                value={convertSelectedFilling && convertFillingQty > 0 ? convertFillingQty : ""}
+                                onChange={e => setConvertFillingQty(Math.min(Number(e.target.value) || 0, maxFillingQty))}
+                                placeholder={convertSelectedFilling ? "Qty to use" : "Select filling first"}
+                                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[13px] font-mono outline-none focus:border-zinc-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                              />
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => { setShowConvertModal(false); setConvertQty(0); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setConvertSize(""); }} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">
+                    Cancel
+                  </button>
+                  <button onClick={handleConvert} disabled={converting || convertQty <= 0 || !convertTargetProduct} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 disabled:opacity-40">
+                    {converting ? "Converting..." : "Convert to Product"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ), document.body)}
+
+        {/* Ingredient Picker for Conversion */}
+        {showConvertIngredientPicker && convertProduct && createPortal((() => {
+          const bakerAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"));
+          const pickerItems = bakerAccessInventory.filter(i => i.group === "ingredients").map(i => ({ id: i.id, name: i.name, qty: i.onHand, unit: i.unit }));
+          const searchLower = convertIngredientSearch.toLowerCase();
+          const filtered = pickerItems.filter(i => i.name.toLowerCase().includes(searchLower));
+          const addedIds = new Set(convertAddedIngredients.map(i => i.sourceId));
+          return (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-black/40" onClick={() => setShowConvertIngredientPicker(false)} />
+              <div className="relative bg-white border border-zinc-200 rounded-3xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
+                  <h3 className="text-[16px] font-semibold text-zinc-900">Add Ingredient</h3>
+                  <button onClick={() => setShowConvertIngredientPicker(false)} className="rounded-lg p-1 hover:bg-zinc-100 transition-colors">
+                    <span className="text-zinc-400 text-[18px]">✕</span>
+                  </button>
+                </div>
+                <div className="p-5 space-y-3">
+                  <input type="text" value={convertIngredientSearch} onChange={e => setConvertIngredientSearch(e.target.value)} placeholder="Search ingredients..." className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+                  {filtered.length === 0 ? (
+                    <div className="text-center py-8"><p className="text-[13px] text-zinc-400">No ingredients found.</p></div>
+                  ) : (
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                      {filtered.map(item => {
+                        const isAdded = addedIds.has(item.id);
+                        const pickQty = convertPickQuantities[item.id] ?? 0;
+                        return (
+                          <div key={item.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2.5">
+                            <div>
+                              <div className="text-[13px] text-zinc-800 font-medium">{item.name}</div>
+                              <div className="text-[11px] text-zinc-400 font-mono mt-0.5">On Hand: {item.qty} {item.unit}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isAdded ? (
+                                <span className="text-[11px] text-emerald-600 font-semibold">Added</span>
+                              ) : (
+                                <>
+                                  <input type="number" min={0} max={item.qty} value={pickQty > 0 ? pickQty : ""} onChange={e => setConvertPickQuantities(prev => ({ ...prev, [item.id]: parseFloat(e.target.value) || 0 }))} placeholder="Qty" className="w-16 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[12px] font-mono text-center outline-none focus:border-zinc-400" />
+                                  <button onClick={() => {
+                                    const qty = convertPickQuantities[item.id] ?? 0;
+                                    if (qty <= 0 || qty > item.qty) return;
+                                    onUpdateInventory?.(prev => prev.map(i => i.id === item.id ? { ...i, onHand: Math.max(0, i.onHand - qty) } : i));
+                                    const invItem = inventory.find(inv => inv.id === item.id);
+                                    db.updateInventoryItem(item.id, { onHand: Math.max(0, item.qty - qty), group: invItem?.group ?? "ingredients" }).catch(console.error);
+                                    setConvertAddedIngredients(prev => [...prev, { name: item.name, qty, unit: item.unit, sourceId: item.id }]);
+                                    setConvertPickQuantities(prev => ({ ...prev, [item.id]: 0 }));
+                                  }} disabled={!convertPickQuantities[item.id] || convertPickQuantities[item.id] <= 0} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-zinc-800 disabled:opacity-30 transition-all">
+                                    Add
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })(        ), document.body)}
+
+        {/* Toast Notification */}
+        {toast && createPortal((
+          <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }} onClick={() => setToast(null)}>
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl text-center" onClick={e => e.stopPropagation()}>
+              <div className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full mx-auto ${toast.type === "success" ? "bg-emerald-100" : "bg-red-100"}`}>
+                <span className={`text-[28px] ${toast.type === "success" ? "text-emerald-600" : "text-red-600"}`}>{toast.type === "success" ? "✓" : "✗"}</span>
+              </div>
+              <h3 className="text-[16px] font-semibold text-zinc-900">{toast.type === "success" ? "Success" : "Error"}</h3>
+              <p className="mt-1.5 text-center text-[13px] leading-relaxed text-zinc-500">{toast.message}</p>
+              <button onClick={() => setToast(null)} className="mt-5 w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-colors">Got it</button>
+            </div>
+          </div>
+        ), document.body)}
       </div>
     );
   }
@@ -496,7 +881,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         if (!aIsFilling && bIsFilling) return 1;
         return a.name.localeCompare(b.name);
       });
-    const decoItems = freezerItems.filter(i => i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.qty > 0);
+    const decoItems = freezerItems.filter(i =>
+      i.status === "stored" && i.qty > 0 && i.producedBy === "deco" && i.notes?.startsWith("Production Recipe")
+    );
 
     const tabItems = freezerTab === "baked-products" ? bakerItems : freezerTab === "my-inventory" ? bakerAccessInventory : decoItems;
     const filtered = tabItems.filter(i => !freezerSearch || (("name" in i ? (i as unknown as InventoryItem).name : (i as FreezerItem).productName).toLowerCase().includes(freezerSearch.toLowerCase())));
@@ -552,6 +939,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               <thead className="bg-zinc-50 border-b border-zinc-100">
                 <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                   <th className="px-5 py-3">Product</th>
+                  <th className="px-5 py-3">Size</th>
                   <th className="px-5 py-3 text-right">Qty</th>
                   {freezerTab !== "my-inventory" && <th className="px-5 py-3">Batch</th>}
                   <th className="px-5 py-3">{freezerTab === "my-inventory" ? "Category" : "Date"}</th>
@@ -561,27 +949,36 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               </thead>
               <tbody className="divide-y divide-zinc-50">
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={freezerTab === "my-inventory" ? 5 : 6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No items in this section.</td></tr>
+                  <tr><td colSpan={freezerTab === "my-inventory" ? 6 : 7} className="px-5 py-12 text-center text-[13px] text-zinc-400">No items in this section.</td></tr>
                 ) : freezerTab === "baked-products" ? (() => {
                   const grouped = new Map<string, { items: FreezerItem[]; totalQty: number }>();
                   (filtered as FreezerItem[]).forEach(f => {
-                    if (!grouped.has(f.productName)) grouped.set(f.productName, { items: [], totalQty: 0 });
-                    const g = grouped.get(f.productName)!;
+                    const fSize = f.size || f.notes?.match(/ \| Size: (.+)$/)?.[1] || "";
+                    const key = fSize ? `${f.productName}||${fSize}` : f.productName;
+                    if (!grouped.has(key)) grouped.set(key, { items: [], totalQty: 0 });
+                    const g = grouped.get(key)!;
                     g.items.push(f);
                     g.totalQty += f.qty;
                   });
-                  return [...grouped.entries()].map(([productName, g]) => (
-                    <tr key={productName} className="hover:bg-zinc-50/50 transition-colors">
-                      <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{productName}</div></td>
+                  return [...grouped.entries()].map(([key, g]) => {
+                    const item = g.items[0];
+                    const sizeFromNotes = item.notes?.match(/ \| Size: (.+)$/)?.[1];
+                    const size = item.size || sizeFromNotes || "";
+                    return (
+                    <tr key={key} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-5 py-3.5">
+                        <div className="text-[13px] font-medium text-zinc-900">{item.productName}</div>
+                      </td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-600">{size || "—"}</td>
                       <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{g.totalQty} pcs</td>
                       <td className="px-5 py-3.5 text-[12px] text-zinc-600">{g.items.length} batch{g.items.length > 1 ? "es" : ""}</td>
                       <td className="px-5 py-3.5 text-[12px] text-zinc-500">{g.items[0]?.dateProduced || "—"}</td>
                       <td className="px-5 py-3.5"><span className="rounded-full bg-amber-50 text-amber-700 px-2 py-0.5 text-[10px] font-medium">Baker</span></td>
                       <td className="px-5 py-3.5 text-right">
-                        <button onClick={() => { if (confirm(`Delete ALL batches of ${productName}?`)) { const ids = new Set(g.items.map(x => x.id)); const updated = freezerItems.filter(f => !ids.has(f.id)); onUpdateFreezer?.(updated); ids.forEach(id => db.deleteFreezerItem(id).catch(console.error)); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del All</button>
+                        <button onClick={() => { if (confirm(`Delete ALL batches of ${g.items[0].productName}?`)) { const ids = new Set(g.items.map(x => x.id)); const updated = freezerItems.filter(f => !ids.has(f.id)); onUpdateFreezer?.(updated); ids.forEach(id => db.deleteFreezerItem(id).catch(console.error)); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del All</button>
                       </td>
                     </tr>
-                  ));
+                  );});
                 })() : freezerTab === "deco-production-recipe" ? (() => {
                   const decoGrouped = new Map<string, { items: FreezerItem[]; totalQty: number }>();
                   (filtered as FreezerItem[]).forEach(f => {

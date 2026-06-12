@@ -60,13 +60,14 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
     db.fetchPastryAssemblyTasks().then(setAssemblyTasks).catch(console.error);
   }, [activeTab]);
 
+  const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
   const todayDOS = dosItems.filter(d => {
-    if (d.status === "scheduled") return false;
-    if (d.scheduledDate && d.scheduledDate <= new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]) return true;
+    if (d.status === "scheduled" && d.scheduledDate && d.scheduledDate > todayStr) return false;
+    if (d.scheduledDate) return d.scheduledDate === todayStr;
     const ts = d.id.match(/DOS-(\d+)/)?.[1];
-    if (!ts) return false;
+    if (!ts) return true;
     const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-    return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    return itemDate === todayStr;
   });
 
   const pastryDOS = todayDOS.filter(d => (d.roles ?? []).includes("pastry"));

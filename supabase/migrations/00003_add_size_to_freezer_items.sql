@@ -1,0 +1,1 @@
+ALTER TABLE freezer_items ADD COLUMN IF NOT EXISTS size text DEFAULT '';

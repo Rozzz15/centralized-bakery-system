@@ -150,14 +150,23 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   };
   const isAlreadyProcessed = (key: string) => processedDecoRef.current.has(key);
 
+  const getBaseName = (name: string) =>
+    name.toLowerCase().replace(/[\s]*[\(\*\d].*$/, '').trim();
+  const findRecipe = (productName: string) =>
+    recipes.find(r =>
+      r.productName.toLowerCase() === productName.toLowerCase() ||
+      (r.linkedIngredients ?? []).some(l => l.toLowerCase() === productName.toLowerCase()) ||
+      getBaseName(r.productName) === getBaseName(productName)
+    );
+
+  const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
   const todayDOS = dosItems.filter(d => {
-    if (d.status === "scheduled") return false;
-    // Include items that were activated from scheduled (scheduledDate is still set but status !== "scheduled")
-    if (d.scheduledDate && d.scheduledDate <= new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]) return true;
+    if (d.status === "scheduled" && d.scheduledDate && d.scheduledDate > todayStr) return false;
+    if (d.scheduledDate) return d.scheduledDate === todayStr;
     const ts = d.id.match(/DOS-(\d+)/)?.[1];
-    if (!ts) return false;
+    if (!ts) return true;
     const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-    return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+    return itemDate === todayStr;
   });
   const decoTaskProducts = new Set(production.filter(p => p.assignedTo === "deco").map(t => t.product));
   const dosForDeco = todayDOS.filter(d => (d.roles ?? []).includes("deco"));
@@ -222,7 +231,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     allDosIds.forEach(dosId => {
       const dos = dosForDeco.find(d => d.id === dosId);
       if (!dos) return;
-      const directRecipe = recipes.find(r => r.productName === dos.product);
+      const directRecipe = findRecipe(dos.product);
       const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
         .map(name => recipes.find(r => r.productName === name))
         .filter(Boolean)
@@ -345,13 +354,14 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   // Build production plan draft when DOS items or recipes change
   useEffect(() => {
+    const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
     const todayDOSForPlan = dosItems.filter(d => {
-      if (d.status === "scheduled") return false;
-      if (d.scheduledDate && d.scheduledDate <= new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]) return true;
+      if (d.status === "scheduled" && d.scheduledDate && d.scheduledDate > todayStr) return false;
+    if (d.scheduledDate) return d.scheduledDate === todayStr;
       const ts = d.id.match(/DOS-(\d+)/)?.[1];
-      if (!ts) return false;
+      if (!ts) return true;
       const itemDate = new Date(Number(ts)).toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-      return itemDate === new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+      return itemDate === todayStr;
     }).filter(d => (d.roles ?? []).includes("deco"));
     if (todayDOSForPlan.length === 0) { setPlanDraft(null); return; }
     const demands = aggregateRecipeDemand(todayDOSForPlan, recipes);
@@ -386,7 +396,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const togglePrepared = (id: string) => setPreMixPrepared(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const handleEditRecipe = (product: string) => {
-    const existing = recipes.find(r => r.productName === product);
+    const existing = findRecipe(product);
     setRecipeDraft(existing ? existing.ingredients.map(i => ({ ...i })) : []);
     setRecipeDraftYield(existing?.yield ?? 1);
     setEditingRecipe(product);
@@ -394,7 +404,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   const handleSaveRecipe = () => {
     if (!editingRecipe || !onUpdateRecipes) return;
-    const existingRecipe = recipes.find(r => r.productName === editingRecipe);
+    const existingRecipe = findRecipe(editingRecipe);
     const newRecipe: ProductRecipe = {
       productId: editingRecipe, productName: editingRecipe,
       ingredients: recipeDraft.filter(i => i.name.trim()),
@@ -624,11 +634,19 @@ defer(() => onUpdateInventory(prevInv => {
   };
 
   const getRecipesForProduct = (product: string) => {
-    const direct = recipes.filter(r => r.productName === product);
+    const base = getBaseName(product);
+    // Direct recipes — exact match or base-name match
+    const direct = recipes.filter(r =>
+      r.productName.toLowerCase() === product.toLowerCase() ||
+      getBaseName(r.productName) === base
+    );
     // Recipes that explicitly link TO this product (via their linkedIngredients field)
-    const linked = recipes.filter(r => (r.linkedIngredients ?? []).includes(product) && r.productName !== product);
+    const linked = recipes.filter(r =>
+      (r.linkedIngredients ?? []).some(l => l.toLowerCase() === product.toLowerCase() || getBaseName(l) === base) &&
+      r.productName !== product
+    );
     // Recipes that are linked FROM this product's own linkedIngredients field
-    const productRecipe = recipes.find(r => r.productName === product);
+    const productRecipe = findRecipe(product);
     const fromLinks = productRecipe
       ? ((productRecipe.linkedIngredients ?? [])
           .map(name => recipes.find(r => r.productName === name))
@@ -644,7 +662,7 @@ defer(() => onUpdateInventory(prevInv => {
   };
 
   const totalNeeded = dosForDeco.reduce((s, d) => {
-    const directRecipe = recipes.find(r => r.productName === d.product);
+    const directRecipe = findRecipe(d.product);
     const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
       .map(name => recipes.find(r => r.productName === name))
       .filter(Boolean)
@@ -668,7 +686,7 @@ defer(() => onUpdateInventory(prevInv => {
   /* ── Dashboard ── */
   if (activeTab === "dashboard") {
     const totalPkg = dosForDeco.reduce((s, d) => {
-      const directRecipe = recipes.find(r => r.productName === d.product);
+      const directRecipe = findRecipe(d.product);
       const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
         .map(name => recipes.find(r => r.productName === name))
         .filter(Boolean)
@@ -679,7 +697,7 @@ defer(() => onUpdateInventory(prevInv => {
       return s + pkgSet.size;
     }, 0);
     const totalDecoItems = dosForDeco.reduce((s, d) => {
-      const directRecipe = recipes.find(r => r.productName === d.product);
+      const directRecipe = findRecipe(d.product);
       const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
         .map(name => recipes.find(r => r.productName === name))
         .filter(Boolean)
@@ -711,7 +729,7 @@ return (
             ) : (
               <div className="space-y-6">
                 {dosForDeco.map(d => {
-                  const directRecipe = recipes.find(r => r.productName === d.product);
+                  const directRecipe = findRecipe(d.product);
                   const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
                     .map(name => recipes.find(r => r.productName === name))
                     .filter(Boolean)
@@ -853,7 +871,7 @@ return (
                           });
                         }
                         newQty[dos.id] = Math.max(0, (productQty[dos.id] ?? dos.qty) - dosQty);
-                        const linkedRecipes = (recipes.find(r => r.productName === dos.product)?.linkedIngredients ?? [])
+                        const linkedRecipes = (findRecipe(dos.product)?.linkedIngredients ?? [])
                           .map(name => recipes.find(r => r.productName === name))
                           .filter(Boolean);
                         linkedRecipes.forEach(r => {
@@ -954,7 +972,7 @@ return (
                           allNewItems.push(newItem);
                         }
                         newQty[dos.id] = Math.max(0, (productQty[dos.id] ?? dos.qty) - dosQty);
-                        const linkedRecipes = (recipes.find(r => r.productName === dos.product)?.linkedIngredients ?? [])
+                        const linkedRecipes = (findRecipe(dos.product)?.linkedIngredients ?? [])
                           .map(name => recipes.find(r => r.productName === name))
                           .filter(Boolean);
                         linkedRecipes.forEach(r => {
@@ -1068,7 +1086,7 @@ return (
         ) : (() => {
           const recipeMap = new Map<string, { recipe: ProductRecipe; totalQty: number }>();
           dosForDeco.forEach(d => {
-            const directRecipe = recipes.find(r => r.productName === d.product);
+            const directRecipe = findRecipe(d.product);
             // Include the direct recipe only if it has ingredients
             if (directRecipe && directRecipe.ingredients.length > 0) {
               const key = directRecipe.productName.toLowerCase();
@@ -1157,7 +1175,7 @@ return (
                   </div>
                 ))}
                 {summaryModal === "ingredients" && dosForDeco.map(d => {
-                  const directRecipe = recipes.find(r => r.productName === d.product);
+                  const directRecipe = findRecipe(d.product);
                   const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
                     .map(name => recipes.find(r => r.productName === name))
                     .filter(Boolean)
@@ -1178,7 +1196,7 @@ return (
                   );
                 })}
                 {summaryModal === "packaging" && dosForDeco.flatMap(d => {
-                  const directRecipe = recipes.find(r => r.productName === d.product);
+                  const directRecipe = findRecipe(d.product);
                   const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
                     .map(name => recipes.find(r => r.productName === name))
                     .filter(Boolean)
@@ -1206,7 +1224,7 @@ return (
                   </div>
                 ))}
                 {summaryModal === "deco" && dosForDeco.flatMap(d => {
-                  const directRecipe = recipes.find(r => r.productName === d.product);
+                  const directRecipe = findRecipe(d.product);
                   const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
                     .map(name => recipes.find(r => r.productName === name))
                     .filter(Boolean)
@@ -1259,7 +1277,7 @@ return (
   /* ── Tasks to Prepare ── */
   if (activeTab === "tasks-to-prepare") {
     const getRecipesForProduct = (product: string): ProductRecipe[] => {
-      const direct = recipes.find(r => r.productName === product);
+      const direct = findRecipe(product);
       const result: ProductRecipe[] = [];
       const seen = new Set<string>();
       if (direct) {
@@ -1441,7 +1459,7 @@ return (
         allProductKeys.push({ dosId: dos.id, productName: r.productName });
       });
       // Mark done for ALL keys that task cards check (matches getRecipesForProduct logic)
-      const dosDirect = recipes.find(r => r.productName === dos.product);
+      const dosDirect = findRecipe(dos.product);
       const taskCardRecipes: ProductRecipe[] = [];
       const taskCardSeen = new Set<string>();
       if (dosDirect) {
