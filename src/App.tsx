@@ -562,7 +562,7 @@ export default function App() {
     if (!loggedIn) return;
     const sync = setInterval(async () => {
       try {
-        const [dos, prod, decoPrep, inv] = await Promise.all([db.fetchDOS(), db.fetchProduction(), db.fetchDecoProductionPrep(), db.fetchAllInventory()]);
+        const [dos, prod, decoPrep, inv, freezer, fHistory] = await Promise.all([db.fetchDOS(), db.fetchProduction(), db.fetchDecoProductionPrep(), db.fetchAllInventory(), db.fetchFreezerItems(), db.fetchFreezerHistory()]);
         if (inv.length > 0) setInventory(inv);
         if (dos.length > 0) {
           if (!syncReady.current) {
@@ -587,6 +587,9 @@ export default function App() {
         }
         if (prod.length > 0) setProduction(prod);
         setDecoProductionPrep(decoPrep);
+        if (freezer.length > 0) setFreezerItems(freezer);
+        else setFreezerItems(freezer);
+        if (fHistory.length > 0) setFreezerHistory(fHistory);
       } catch {}
     }, 5000);
     return () => clearInterval(sync);
@@ -1019,7 +1022,7 @@ export default function App() {
               />
             )}
             {role === "baker" && ["dashboard", "conversion", "freezer", "filling"].includes(activeTab) && (
-              <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} />
+              <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} onUpdateDOS={setDosItems} />
             )}
             {role === "deco" && ["dashboard", "tasks-to-prepare", "recipe-analysis", "pre-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer", "waste-adjustment"].includes(activeTab) && (
               <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} onUpdateProduction={handleUpdateProduction} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} productRoutes={productRoutes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} wasteLog={wasteLog} onUpdateWasteLog={setWasteLog} />

@@ -169,6 +169,13 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     }
   }, [activeTab]);
 
+  // Refetch freezer items from DB when freezer tab becomes active
+  useEffect(() => {
+    if (activeTab === "freezer") {
+      db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error);
+    }
+  }, [activeTab]);
+
   const [editingRecipe, setEditingRecipe] = useState<string | null>(null);
   const [recipeDraft, setRecipeDraft] = useState<{ inventoryId: string; name: string; qtyPerBatch: number; unit: string }[]>([]);
   const [recipeDraftYield, setRecipeDraftYield] = useState<number>(1);
@@ -1675,7 +1682,7 @@ return (
                 {recipe.ingredients.map((ing, i) => (
                   <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/50 px-3 py-2">
                     <span className="text-[13px] text-zinc-300 font-medium">{ing.name}</span>
-                    <span className="font-mono text-[13px] text-zinc-400">{ing.qtyPerBatch * prepDemandQty}{ing.unit}</span>
+                    <span className="font-mono text-[13px] text-zinc-400">{ing.qtyPerBatch * batchesNeeded}{ing.unit}</span>
                   </div>
                 ))}
               </div>
@@ -1688,7 +1695,7 @@ return (
                   {lr.ingredients.map((ing, i) => (
                     <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/30 border border-zinc-700/50 px-3 py-2">
                       <span className="text-[13px] text-zinc-400 font-medium">{ing.name}</span>
-                      <span className="font-mono text-[13px] text-zinc-500">{ing.qtyPerBatch * prepDemandQty}{ing.unit}</span>
+                      <span className="font-mono text-[13px] text-zinc-500">{ing.qtyPerBatch * batchesNeeded}{ing.unit}</span>
                     </div>
                   ))}
                 </div>
@@ -1848,7 +1855,7 @@ return (
 
   /* ── Advanced Premix ── */
   if (activeTab === "advanced-premix") {
-    const filteredRecipes = recipes.filter(r => r.productName.toLowerCase().includes(advMixSearch.toLowerCase()) || advMixSearch === "").sort((a, b) => a.productName.localeCompare(b.productName));
+    const filteredRecipes = recipes.filter(r => r.group !== "filling").filter(r => r.productName.toLowerCase().includes(advMixSearch.toLowerCase()) || advMixSearch === "").sort((a, b) => a.productName.localeCompare(b.productName));
 
     function toggleAdvRecipe(name: string) {
       setSelectedAdvRecipes(prev => {
@@ -1860,6 +1867,18 @@ return (
 
     return (
       <div className="max-w-4xl mx-auto">
+        {toast && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)" }} onClick={() => setToast(null)}>
+            <div className="flex flex-col items-center rounded-2xl bg-white px-8 py-7 shadow-2xl" style={{ minWidth: 360, maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+              <div className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full ${toast.type === "success" ? "bg-emerald-100" : "bg-red-100"}`}>
+                <span className={`text-[28px] ${toast.type === "success" ? "text-emerald-600" : "text-red-600"}`}>{toast.type === "success" ? "✓" : "✗"}</span>
+              </div>
+              <h3 className="text-[16px] font-semibold text-zinc-900">{toast.type === "success" ? "Success" : "Error"}</h3>
+              <p className="mt-1.5 text-center text-[13px] leading-relaxed text-zinc-500">{toast.message}</p>
+              <button onClick={() => setToast(null)} className="mt-5 w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-colors">Got it</button>
+            </div>
+          </div>
+        )}
         <div className="sticky top-0 z-10 bg-[#F9F6F1] py-6 space-y-4">
           <div>
             <h1 className="text-[32px] font-extrabold tracking-tight text-zinc-900">Advanced Premix</h1>
@@ -1908,7 +1927,7 @@ return (
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {Array.from(selectedAdvRecipes).map(productName => {
+              {Array.from(selectedAdvRecipes).filter(pn => { const r = recipes.find(rec => rec.productName === pn); return !r || r.group !== "filling"; }).map(productName => {
                 const recipe = recipes.find(r => r.productName === productName);
                 const qty = advMixQtys[productName] || 1;
                 if (!recipe) return null;
@@ -2026,7 +2045,8 @@ return (
                 setAdvMixQtys({});
                 setAdvMixAdjustments({});
                 setIsAdvLocked(false);
-              }} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700">My Inventory</button>
+                showToast("Saved to My Inventory");
+              }} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700">Send to My Inventory</button>
               <button onClick={() => {
                 const batchRef = `ADV-${Date.now()}`;
                 const workingInv = inventory.map(i => ({ ...i }));
@@ -2045,9 +2065,11 @@ return (
                 };
                 const deductedItems: string[] = [];
                 const missedItems: string[] = [];
-                const items: FreezerItem[] = Array.from(selectedAdvRecipes).map(productName => {
+                const mergedItems: FreezerItem[] = [];
+                const newItems: FreezerItem[] = [];
+                Array.from(selectedAdvRecipes).forEach(productName => {
                   const recipe = recipes.find(r => r.productName === productName);
-                  if (!recipe) return null as unknown as FreezerItem;
+                  if (!recipe) return;
                   const qty = advMixQtys[productName] || 1;
                   const adjustments = advMixAdjustments[productName];
                   recipe.ingredients.forEach(ing => {
@@ -2062,42 +2084,58 @@ return (
                   const notes = adjustments
                     ? Object.entries(adjustments).filter(([, v]) => v !== 0).map(([name, v]) => `${name}: ${v > 0 ? "+" : ""}${v.toFixed(1)}`).join("; ")
                     : "";
-                  return {
-                    id: `FRZ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                    productName, qty, unit: "batch", batchRef,
-                    producedBy: "deco",
-                    dateProduced: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
-                    status: "stored", notes: notes || "Deco Advanced Premix",
-                  };
-                }).filter(Boolean);
+                  const prNotes = notes ? `Production Recipe (${notes})` : "Production Recipe";
+                  const existing = freezerItems.find(fi =>
+                    fi.productName === productName && fi.producedBy === "deco" && fi.notes?.startsWith("Production Recipe") && fi.status === "stored"
+                  );
+                  if (existing) {
+                    mergedItems.push({ ...existing, qty: existing.qty + qty, dateProduced: new Date().toISOString(), notes: prNotes });
+                  } else {
+                    newItems.push({
+                      id: `FRZ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                      productName, qty, unit: "batch", batchRef,
+                      producedBy: "deco",
+                      dateProduced: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
+                      status: "stored", notes: prNotes,
+                    });
+                  }
+                });
                 onUpdateInventory(workingInv);
                 const changed = workingInv.filter(item => {
                   const orig = inventory.find(i => i.id === item.id);
                   return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
                 });
                 if (changed.length > 0) db.upsertInventory(changed).catch(console.error);
-                onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, ...items]);
-                db.upsertFreezerItems(items).then(() => {
-                  const assemblyTasks = items.map(item => ({
-                    id: crypto.randomUUID?.() ?? `ASM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                    productName: item.productName,
-                    premixItemId: item.id,
-                    premixQtyUsed: item.qty,
-                    qtyAssembled: 0,
-                    status: "pending" as const,
-                    assembledBy: "baker",
-                    notes: `From Deco Advanced Premix (${batchRef})`,
-                  }));
-                  return Promise.all(assemblyTasks.map(t => db.saveBakerAssemblyTask(t)));
-                }).catch(console.error);
+                if (mergedItems.length > 0) {
+                  onUpdateFreezer?.((prev: FreezerItem[]) => prev.map(fi => { const m = mergedItems.find(x => x.id === fi.id); return m || fi; }));
+                  db.upsertFreezerItems(mergedItems).catch(console.error);
+                }
+                if (newItems.length > 0) {
+                  onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, ...newItems]);
+                  db.upsertFreezerItems(newItems).then(() => {
+                    const assemblyTasks = newItems.map(item => ({
+                      id: crypto.randomUUID?.() ?? `ASM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                      productName: item.productName,
+                      premixItemId: item.id,
+                      premixQtyUsed: item.qty,
+                      qtyAssembled: 0,
+                      status: "pending" as const,
+                      assembledBy: "baker",
+                      notes: `From Deco Advanced Premix (${batchRef})`,
+                    }));
+                    return Promise.all(assemblyTasks.map(t => db.saveBakerAssemblyTask(t)));
+                  }).catch(console.error);
+                }
+                const totalCount = selectedAdvRecipes.size;
                 const deductLog = deductedItems.length > 0 ? " Deducted: " + deductedItems.join(", ") : "";
                 const missLog = missedItems.length > 0 ? " Missed: " + missedItems.join(", ") : "";
-                onAddAuditLog?.("ADVANCED_PREMIX_SAVED", `Saved ${items.length} compositions to Advanced Premix (batch: ${batchRef}).${deductLog}${missLog}`);
+                onAddAuditLog?.("ADVANCED_PREMIX_SAVED", `Saved ${totalCount} composition(s) to Production Recipe (batch: ${batchRef}). Merged: ${mergedItems.length}, New: ${newItems.length}.${deductLog}${missLog}`);
                 setSelectedAdvRecipes(new Set());
                 setAdvMixQtys({});
                 setAdvMixAdjustments({});
                 setIsAdvLocked(false);
-              }} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-amber-600 hover:bg-amber-700">Advanced Premix</button>
+                showToast("Saved to Baker");
+              }} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-amber-600 hover:bg-amber-700">Send to Baker</button>
             </div>
           </div>
         )}
@@ -2897,7 +2935,6 @@ return (
     );
   }
 
-  /* ── Freezer Tab ── */
   if (activeTab === "freezer") {
     const myFreezer = freezerItems.filter(i => i.producedBy === "deco");
     const decoOnlyInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco"));

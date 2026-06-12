@@ -17,6 +17,7 @@ type Props = {
   freezerHistory?: FreezerHistory[];
   inventory?: InventoryItem[];
   onUpdateInventory?: (cb: InventoryItem[] | ((prev: InventoryItem[]) => InventoryItem[])) => void;
+  onUpdateDOS?: (cb: DOSItem[] | ((prev: DOSItem[]) => DOSItem[])) => void;
 };
 
 const steps = [
@@ -26,7 +27,7 @@ const steps = [
   { id: "complete", label: "✅ Complete Production" },
 ];
 
-export default function BakerDashboard({ production, dosItems, onCompleteTask, activeTab, productCatalog, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], inventory = [], onUpdateInventory }: Props) {
+export default function BakerDashboard({ production, dosItems, onCompleteTask, activeTab, productCatalog, recipes, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], inventory = [], onUpdateInventory, onUpdateDOS }: Props) {
   const [step, setStep] = useState(0);
   const [startedRecipes, setStartedRecipes] = useState<Set<string>>(new Set());
   const [startingRecipe, setStartingRecipe] = useState<string | null>(null);
@@ -239,6 +240,13 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       setStartingRecipe(null);
     }
   };
+
+  // Refetch freezer items from DB when freezer tab becomes active
+  useEffect(() => {
+    if (activeTab === "freezer") {
+      db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error);
+    }
+  }, [activeTab]);
 
   /* ── Conversion Tab ── */
   if (activeTab === "conversion") {
@@ -488,10 +496,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         if (!aIsFilling && bIsFilling) return 1;
         return a.name.localeCompare(b.name);
       });
-    const decoItems = freezerItems.filter(i => i.status === "stored" && i.qty > 0 && (
-      i.producedBy === "deco" ||
-      (i.producedBy === "baker" && i.notes === "Production Recipe (Assembled)")
-    ));
+    const decoItems = freezerItems.filter(i => i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.qty > 0);
 
     const tabItems = freezerTab === "baked-products" ? bakerItems : freezerTab === "my-inventory" ? bakerAccessInventory : decoItems;
     const filtered = tabItems.filter(i => !freezerSearch || (("name" in i ? (i as unknown as InventoryItem).name : (i as FreezerItem).productName).toLowerCase().includes(freezerSearch.toLowerCase())));
@@ -618,7 +623,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                           </span>
                         </td>
                         <td className="px-5 py-3.5 text-right">
-                          <button onClick={() => { if (confirm(`Delete ALL batches of ${productName}?`)) { const ids = new Set(g.items.map(x => x.id)); const updated = freezerItems.filter(f => !ids.has(f.id)); onUpdateFreezer?.(updated); ids.forEach(id => db.deleteFreezerItem(id).catch(console.error)); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del All</button>
+                          {g.items.some(item => canEdit(item)) ? (
+                            <button onClick={() => { if (confirm(`Delete ALL batches of ${productName}?`)) { const ids = new Set(g.items.map(x => x.id)); const updated = freezerItems.filter(f => !ids.has(f.id)); onUpdateFreezer?.(updated); ids.forEach(id => db.deleteFreezerItem(id).catch(console.error)); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del All</button>
+                          ) : (
+                            <span className="text-[11px] text-zinc-400">View only</span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1076,14 +1085,13 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               const recipeDisplayName = recipe?.productName || productName;
               const hasActual = actualProduction[productName] !== undefined;
               const actual = hasActual ? actualProduction[productName]! : 0;
-              // Deco stock from Production Recipe
+              // Deco stock from Production Recipe (same freezer — identical filter to Deco's Production Recipe tab)
               const decoStock = freezerItems.filter(i =>
-                i.status === "stored" && i.qty > 0 && i.producedBy === "deco" &&
+                i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.qty > 0 &&
                 (i.productName === productName || i.productName === recipeDisplayName)
               );
               const decoAvailable = decoStock.reduce((sum, i) => sum + i.qty, 0);
-              const decoExcess = decoAvailable - (hasActual ? actual : 0);
-              const bakerNeeded = Math.max(0, group.totalQty - decoAvailable);
+              const maxBakerInput = decoAvailable; // Baker can only produce up to what Deco has available
               return (
                 <div key={productName} className="rounded-xl border border-zinc-800 bg-zinc-800/30 p-4 mb-3 last:mb-0">
                   <div className="flex items-center justify-between mb-3">
@@ -1094,7 +1102,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                       </div>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[11px]">
                         <span className="text-zinc-400">DOS Demand: <span className="font-mono font-semibold text-white">{group.totalQty}</span> pcs</span>
-                        {hasYield && (
+                        {hasYield && expectedOutput <= maxBakerInput && (
                           <>
                             <span className="text-zinc-600">·</span>
                             <span className="text-amber-400/80">Expected: {expectedOutput} pcs</span>
@@ -1107,11 +1115,8 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   <div className="rounded-lg bg-zinc-950/40 p-3 mb-3">
                     <label className="text-[11px] text-zinc-400 block mb-1.5">
                       How many pieces will you produce?
-                      {decoAvailable >= group.totalQty && bakerNeeded === 0 && (
-                        <span className="text-emerald-400/60 ml-1">(Deco has enough — optional)</span>
-                      )}
-                      {decoAvailable < group.totalQty && (
-                        <span className="text-zinc-600 ml-1">(need {bakerNeeded} more)</span>
+                      {decoAvailable > 0 && (
+                        <span className="text-zinc-500 ml-1">(Deco has {decoAvailable} — max {maxBakerInput})</span>
                       )}
                     </label>
                     <div className="flex items-center gap-3">
@@ -1119,14 +1124,15 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                         type="text"
                         inputMode="numeric"
                         value={actualProduction[productName] !== undefined ? String(actualProduction[productName]) : ''}
-                        placeholder={`${expectedOutput}`}
+                        placeholder={`${maxBakerInput}`}
                         onChange={e => {
                           const raw = e.target.value;
                           if (raw === '') {
                             const { [productName]: _, ...rest } = actualProduction;
                             setActualProduction(rest);
                           } else {
-                            setActualProduction(prev => ({ ...prev, [productName]: parseInt(raw) || 0 }));
+                            const val = parseInt(raw) || 0;
+                            setActualProduction(prev => ({ ...prev, [productName]: Math.min(val, maxBakerInput) }));
                           }
                         }}
                         className="w-28 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-[15px] font-mono font-bold text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 transition-colors"
@@ -1151,9 +1157,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                       <div className="font-mono font-bold text-amber-300 text-[13px]">{hasActual ? actual : '—'}</div>
                     </div>
                     <div className="rounded-lg bg-zinc-950/40 p-2 text-center">
-                      <div className="text-zinc-500 mb-0.5">Excess</div>
-                      <div className={`font-mono font-bold text-[13px] ${hasActual ? (decoExcess > 0 ? 'text-emerald-400' : decoExcess < 0 ? 'text-red-400' : 'text-zinc-300') : 'text-zinc-600'}`}>
-                        {hasActual ? (decoExcess > 0 ? `+${decoExcess}` : decoExcess) : '—'}
+                      <div className="text-zinc-500 mb-0.5">Deco Left</div>
+                      <div className={`font-mono font-bold text-[13px] ${hasActual ? (decoAvailable - actual > 0 ? 'text-emerald-400' : decoAvailable - actual === 0 ? 'text-zinc-500' : 'text-red-400') : 'text-zinc-600'}`}>
+                        {hasActual ? decoAvailable - actual : decoAvailable}
                       </div>
                     </div>
                   </div>
@@ -1280,12 +1286,12 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 const bakerUsed = Math.min(bakerProduced, demand);
                 const bakerRemaining = bakerProduced - bakerUsed;
 
-                // Deduct bakerProduced from Deco Production Recipe items (FIFO)
+                // Deduct Deco Production Recipe items consumed by baking (FIFO)
                 if (bakerProduced > 0) {
                   let toDeduct = bakerProduced;
                   const decoItems = freezerItems
                     .filter(i =>
-                      i.status === "stored" && i.qty > 0 && i.producedBy === "deco" &&
+                      i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.qty > 0 &&
                       (i.productName === productName || i.productName === recipeDisplayName)
                     )
                     .sort((a, b) => (a.dateProduced || "").localeCompare(b.dateProduced || ""));
@@ -1371,6 +1377,14 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
 
               // Save history
               newHistory.forEach(h => db.insertFreezerHistory(h).catch(console.error));
+
+              // Mark DOS items as completed
+              const productsBaked = [...grouped.keys()].filter(p => (actualProduction[p] ?? 0) > 0);
+              const dosToComplete = bakerDOS.filter(d => productsBaked.includes(d.product) && d.status === "in-progress");
+              if (dosToComplete.length > 0) {
+                Promise.all(dosToComplete.map(d => db.updateDOS(d.id, { status: "completed" }))).catch(console.error);
+                onUpdateDOS?.(prev => prev.map(d => dosToComplete.find(c => c.id === d.id) ? { ...d, status: "completed" as const } : d));
+              }
 
               // Reset and go back to DOS Review
               setStep(0);
