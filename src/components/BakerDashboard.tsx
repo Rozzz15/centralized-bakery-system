@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ProductionTask, DOSItem, BakerIngredientRequest, ProductRecipe, FreezerItem, FreezerHistory, InventoryItem, ProductPricing } from "../types";
+import type { ProductionTask, DOSItem, BakerIngredientRequest, ProductRecipe, RecipeIngredient, FreezerItem, FreezerHistory, InventoryItem, ProductPricing } from "../types";
 import * as db from "../lib/db";
 
 type Props = {
@@ -35,6 +35,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const [actualProduction, setActualProduction] = useState<Record<string, number>>({});
   const [selectedRecipe, setSelectedRecipe] = useState<string | null>(null);
   const [additionalIngredients, setAdditionalIngredients] = useState<Record<string, { name: string; qty: number; unit: string; sourceType: "freezer" | "inventory"; sourceId: string }[]>>({});
+  const [selectedFillings, setSelectedFillings] = useState<Record<string, { name: string; qty: number }[]>>({});
+  const [fillingPickerName, setFillingPickerName] = useState("");
+  const [fillingPickerQty, setFillingPickerQty] = useState("");
   const [showIngredientPicker, setShowIngredientPicker] = useState(false);
   const [ingredientPickerSearch, setIngredientPickerSearch] = useState("");
   const [pickQuantities, setPickQuantities] = useState<Record<string, number>>({});
@@ -130,6 +133,20 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       getBaseName(r.productName) === getBaseName(productName)
     );
 
+  // Recursively collect ingredients from a recipe and all its linked sub-recipes
+  const getRecipeIngredients = (recipe: ProductRecipe | undefined, visited = new Set<string>()): RecipeIngredient[] => {
+    if (!recipe || visited.has(recipe.productName.toLowerCase())) return [];
+    visited.add(recipe.productName.toLowerCase());
+    const all: RecipeIngredient[] = [...recipe.ingredients];
+    (recipe.linkedIngredients ?? []).forEach(linkedName => {
+      const subRecipe = recipes.find(r => r.productName.toLowerCase() === linkedName.toLowerCase());
+      if (subRecipe) {
+        all.push(...getRecipeIngredients(subRecipe, visited));
+      }
+    });
+    return all;
+  };
+
   const bakerDOS = todayDOS.filter(d => (d.roles ?? []).includes("baker"));
   const decoProductSet = new Set(decoProductionItems.map(i => i.productName));
   // Total DOS qty per product (for display)
@@ -140,20 +157,33 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.notes !== "Production Recipe (Assembled)").forEach(i => {
     bakedQtyMap.set(i.productName, (bakedQtyMap.get(i.productName) || 0) + i.qty);
   });
-  // Actual Deco production output per product (only if Deco has completed their DOS)
+  // Actual Deco production output per product
   const decoOutputMap = new Map<string, number>();
   const decoCompletedProducts = new Set<string>();
+  // Check both completed deco DOS and completed deco production tasks
   dosItems.filter(d => d.roles?.includes("deco")).forEach(d => {
     if (d.status === "completed") {
       const recipe = findRecipe(d.product);
       const recipeName = recipe?.productName || d.product;
       decoCompletedProducts.add(recipeName);
+      recipe?.linkedIngredients?.forEach(l => decoCompletedProducts.add(l));
     }
   });
+  production.filter(p => p.assignedTo === "deco" && p.status === "completed").forEach(p => {
+    const recipe = findRecipe(p.product);
+    const recipeName = recipe?.productName || p.product;
+    decoCompletedProducts.add(recipeName);
+    recipe?.linkedIngredients?.forEach(l => decoCompletedProducts.add(l));
+  });
   decoProductionItems.forEach(i => {
-    // Only count Deco output if Deco has completed their DOS for this product
-    if (decoCompletedProducts.has(i.productName)) {
-      decoOutputMap.set(i.productName, (decoOutputMap.get(i.productName) || 0) + i.qty);
+    // Baker-made pre-mixes (Production Recipe Assembled) are always ready;
+    // Deco-made items only count if Deco completed their DOS for this product
+    if (i.producedBy === "baker" || decoCompletedProducts.has(i.productName)) {
+      const addOutput = (name: string) => decoOutputMap.set(name, (decoOutputMap.get(name) || 0) + i.qty);
+      addOutput(i.productName);
+      // Also map under linked recipe names so display name matches (e.g. "Streusel Toppings")
+      const linkedNames = recipes.find(r => r.productName.toLowerCase() === i.productName.toLowerCase())?.linkedIngredients ?? [];
+      linkedNames.filter(l => l.toLowerCase() !== i.productName.toLowerCase()).forEach(l => addOutput(l));
     }
   });
 
@@ -939,7 +969,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               <thead className="bg-zinc-50 border-b border-zinc-100">
                 <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                   <th className="px-5 py-3">Product</th>
-                  <th className="px-5 py-3">Size</th>
+                  {freezerTab === "baked-products" && <th className="px-5 py-3">Size</th>}
                   <th className="px-5 py-3 text-right">Qty</th>
                   {freezerTab !== "my-inventory" && <th className="px-5 py-3">Batch</th>}
                   <th className="px-5 py-3">{freezerTab === "my-inventory" ? "Category" : "Date"}</th>
@@ -1029,7 +1059,14 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                       </tr>
                     );
                   });
-                })() : filtered.map(item => {
+                })() : filtered.filter(item => {
+                  if (freezerTab === "my-inventory") {
+                    const inv = item as unknown as InventoryItem;
+                    const isFilling = recipes.some(r => r.productName === inv.name && r.group === "filling");
+                    if (isFilling && inv.onHand <= 0) return false;
+                  }
+                  return true;
+                }).map(item => {
                   if (freezerTab === "my-inventory") {
                     const inv = item as unknown as InventoryItem;
                     const isFilling = recipes.some(r => r.productName === inv.name && r.group === "filling");
@@ -1231,12 +1268,18 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   g.dos.push(d);
                   g.totalQty += d.qty;
                 });
-                return [...grouped.entries()].map(([productName, group]) => {
+                const productRecipeLookup = (name: string) => recipes.find(r => r.productName.toLowerCase() === name.toLowerCase());
+            return [...grouped.entries()].map(([productName, group]) => {
                   const recipe = findRecipe(productName);
-                  const hasYield = !!(recipe?.yield && recipe.yield > 0);
-                  const yieldPerBatch = recipe?.yield ?? 1;
+                  // If the recipe has linkedIngredients, show the linked recipe (e.g. "Streusel Toppings")
+                  // rather than the product name ("Choco Moist Cake").
+                  const linkedName = recipe?.linkedIngredients?.find(l => l.toLowerCase() !== productName.toLowerCase());
+                  const linkedRecipe = linkedName ? productRecipeLookup(linkedName) : undefined;
+                  const displayRecipe = linkedRecipe || recipe;
+                  const hasYield = !!(displayRecipe?.yield && displayRecipe.yield > 0);
+                  const yieldPerBatch = displayRecipe?.yield ?? 1;
                   const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
-                  const recipeDisplayName = recipe?.productName || productName;
+                  const recipeDisplayName = displayRecipe?.productName || productName;
                   const actualDecoOutput = decoOutputMap.get(recipeDisplayName) || 0;
                   const actualExcess = actualDecoOutput > 0 ? Math.max(0, actualDecoOutput - group.totalQty) : 0;
                   const itemStatus = group.dos.every(d => d.status === "completed") ? "completed" : group.dos.some(d => d.status === "in-progress") ? "in-progress" : actualDecoOutput > 0 ? "ready" : "pending";
@@ -1246,8 +1289,8 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-[15px] font-bold text-white truncate">{recipeDisplayName}</span>
-                            {recipe && recipe.productName !== productName && (
-                              <span className="text-[10px] text-zinc-500 truncate shrink-0">→ {productName}</span>
+                            {recipeDisplayName !== productName && (
+                              <span className="text-[10px] text-zinc-500 truncate shrink-0">→ {productName}{group.dos.some(d => d.size) ? ` (${[...new Set(group.dos.map(d => d.size).filter(Boolean))].join(", ")})` : ""}</span>
                             )}
                           </div>
                           <div className="flex items-center gap-3 mt-2">
@@ -1350,34 +1393,22 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               g.dos.push(d);
               g.totalQty += d.qty;
             });
-            // Only show products where Deco has completed their DOS
-            const readyGrouped = new Map([...grouped.entries()].filter(([productName]) => {
-              const recipe = findRecipe(productName);
-              const recipeName = recipe?.productName || productName;
-              return (decoOutputMap.get(recipeName) || 0) > 0;
-            }));
-            const allStarted = readyGrouped.size > 0 && [...readyGrouped.keys()].every(k => startedRecipes.has(k));
-            const isWaiting = readyGrouped.size === 0;
-            if (isWaiting) {
-              return (
-                <div className="rounded-xl border border-zinc-800 p-8 text-center">
-                  <p className="text-[14px] text-zinc-400">Waiting for Deco to complete production...</p>
-                  <p className="text-[12px] text-zinc-500 mt-1">Please check back once Deco has finished setting up the DOS recipe.</p>
-                </div>
-              );
-            }
             return (
               <>
                 <div className="rounded-xl border border-zinc-800 overflow-hidden mb-4">
-                    {[...readyGrouped.entries()].map(([productName, group], idx) => {
+                    {[...grouped.entries()].map(([productName, group], idx) => {
                     const recipe = findRecipe(productName);
-                    const hasYield = !!(recipe?.yield && recipe.yield > 0);
-                    const yieldPerBatch = recipe?.yield ?? 1;
+                    const linkedName = recipe?.linkedIngredients?.find(l => l.toLowerCase() !== productName.toLowerCase());
+                    const linkedRecipe = linkedName ? recipes.find(r => r.productName.toLowerCase() === linkedName.toLowerCase()) : undefined;
+                    const displayRecipe = linkedRecipe || recipe;
+                    const hasYield = !!(displayRecipe?.yield && displayRecipe.yield > 0);
+                    const yieldPerBatch = displayRecipe?.yield ?? 1;
                     const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
-                    const recipeDisplayName = recipe?.productName || productName;
+                    const recipeDisplayName = displayRecipe?.productName || productName;
                     const isStarted = startedRecipes.has(productName);
                     const actualDecoOutput = decoOutputMap.get(recipeDisplayName) || 0;
                     const actualExcess = actualDecoOutput > 0 ? Math.max(0, actualDecoOutput - group.totalQty) : 0;
+                    const sizeLabel = group.dos.some(d => d.size) ? ` (${[...new Set(group.dos.map(d => d.size).filter(Boolean))].join(", ")})` : "";
                     return (
                       <div
                         key={productName}
@@ -1387,7 +1418,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                         <div className="col-span-8">
                           <div className="flex items-center gap-2">
                             <span className={`text-[14px] font-semibold truncate ${isStarted ? 'text-emerald-300' : 'text-white'}`}>Recipe: {recipeDisplayName}</span>
-                            {recipe && recipe.productName !== productName && <span className="text-[10px] text-zinc-600">→ {productName}</span>}
+                            {recipeDisplayName !== productName && <span className="text-[10px] text-zinc-600">→ {productName}{sizeLabel}</span>}
                           </div>
                           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2">
                             <div className="flex items-center gap-1.5">
@@ -1432,16 +1463,15 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 </div>
 
                 <div className="flex items-center justify-between rounded-xl bg-zinc-950/40 px-4 py-2.5 mt-4 mb-5">
-                  <span className="text-[12px] text-zinc-500">{readyGrouped.size} recipe{readyGrouped.size !== 1 ? 's' : ''} · {bakerDOS.reduce((s, d) => s + d.qty, 0)} pcs total</span>
-                  <span className="text-[12px] text-emerald-400">{startedRecipes.size}/{readyGrouped.size} started</span>
+                  <span className="text-[12px] text-zinc-500">{grouped.size} recipe{grouped.size !== 1 ? 's' : ''} · {bakerDOS.reduce((s, d) => s + d.qty, 0)} pcs total</span>
+                  <span className="text-[12px] text-emerald-400">{startedRecipes.size}/{grouped.size} started</span>
                 </div>
 
                 <button
                   onClick={() => setStep(2)}
-                  disabled={!allStarted}
-                  className="w-full rounded-xl bg-white px-4 py-3.5 text-[15px] font-bold text-zinc-900 hover:bg-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+                  className="w-full rounded-xl bg-white px-4 py-3.5 text-[15px] font-bold text-zinc-900 hover:bg-zinc-100 transition-all active:scale-[0.98]"
                 >
-                  {allStarted ? 'Next → Record Production' : `Start each recipe first (${startedRecipes.size}/${readyGrouped.size})`}
+                  Next → Record Production
                 </button>
 
                 <div className="mt-4 text-center">
@@ -1473,7 +1503,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               g.dos.push(d);
               g.totalQty += d.qty;
             });
-            return [...grouped.entries()].map(([productName, group]) => {
+            return [...grouped.entries()].filter(([productName]) => startedRecipes.has(productName)).map(([productName, group]) => {
               const recipe = findRecipe(productName);
               const hasYield = !!(recipe?.yield && recipe.yield > 0);
               const yieldPerBatch = recipe?.yield ?? 1;
@@ -1482,10 +1512,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               const recipeDisplayName = recipe?.productName || productName;
               const hasActual = actualProduction[productName] !== undefined;
               const actual = hasActual ? actualProduction[productName]! : 0;
-              // Deco stock from Production Recipe (same freezer — identical filter to Deco's Production Recipe tab)
+              // Deco stock from Production Recipe — check product name, linked recipe names, and display name
+              const linkedNames = recipe?.linkedIngredients ?? [];
               const decoStock = freezerItems.filter(i =>
                 i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.qty > 0 &&
-                (i.productName === productName || i.productName === recipeDisplayName)
+                (i.productName === productName || i.productName === recipeDisplayName || linkedNames.some(l => l.toLowerCase() === i.productName.toLowerCase()))
               );
               const decoAvailable = decoStock.reduce((sum, i) => sum + i.qty, 0);
               const maxBakerInput = decoAvailable; // Baker can only produce up to what Deco has available
@@ -1507,6 +1538,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                         )}
                       </div>
                     </div>
+                    {group.dos.some(d => d.size) && (
+                      <span className="rounded-lg bg-amber-500/20 border border-amber-500/40 px-3 py-1 text-[13px] font-bold text-amber-300 shrink-0 ml-3">
+                        {[...new Set(group.dos.map(d => d.size).filter(Boolean))].join(", ")}
+                      </span>
+                    )}
                   </div>
 
                   <div className="rounded-lg bg-zinc-950/40 p-3 mb-3">
@@ -1597,7 +1633,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               g.dos.push(d);
               g.totalQty += d.qty;
             });
-            return [...grouped.entries()].map(([productName, group]) => {
+            return [...grouped.entries()].filter(([productName]) => startedRecipes.has(productName)).map(([productName, group]) => {
               const recipe = findRecipe(productName);
               const recipeDisplayName = recipe?.productName || productName;
               const bakerProduced = actualProduction[productName] ?? 0;
@@ -1686,10 +1722,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 // Deduct Deco Production Recipe items consumed by baking (FIFO)
                 if (bakerProduced > 0) {
                   let toDeduct = bakerProduced;
+                  const linkedNames = recipe?.linkedIngredients ?? [];
                   const decoItems = freezerItems
                     .filter(i =>
                       i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.qty > 0 &&
-                      (i.productName === productName || i.productName === recipeDisplayName)
+                      (i.productName === productName || i.productName === recipeDisplayName || linkedNames.some(l => l.toLowerCase() === i.productName.toLowerCase()))
                     )
                     .sort((a, b) => (a.dateProduced || "").localeCompare(b.dateProduced || ""));
                   for (const item of decoItems) {
@@ -1815,10 +1852,13 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         const group = grouped.get(selectedRecipe);
         if (!group) return null;
         const recipe = findRecipe(selectedRecipe);
-        const hasYield = !!(recipe?.yield && recipe.yield > 0);
-        const yieldPerBatch = recipe?.yield ?? 1;
+        const linkedName = recipe?.linkedIngredients?.find(l => l.toLowerCase() !== selectedRecipe.toLowerCase());
+        const linkedRecipe = linkedName ? recipes.find(r => r.productName.toLowerCase() === linkedName.toLowerCase()) : undefined;
+        const displayRecipe = linkedRecipe || recipe;
+        const hasYield = !!(displayRecipe?.yield && displayRecipe.yield > 0);
+        const yieldPerBatch = displayRecipe?.yield ?? 1;
         const requiredBatches = Math.ceil(group.totalQty / yieldPerBatch);
-        const recipeDisplayName = recipe?.productName || selectedRecipe;
+        const recipeDisplayName = displayRecipe?.productName || selectedRecipe;
         const actualDecoOutput = decoOutputMap.get(recipeDisplayName) || 0;
         const actualExcess = actualDecoOutput > 0 ? Math.max(0, actualDecoOutput - group.totalQty) : 0;
         const isStarted = startedRecipes.has(selectedRecipe);
@@ -1832,7 +1872,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-900/40 text-amber-300 text-[16px] font-bold">R</span>
                   <div>
                     <h3 className="text-[16px] font-bold text-white">{recipeDisplayName}</h3>
-                    {recipe && recipe.productName !== selectedRecipe && <p className="text-[11px] text-zinc-500">DOS Product: {selectedRecipe}</p>}
+                    {displayRecipe && displayRecipe.productName !== selectedRecipe && <p className="text-[11px] text-zinc-500">DOS Product: {selectedRecipe}</p>}
                   </div>
                 </div>
                 <button onClick={() => setSelectedRecipe(null)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
@@ -1870,19 +1910,6 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                     </div>
                   </div>
                 </div>
-                {recipe && recipe.ingredients.length > 0 && (
-                  <div className="mb-5">
-                    <div className="text-[11px] text-zinc-500 mb-3 uppercase tracking-wider">Ingredients</div>
-                    <div className="space-y-1.5">
-                      {recipe.ingredients.map((ing, i) => (
-                        <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/30 px-3 py-2">
-                          <span className="text-[12px] text-zinc-300">{ing.name}</span>
-                          <span className="text-[12px] text-zinc-500 font-mono">{ing.qtyPerBatch * requiredBatches} {ing.unit}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 {/* Additional Ingredients Used */}
                 <div className="mb-5">
                   <div className="flex items-center justify-between mb-3">
@@ -1927,6 +1954,104 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                       ))}
                     </div>
                   )}
+                </div>
+                {/* Fillings */}
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Fillings</div>
+                  </div>
+                  {(() => {
+                    const fillingRecipes = recipes.filter(r => r.group === "filling");
+                    const bakerInv = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("baker"));
+                    const fillingOptions = fillingRecipes.map(fr => {
+                      const invItem = bakerInv.find(i => i.name === fr.productName);
+                      return { name: fr.productName, qty: invItem ? Math.max(0, invItem.onHand) : 0, unit: invItem?.unit || "pcs", id: invItem?.id || "" };
+                    }).filter(f => f.qty > 0);
+                    const currentFillings = selectedFillings[selectedRecipe] || [];
+                    const addedNames = new Set(currentFillings.map(f => f.name.toLowerCase()));
+                    const available = fillingOptions.filter(f => !addedNames.has(f.name.toLowerCase()));
+                    return (
+                      <div className="space-y-2">
+                        {currentFillings.map((f, i) => (
+                          <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/30 px-3 py-2">
+                            <span className="text-[12px] text-zinc-300">{f.name}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[12px] text-zinc-400 font-mono">{f.qty} pcs</span>
+                              <button onClick={() => {
+                                const invItem = bakerInv.find(inv => inv.name === f.name);
+                                if (invItem) {
+                                  onUpdateInventory?.(prev => prev.map(inv => inv.id === invItem.id ? { ...inv, onHand: inv.onHand + f.qty } : inv));
+                                  db.updateInventoryItem(invItem.id, { onHand: invItem.onHand + f.qty, group: invItem.group }).catch(console.error);
+                                } else {
+                                  const newItem: InventoryItem = { id: `INV-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: f.name, sku: "", unit: "batches", onHand: f.qty, threshold: 0, cost: 0, supplier: "", lastIn: new Date().toISOString(), category: "dry", group: "ingredients", accessRoles: ["baker"] };
+                                  onUpdateInventory?.(prev => [...prev, newItem]);
+                                  db.upsertInventory([newItem]).catch(console.error);
+                                }
+                                // Restore freezer filling stock
+                                const frzItem = freezerItems.find(frz => frz.productName === f.name && frz.notes === "Filling");
+                                if (frzItem) {
+                                  onUpdateFreezer?.((prev: FreezerItem[]) => prev.map(frz => frz.id === frzItem.id ? { ...frz, qty: frz.qty + f.qty } : frz));
+                                  db.upsertFreezerItems([{ ...frzItem, qty: frzItem.qty + f.qty }]).catch(console.error);
+                                }
+                                setSelectedFillings(prev => ({ ...prev, [selectedRecipe]: prev[selectedRecipe].filter((_, idx) => idx !== i) }));
+                              }} className="rounded-md px-1.5 py-0.5 text-[11px] text-red-400 hover:bg-red-900/30 transition-all">✕</button>
+                            </div>
+                          </div>
+                        ))}
+                        {available.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <select className="flex-1 rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-[12px] text-white focus:outline-none focus:border-amber-500"
+                              value={fillingPickerName} onChange={e => { setFillingPickerName(e.target.value); setFillingPickerQty(""); }}>
+                              <option value="">Select filling...</option>
+                              {available.map(fo => (
+                                <option key={fo.name} value={fo.name}>{fo.name} ({fo.qty} {fo.unit})</option>
+                              ))}
+                            </select>
+                            <input type="number" min={1} placeholder="Qty" value={fillingPickerQty} onChange={e => setFillingPickerQty(e.target.value)}
+                              className="w-20 rounded-lg bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-[12px] font-mono text-white text-center focus:outline-none focus:border-amber-500" />
+                            <button onClick={() => {
+                              const qty = parseInt(fillingPickerQty || "0");
+                              if (!fillingPickerName || qty <= 0) return;
+                              const option = fillingOptions.find(fo => fo.name === fillingPickerName);
+                              if (!option) return;
+                              if (qty > option.qty) { alert(`Only ${option.qty} ${option.unit} available.`); return; }
+                              const invItem = bakerInv.find(inv => inv.name === fillingPickerName);
+                              if (invItem) {
+                                const newOnHand = invItem.onHand - qty;
+                                if (newOnHand <= 0) {
+                                  onUpdateInventory?.(prev => prev.filter(inv => inv.id !== invItem.id));
+                                  db.deleteInventoryItem(invItem.id).catch(console.error);
+                                } else {
+                                  onUpdateInventory?.(prev => prev.map(inv => inv.id === invItem.id ? { ...inv, onHand: newOnHand } : inv));
+                                  db.updateInventoryItem(invItem.id, { onHand: newOnHand, group: invItem.group }).catch(console.error);
+                                }
+                              }
+                              // Deduct from freezer filling stock
+                              const frzItem = freezerItems.find(frz => frz.productName === fillingPickerName && frz.notes === "Filling");
+                              if (frzItem) {
+                                const newQty = frzItem.qty - qty;
+                                if (newQty <= 0) {
+                                  onUpdateFreezer?.((prev: FreezerItem[]) => prev.filter(frz => !(frz.productName === fillingPickerName && frz.notes === "Filling")));
+                                  db.deleteFreezerItem(frzItem.id).catch(console.error);
+                                } else {
+                                  onUpdateFreezer?.((prev: FreezerItem[]) => prev.map(frz => frz.id === frzItem.id ? { ...frz, qty: newQty } : frz));
+                                  db.upsertFreezerItems([{ ...frzItem, qty: newQty }]).catch(console.error);
+                                }
+                              }
+                              setSelectedFillings(prev => ({ ...prev, [selectedRecipe]: [...(prev[selectedRecipe] || []), { name: fillingPickerName, qty }] }));
+                              setFillingPickerName("");
+                              setFillingPickerQty("");
+                            }} className="rounded-lg bg-amber-600/20 px-3 py-1.5 text-[11px] font-semibold text-amber-400 hover:bg-amber-600/30 transition-all">+ Add</button>
+                          </div>
+                        )}
+                        {available.length === 0 && currentFillings.length === 0 && (
+                          <div className="rounded-lg bg-zinc-800/20 px-3 py-2.5 text-center">
+                            <span className="text-[11px] text-zinc-500">No fillings available.</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
                 {recipe && recipe.notes && (
                   <div className="mb-5">

@@ -454,6 +454,15 @@ export default function App() {
     });
   }, [loggedIn]);
 
+  // Poll freezer items every 30s as fallback
+  useEffect(() => {
+    if (!loggedIn) return;
+    const interval = setInterval(() => {
+      db.fetchFreezerItems().then(setFreezerItems).catch(console.error);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [loggedIn]);
+
   // Real-time DOS items from Supabase
   useEffect(() => {
     if (!loggedIn) return;
@@ -475,6 +484,39 @@ export default function App() {
     if (!loggedIn) return;
     return db.subscribeInventory(() => {
       db.fetchAllInventory().then(setInventory).catch(console.error);
+    });
+  }, [loggedIn]);
+
+  // Poll inventory every 30s as fallback for realtime
+  useEffect(() => {
+    if (!loggedIn) return;
+    const interval = setInterval(() => {
+      db.fetchAllInventory().then(setInventory).catch(console.error);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [loggedIn]);
+
+  // Real-time recipes from Supabase
+  useEffect(() => {
+    if (!loggedIn) return;
+    return db.subscribeRecipes(() => {
+      db.fetchRecipes().then(setRecipes).catch(console.error);
+    });
+  }, [loggedIn]);
+
+  // Real-time product_recipe_links from Supabase
+  useEffect(() => {
+    if (!loggedIn) return;
+    return db.subscribeProductRecipeLinks(() => {
+      db.fetchRecipes().then(setRecipes).catch(console.error);
+    });
+  }, [loggedIn]);
+
+  // Real-time product catalog / routes from Supabase
+  useEffect(() => {
+    if (!loggedIn) return;
+    return db.subscribeProductCatalog(() => {
+      db.fetchProductRoutes().then(setProductRoutes).catch(console.error);
     });
   }, [loggedIn]);
 

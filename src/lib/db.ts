@@ -233,6 +233,21 @@ export function subscribeInventory(onChange: () => void) {
   return () => { channels.forEach(ch => supabase.removeChannel(ch)); };
 }
 
+export function subscribeRecipes(onChange: () => void) {
+  const channel = supabase.channel("recipes-realtime").on("postgres_changes", { event: "*", schema: "public", table: "recipes" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
+
+export function subscribeProductRecipeLinks(onChange: () => void) {
+  const channel = supabase.channel("links-realtime").on("postgres_changes", { event: "*", schema: "public", table: "product_recipe_links" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
+
+export function subscribeProductCatalog(onChange: () => void) {
+  const channel = supabase.channel("catalog-realtime").on("postgres_changes", { event: "*", schema: "public", table: "product_catalog" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
+}
+
 // ─── Deco Production Prep ───
 export type AdditionalIngredient = { name: string; qty: number; unit: string; reason: string; source: string; timestamp?: string };
 
