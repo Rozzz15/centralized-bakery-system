@@ -1085,9 +1085,34 @@ return (
           <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center"><p className="text-[14px] text-zinc-400">No DOS items assigned for today.</p></div>
         ) : (() => {
           const recipeMap = new Map<string, { recipe: ProductRecipe; totalQty: number }>();
+          const fallbackRecipe = (name: string, qty: number): { recipe: ProductRecipe; totalQty: number } => ({
+            recipe: {
+              productId: name, productName: name,
+              ingredients: [], packagingMaterials: [], decorationSupplies: [],
+              linkedIngredients: [], yield: 1,
+            },
+            totalQty: qty,
+          });
           dosForDeco.forEach(d => {
             const directRecipe = findRecipe(d.product);
-            // Include the direct recipe only if it has ingredients
+            const linkedNames = (directRecipe?.linkedIngredients ?? [])
+              .filter(n => n.toLowerCase() !== d.product.toLowerCase());
+            // 1) Show linked sub-recipe names (even if no recipe entry exists)
+            if (linkedNames.length > 0) {
+              linkedNames.forEach(name => {
+                const key = name.toLowerCase();
+                const existing = recipes.find(r => r.productName.toLowerCase() === key);
+                if (recipeMap.has(key)) {
+                  recipeMap.get(key)!.totalQty += d.qty;
+                } else if (existing) {
+                  recipeMap.set(key, { recipe: existing, totalQty: d.qty });
+                } else {
+                  recipeMap.set(key, fallbackRecipe(name, d.qty));
+                }
+              });
+              return;
+            }
+            // 2) Show direct recipe if it has actual ingredients
             if (directRecipe && directRecipe.ingredients.length > 0) {
               const key = directRecipe.productName.toLowerCase();
               if (recipeMap.has(key)) {
@@ -1095,20 +1120,15 @@ return (
               } else {
                 recipeMap.set(key, { recipe: directRecipe, totalQty: d.qty });
               }
+              return;
             }
-            // Also include linked recipes
-            const linkedRecipes = (directRecipe?.linkedIngredients ?? [])
-              .map(name => recipes.find(r => r.productName === name))
-              .filter(Boolean)
-              .filter(r => r!.productName !== d.product);
-            linkedRecipes.forEach(r => {
-              const key = r!.productName.toLowerCase();
-              if (recipeMap.has(key)) {
-                recipeMap.get(key)!.totalQty += d.qty;
-              } else {
-                recipeMap.set(key, { recipe: r!, totalQty: d.qty });
-              }
-            });
+            // 3) Fallback: show product name so no DOS item is silently dropped
+            const key = d.product.toLowerCase();
+            if (recipeMap.has(key)) {
+              recipeMap.get(key)!.totalQty += d.qty;
+            } else {
+              recipeMap.set(key, fallbackRecipe(d.product, d.qty));
+            }
           });
           const mergedRecipes = [...recipeMap.values()];
           if (mergedRecipes.length === 0) {

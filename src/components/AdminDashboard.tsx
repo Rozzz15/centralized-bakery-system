@@ -452,9 +452,9 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   </div>
                 </div>
               ) : (() => {
-                const filteredRecipes = !recipeSearch ? recipes : recipes.filter(r =>
+                const filteredRecipes = (!recipeSearch ? recipes : recipes.filter(r =>
                   r.productName.toLowerCase().includes(recipeSearch.toLowerCase())
-                );
+                )).filter(r => r.ingredients.length > 0 || r.packagingMaterials.length > 0 || r.decorationSupplies.length > 0);
                 return (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-[13px]">
@@ -647,6 +647,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
               const existingRecipe = recipes.find(r => r.productName === originalName);
               if (hasRecipeData || existingRecipe) {
                 const recipe: ProductRecipe = {
+                  id: existingRecipe?.id,
                   productId: newName,
                   productName: newName,
                   ingredients: ingredients || [],
@@ -664,7 +665,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   }
                   return [...prev, recipe];
                 });
-                db.upsertRecipe(recipe).catch(console.error);
+                await db.upsertRecipe(recipe).catch(console.error);
               }
               await db.saveProductCategory(newName, category || null).then(() => {
                 console.log("Category saved successfully");
@@ -4299,7 +4300,7 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
     setLinkedIngredients(prev => prev.includes(r) ? prev.filter(p => p !== r) : [...prev, r]);
   }
 
-  const filteredRecipes = recipes.filter(r => r.productName.toLowerCase().includes(recipeSearch.toLowerCase()) || recipeSearch === "");
+  const filteredRecipes = recipes.filter(r => (r.ingredients.length > 0 || r.packagingMaterials.length > 0 || r.decorationSupplies.length > 0) && (r.productName.toLowerCase().includes(recipeSearch.toLowerCase()) || recipeSearch === ""));
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

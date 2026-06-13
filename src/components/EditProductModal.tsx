@@ -53,7 +53,7 @@ export default function EditProductModal({ productName, recipes, inventory, cate
     setLinkedIngredients(prev => prev.includes(r) ? prev.filter(p => p !== r) : [...prev, r]);
   }
 
-  const filteredRecipes = recipes.filter(r => r.productName.toLowerCase().includes(recipeSearch.toLowerCase()) || recipeSearch === "");
+  const filteredRecipes = recipes.filter(r => (r.ingredients.length > 0 || r.packagingMaterials.length > 0 || r.decorationSupplies.length > 0) && (r.productName.toLowerCase().includes(recipeSearch.toLowerCase()) || recipeSearch === ""));
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

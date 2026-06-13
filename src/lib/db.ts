@@ -485,8 +485,9 @@ export async function fetchRecipes(): Promise<ProductRecipe[]> {
   }));
 }
 export async function upsertRecipe(recipe: ProductRecipe) {
+  const recipeId = recipe.id || `RCP-${Date.now().toString(36).slice(-4).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
   const { error } = await supabase.from("recipes").upsert({
-    id: recipe.id || undefined,
+    id: recipeId,
     name: recipe.productName,
     ingredients: recipe.ingredients,
     packaging_materials: recipe.packagingMaterials ?? [],
