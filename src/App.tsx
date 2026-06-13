@@ -51,7 +51,6 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "dashboard", label: "Dashboard", icon: "" },
     { id: "advanced-premix", label: "Advanced Premix", icon: "" },
     { id: "deco-queue", label: "Cake Productions", icon: "" },
-    { id: "custom-orders", label: "Custom Orders", icon: "" },
     { id: "freezer", label: "Freezer", icon: "" },
     { id: "waste-adjustment", label: "Waste/Adjustment", icon: "" },
   ],
@@ -1066,7 +1065,7 @@ export default function App() {
             {role === "baker" && ["dashboard", "conversion", "freezer", "filling"].includes(activeTab) && (
               <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} onUpdateDOS={setDosItems} productPricing={productPricing} />
             )}
-            {role === "deco" && ["dashboard", "tasks-to-prepare", "recipe-analysis", "pre-mix", "advanced-premix", "deco-queue", "custom-orders", "freezer", "waste-adjustment"].includes(activeTab) && (
+            {role === "deco" && ["dashboard", "tasks-to-prepare", "recipe-analysis", "pre-mix", "advanced-premix", "deco-queue", "freezer", "waste-adjustment"].includes(activeTab) && (
               <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} onUpdateProduction={handleUpdateProduction} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} productRoutes={productRoutes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} wasteLog={wasteLog} onUpdateWasteLog={setWasteLog} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (

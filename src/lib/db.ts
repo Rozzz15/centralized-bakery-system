@@ -43,10 +43,12 @@ function parseInventoryItem(d: any, group: string): InventoryItem {
   let accessRoles: string[] = [];
   if (Array.isArray(raw)) accessRoles = raw;
   else if (typeof raw === "string" && raw.startsWith("[")) { try { accessRoles = JSON.parse(raw); } catch { accessRoles = []; } }
-  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: group as InventoryItem["group"], expiryDate: d.expiry_date || undefined, accessRoles, source: d.source || undefined };
+  return { id: d.id, name: d.name, sku: d.sku, unit: d.unit, onHand: d.on_hand, threshold: d.threshold, cost: d.cost, supplier: d.supplier, lastIn: d.last_in, category: d.category, group: group as InventoryItem["group"], expiryDate: d.expiry_date || undefined, accessRoles, source: d.source || undefined, size: d.size || undefined };
 }
 function toInventoryRow(i: InventoryItem) {
-  return { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: Math.round(i.onHand), threshold: Math.round(i.threshold), cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category, expiry_date: i.expiryDate || null, access_roles: i.accessRoles ?? [], source: i.source ?? null };
+  const row: Record<string, any> = { id: i.id, name: i.name, sku: i.sku, unit: i.unit, on_hand: Math.round(i.onHand), threshold: Math.round(i.threshold), cost: i.cost, supplier: i.supplier, last_in: i.lastIn, category: i.category, expiry_date: i.expiryDate || null, access_roles: i.accessRoles ?? [], source: i.source ?? null };
+  if (i.size) row.size = i.size;
+  return row;
 }
 
 export async function fetchInventoryByGroup(group: string): Promise<InventoryItem[]> {
@@ -74,6 +76,8 @@ export async function upsertInventoryItem(item: InventoryItem) {
 }
 
 export async function upsertInventory(items: InventoryItem[]) {
+  // Tables that have a 'size' column
+  const TABLES_WITH_SIZE = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies"]);
   // Group items by table, then batch-upsert each table with one call
   const grouped = new Map<string, InventoryItem[]>();
   for (const item of items) {
@@ -82,9 +86,14 @@ export async function upsertInventory(items: InventoryItem[]) {
     if (!grouped.has(table)) grouped.set(table, []);
     grouped.get(table)!.push(item);
   }
-  await Promise.all([...grouped.entries()].map(([table, tableItems]) =>
-    supabase.from(table).upsert(tableItems.map(toInventoryRow), { onConflict: "id" }).then(r => { if (r.error) throw r.error; })
-  ));
+  await Promise.all([...grouped.entries()].map(([table, tableItems]) => {
+    const rows = tableItems.map(i => {
+      const row = toInventoryRow(i);
+      if (!TABLES_WITH_SIZE.has(table)) delete row.size;
+      return row;
+    });
+    return supabase.from(table).upsert(rows, { onConflict: "id" }).then(r => { if (r.error) throw r.error; });
+  }));
 }
 
 export async function updateInventoryItem(id: string, updates: Partial<InventoryItem>) {

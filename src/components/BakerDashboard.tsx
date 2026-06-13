@@ -42,6 +42,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const [ingredientPickerSearch, setIngredientPickerSearch] = useState("");
   const [pickQuantities, setPickQuantities] = useState<Record<string, number>>({});
   const [ingredientReqs, setIngredientReqs] = useState<BakerIngredientRequest[]>([]);
+  const [saveDestination, setSaveDestination] = useState<"baker-freezer" | "deco-inventory">("baker-freezer");
   const [sent, setSent] = useState(false);
   const [expandedDOS, setExpandedDOS] = useState<Set<string>>(new Set());
   const toggleDOS = (id: string) => setExpandedDOS(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -63,7 +64,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const [newBatch, setNewBatch] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [freezerSearch, setFreezerSearch] = useState("");
-  const [freezerTab, setFreezerTab] = useState<"baked-products" | "my-inventory" | "deco-production-recipe">("baked-products");
+  const [freezerTab, setFreezerTab] = useState<"baked-products" | "my-inventory" | "deco-production-recipe" | "deco-inventory">("baked-products");
 
   // Conversion-to-Product state
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -441,36 +442,34 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               const canCover = g.totalQty >= dosDemand;
               return (
                 <div key={productName} className={`${idx > 0 ? 'border-t border-[#E8E0D5]' : ''}`}>
-                  <div className="grid grid-cols-12 items-center gap-2 px-5 py-4">
-                    <div className="col-span-4">
-                      <div className="text-[14px] font-semibold text-zinc-900">{productName}</div>
-                      <div className="text-[11px] text-zinc-400 mt-0.5">{g.items.length} batch{g.items.length !== 1 ? 'es' : ''}</div>
+                  <div className="px-5 py-4 space-y-3">
+                    <div className="grid grid-cols-10 items-center gap-2">
+                      <div className="col-span-4">
+                        <div className="text-[14px] font-semibold text-zinc-900">{productName}</div>
+                        <div className="text-[11px] text-zinc-400 mt-0.5">{g.items.length} batch{g.items.length !== 1 ? 'es' : ''}</div>
+                      </div>
+                      <div className="col-span-2 text-right">
+                        <div className="text-[18px] font-bold text-zinc-800 font-mono">{g.totalQty}</div>
+                        <div className="text-[10px] text-zinc-400">pcs available</div>
+                      </div>
+                      <div className="col-span-4 text-right">
+                        {canCover ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-[11px] font-medium text-emerald-700">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            Sufficient
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-[11px] font-medium text-amber-700">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+                            Shortage
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="col-span-2 text-right">
-                      <div className="text-[18px] font-bold text-zinc-800 font-mono">{g.totalQty}</div>
-                      <div className="text-[10px] text-zinc-400">pcs available</div>
-                    </div>
-                    <div className="col-span-2 text-right">
-                      <div className="text-[13px] text-zinc-500 font-mono">{dosDemand} pcs</div>
-                      <div className="text-[10px] text-zinc-400">DOS demand</div>
-                    </div>
-                    <div className="col-span-2 text-right">
-                      {canCover ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-[11px] font-medium text-emerald-700">
-                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          Sufficient
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-[11px] font-medium text-amber-700">
-                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
-                          Shortage
-                        </span>
-                      )}
-                    </div>
-                    <div className="col-span-2 text-right">
+                    <div className="flex justify-end">
                       <button
                         onClick={() => { const r = findRecipe(productName); setConvertProduct(productName); setConvertTargetProduct(r?.productName || productName); setConvertQty(g.totalQty); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setShowConvertModal(true); }}
-                        className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-zinc-800 transition-colors"
+                        className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-zinc-800 transition-colors shadow-sm"
                       >
                         Use as Product
                       </button>
@@ -513,7 +512,13 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                     <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Target Product</label>
                     <select
                       value={convertTargetProduct}
-                      onChange={e => { setConvertTargetProduct(e.target.value); setConvertSize(""); }}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setConvertTargetProduct(val);
+                        const dosSizes = dosItems.filter(d => d.product === val && d.size).map(d => d.size!);
+                        const defaultSize = dosSizes.length > 0 ? dosSizes.sort((a, b) => dosSizes.filter(v => v === b).length - dosSizes.filter(v => v === a).length)[0] : "";
+                        setConvertSize(defaultSize);
+                      }}
                       className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400"
                     >
                       <option value="">Select product...</option>
@@ -915,7 +920,8 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       i.status === "stored" && i.qty > 0 && i.producedBy === "deco" && i.notes?.startsWith("Production Recipe")
     );
 
-    const tabItems = freezerTab === "baked-products" ? bakerItems : freezerTab === "my-inventory" ? bakerAccessInventory : decoItems;
+    const decoInventoryItems = inventory.filter(i => i.source === "came-from-baker" && i.accessRoles?.includes("deco"));
+    const tabItems = freezerTab === "baked-products" ? bakerItems : freezerTab === "my-inventory" ? bakerAccessInventory : freezerTab === "deco-inventory" ? decoInventoryItems as unknown as FreezerItem[] : decoItems;
     const filtered = tabItems.filter(i => !freezerSearch || (("name" in i ? (i as unknown as InventoryItem).name : (i as FreezerItem).productName).toLowerCase().includes(freezerSearch.toLowerCase())));
 
     const handleAdd = () => {
@@ -950,12 +956,14 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
           <button onClick={() => setFreezerTab("baked-products")} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerTab === "baked-products" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>Baked Products</button>
           <button onClick={() => setFreezerTab("my-inventory")} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerTab === "my-inventory" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>My Inventory</button>
           <button onClick={() => setFreezerTab("deco-production-recipe")} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerTab === "deco-production-recipe" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>Deco Production Recipe</button>
+          <button onClick={() => setFreezerTab("deco-inventory")} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerTab === "deco-inventory" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>Deco Inventory</button>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Baked Products</div><div className="text-[24px] font-semibold mt-1">{bakerItems.length}</div></div>
           <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">My Inventory</div><div className="text-[24px] font-semibold mt-1">{bakerAccessInventory.length}</div></div>
           <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Deco Cakes</div><div className="text-[24px] font-semibold mt-1">{decoItems.length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Deco Inventory</div><div className="text-[24px] font-semibold mt-1">{decoInventoryItems.length}</div></div>
         </div>
 
         <div className="relative max-w-[280px]">
@@ -969,17 +977,17 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               <thead className="bg-zinc-50 border-b border-zinc-100">
                 <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                   <th className="px-5 py-3">Product</th>
-                  {freezerTab === "baked-products" && <th className="px-5 py-3">Size</th>}
+                  {(freezerTab === "baked-products" || freezerTab === "deco-inventory") && <th className="px-5 py-3">Size</th>}
                   <th className="px-5 py-3 text-right">Qty</th>
-                  {freezerTab !== "my-inventory" && <th className="px-5 py-3">Batch</th>}
-                  <th className="px-5 py-3">{freezerTab === "my-inventory" ? "Category" : "Date"}</th>
+                  {freezerTab !== "my-inventory" && freezerTab !== "deco-inventory" && <th className="px-5 py-3">Batch</th>}
+                  <th className="px-5 py-3">{freezerTab === "my-inventory" || freezerTab === "deco-inventory" ? "Category" : "Date"}</th>
                   <th className="px-5 py-3">Section</th>
                   <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-50">
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={freezerTab === "my-inventory" ? 6 : 7} className="px-5 py-12 text-center text-[13px] text-zinc-400">No items in this section.</td></tr>
+                  <tr><td colSpan={freezerTab === "my-inventory" || freezerTab === "deco-inventory" ? 6 : 7} className="px-5 py-12 text-center text-[13px] text-zinc-400">No items in this section.</td></tr>
                 ) : freezerTab === "baked-products" ? (() => {
                   const grouped = new Map<string, { items: FreezerItem[]; totalQty: number }>();
                   (filtered as FreezerItem[]).forEach(f => {
@@ -1067,17 +1075,22 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   }
                   return true;
                 }).map(item => {
-                  if (freezerTab === "my-inventory") {
+                  if (freezerTab === "my-inventory" || freezerTab === "deco-inventory") {
                     const inv = item as unknown as InventoryItem;
                     const isFilling = recipes.some(r => r.productName === inv.name && r.group === "filling");
                     return (
                       <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
                         <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{inv.name}</div></td>
+                        {freezerTab === "deco-inventory" && <td className="px-5 py-3.5 text-[12px] text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{inv.size || "—"}</td>}
                         <td className="px-5 py-3.5 text-[13px] text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{inv.onHand} {inv.unit}</td>
                         <td className="px-5 py-3.5 text-[12px] text-zinc-500">{isFilling ? "Filling" : inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
                         <td className="px-5 py-3.5"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isFilling ? "bg-violet-50 text-violet-700" : "bg-zinc-100 text-zinc-600"}`}>{isFilling ? "Filling" : inv.group}</span></td>
                         <td className="px-5 py-3.5 text-right">
-                          <span className="text-[11px] text-zinc-400">View only</span>
+                          {freezerTab === "deco-inventory" ? (
+                            <button onClick={() => { if (confirm(`Delete ${inv.name} from Deco Inventory?`)) { onUpdateInventory?.((prev: InventoryItem[]) => prev.filter(i => i.id !== inv.id)); db.deleteInventoryItem(inv.id, inv.group).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Del</button>
+                          ) : (
+                            <span className="text-[11px] text-zinc-400">View only</span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1713,7 +1726,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
 
               [...grouped.entries()].forEach(([productName, group]) => {
                 const recipe = findRecipe(productName);
-                const recipeDisplayName = recipe?.productName || productName;
+                const linkedName = recipe?.linkedIngredients?.find(l => l.toLowerCase() !== productName.toLowerCase());
+                const linkedRecipe = linkedName ? recipes.find(r => r.productName.toLowerCase() === linkedName.toLowerCase()) : undefined;
+                const displayRecipe = linkedRecipe || recipe;
+                const recipeDisplayName = displayRecipe?.productName || productName;
+                const dosSize = [...new Set(group.dos.map(d => d.size).filter(Boolean))].join(", ") || undefined;
                 const bakerProduced = actualProduction[productName] ?? 0;
                 const demand = group.totalQty;
                 const bakerUsed = Math.min(bakerProduced, demand);
@@ -1759,7 +1776,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                     dateProduced: today,
                     status: "stored",
                     notes: `Baked — Allocated for DOS`,
-                  });
+                    size: dosSize,
+                    dosProductName: productName,
+                  } as any);
                   newHistory.push({
                     id: `FH-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                     productName: recipeDisplayName,
@@ -1782,7 +1801,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                     dateProduced: today,
                     status: "stored",
                     notes: `Baked — Available Stock`,
-                  });
+                    size: dosSize,
+                    dosProductName: productName,
+                  } as any);
                   newHistory.push({
                     id: `FH-${Date.now()}-STOCK-${Math.random().toString(36).slice(2, 6)}`,
                     productName: recipeDisplayName,
@@ -1820,15 +1841,55 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 onUpdateDOS?.(prev => prev.map(d => dosToComplete.find(c => c.id === d.id) ? { ...d, status: "completed" as const } : d));
               }
 
+              // Save to Deco Inventory if selected
+              if (saveDestination === "deco-inventory" && newFreezerItems.length > 0) {
+                const decoInvItems: InventoryItem[] = newFreezerItems.map(fi => ({
+                  id: `INV-DECO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  name: (fi as any).dosProductName || fi.productName,
+                  sku: `DECO-BAKE-${Date.now()}`,
+                  unit: fi.unit,
+                  onHand: fi.qty,
+                  threshold: 0,
+                  cost: 0,
+                  supplier: "",
+                  lastIn: new Date().toISOString(),
+                  category: "dry",
+                  group: "ingredients",
+                  accessRoles: ["deco"],
+                  source: "came-from-baker",
+                  size: fi.size,
+                }));
+                onUpdateInventory?.((prev: InventoryItem[]) => [...prev, ...decoInvItems]);
+                db.upsertInventory(decoInvItems).catch(console.error);
+              }
+
               // Reset and go back to DOS Review
               setStep(0);
               setStartedRecipes(new Set());
               setActualProduction({});
+              setSaveDestination("baker-freezer");
             }}
-            className="w-full rounded-xl bg-emerald-600 px-4 py-3.5 text-[15px] font-bold text-white hover:bg-emerald-500 transition-all active:scale-[0.98] mb-3"
+            className="w-full rounded-xl bg-emerald-600 px-4 py-3.5 text-[15px] font-bold text-white hover:bg-emerald-500 transition-all active:scale-[0.98] mb-4"
           >
-            Complete & Save to Freezer
+            {saveDestination === "deco-inventory" ? "Complete & Send to Deco Inventory" : "Complete & Save to Freezer"}
           </button>
+
+          {/* Destination Picker */}
+          <div className="mb-4">
+            <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2">Save Destination</div>
+            <div className="flex gap-2">
+              <button onClick={() => setSaveDestination("baker-freezer")}
+                className={`flex-1 rounded-xl border px-4 py-3 text-[12px] font-medium transition-all ${saveDestination === "baker-freezer" ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600"}`}>
+                <div className="font-semibold mb-0.5">Baker Freezer</div>
+                <div className="text-[10px] opacity-70">Baked Products</div>
+              </button>
+              <button onClick={() => setSaveDestination("deco-inventory")}
+                className={`flex-1 rounded-xl border px-4 py-3 text-[12px] font-medium transition-all ${saveDestination === "deco-inventory" ? "border-amber-500 bg-amber-500/10 text-amber-400" : "border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600"}`}>
+                <div className="font-semibold mb-0.5">Deco Inventory</div>
+                <div className="text-[10px] opacity-70">Came from Baker</div>
+              </button>
+            </div>
+          </div>
 
           <div className="mt-2 text-center">
             <button onClick={() => setStep(2)} className="text-[12px] text-zinc-500 hover:text-zinc-300 transition-colors">

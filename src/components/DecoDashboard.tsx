@@ -1893,7 +1893,7 @@ return (
 
   /* ── Advanced Premix ── */
   if (activeTab === "advanced-premix") {
-    const filteredRecipes = recipes.filter(r => r.group !== "filling").filter(r => r.productName.toLowerCase().includes(advMixSearch.toLowerCase()) || advMixSearch === "").sort((a, b) => a.productName.localeCompare(b.productName));
+    const filteredRecipes = recipes.filter(r => (r.ingredients.length > 0 || r.packagingMaterials.length > 0 || r.decorationSupplies.length > 0) && r.group !== "filling").filter(r => r.productName.toLowerCase().includes(advMixSearch.toLowerCase()) || advMixSearch === "").sort((a, b) => a.productName.localeCompare(b.productName));
 
     function toggleAdvRecipe(name: string) {
       setSelectedAdvRecipes(prev => {
@@ -1965,7 +1965,7 @@ return (
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {Array.from(selectedAdvRecipes).filter(pn => { const r = recipes.find(rec => rec.productName === pn); return !r || r.group !== "filling"; }).map(productName => {
+              {Array.from(selectedAdvRecipes).filter(pn => { const r = recipes.find(rec => rec.productName === pn); return !r || ((r.ingredients.length > 0 || r.packagingMaterials.length > 0 || r.decorationSupplies.length > 0) && r.group !== "filling"); }).map(productName => {
                 const recipe = recipes.find(r => r.productName === productName);
                 const qty = advMixQtys[productName] || 1;
                 if (!recipe) return null;
@@ -2021,70 +2021,6 @@ return (
             
             <div className="pt-6 border-t border-zinc-100 flex justify-end gap-3">
               <button onClick={() => setIsAdvLocked(false)} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-zinc-600 hover:bg-zinc-100">Cancel</button>
-              <button onClick={() => {
-                const batchRef = `ADV-${Date.now()}`;
-                const workingInv = inventory.map(i => ({ ...i }));
-                const findMatch = (ingredient: { name: string; inventoryId?: string; sku?: string }): InventoryItem | undefined => {
-                  if (ingredient.inventoryId) {
-                    const direct = workingInv.find(i => i.id === ingredient.inventoryId);
-                    if (direct) return direct;
-                  }
-                  const ingLower = ingredient.name.toLowerCase().trim();
-                  let match = workingInv.find(i => i.name.toLowerCase().trim() === ingLower);
-                  if (match) return match;
-                  match = workingInv.find(i => i.name.toLowerCase().includes(ingLower) || ingLower.includes(i.name.toLowerCase()));
-                  if (match) return match;
-                  if (ingredient.sku) match = workingInv.find(i => i.sku === ingredient.sku);
-                  return match;
-                };
-                const deductedItems: string[] = [];
-                const missedItems: string[] = [];
-                Array.from(selectedAdvRecipes).forEach(productName => {
-                  const recipe = recipes.find(r => r.productName === productName);
-                  if (!recipe) return;
-                  const qty = advMixQtys[productName] || 1;
-                  recipe.ingredients.forEach(ing => {
-                    const match = findMatch(ing);
-                    if (!match) { missedItems.push(ing.name); return; }
-                    const idx = workingInv.findIndex(i => i.id === match.id);
-                    if (idx === -1) return;
-                    const needed = ing.qtyPerBatch * qty;
-                    workingInv[idx] = { ...workingInv[idx], onHand: Math.max(0, workingInv[idx].onHand - needed) };
-                    deductedItems.push(ing.name + " (-" + needed + " " + ing.unit + ")");
-                  });
-                  const existingItem = inventory.find(i => i.name === productName && i.accessRoles?.includes("deco") && i.source === "production-prep");
-                  if (existingItem) {
-                    const updated = { ...existingItem, onHand: existingItem.onHand + qty, lastIn: new Date().toISOString() };
-                    onUpdateInventory?.((prev: InventoryItem[]) => prev.map(i => i.id === existingItem.id ? updated : i));
-                    db.upsertInventory([updated]).catch(console.error);
-                  } else {
-                    const newItem: InventoryItem = {
-                      id: "INV-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
-                      name: productName,
-                      sku: "DECO-" + productName.substring(0, 8).toUpperCase() + "-" + Date.now(),
-                      unit: "pcs", onHand: qty, threshold: 0, cost: 0, supplier: "",
-                      lastIn: new Date().toISOString(), category: "dry", group: "ingredients",
-                      accessRoles: ["deco"] as Role[], source: "production-prep",
-                    };
-                    onUpdateInventory?.((prev: InventoryItem[]) => [...prev, newItem]);
-                    db.upsertInventory([newItem]).catch(console.error);
-                  }
-                });
-                onUpdateInventory(workingInv);
-                const changed = workingInv.filter(item => {
-                  const orig = inventory.find(i => i.id === item.id);
-                  return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
-                });
-                if (changed.length > 0) db.upsertInventory(changed).catch(console.error);
-                const deductLog = deductedItems.length > 0 ? " Deducted: " + deductedItems.join(", ") : "";
-                const missLog = missedItems.length > 0 ? " Missed: " + missedItems.join(", ") : "";
-                onAddAuditLog?.("ADVANCED_PREMIX_SAVED", `Saved ${selectedAdvRecipes.size} compositions to My Inventory.${deductLog}${missLog}`);
-                setSelectedAdvRecipes(new Set());
-                setAdvMixQtys({});
-                setAdvMixAdjustments({});
-                setIsAdvLocked(false);
-                showToast("Saved to My Inventory");
-              }} className="px-6 py-2.5 rounded-xl text-[13px] font-bold text-white bg-emerald-600 hover:bg-emerald-700">Send to My Inventory</button>
               <button onClick={() => {
                 const batchRef = `ADV-${Date.now()}`;
                 const workingInv = inventory.map(i => ({ ...i }));
@@ -2260,7 +2196,7 @@ return (
 
   /* ── Cake Productions ── */
   if (activeTab === "deco-queue") {
-    const prepInventory = inventory.filter(i => i.source === "production-prep" && (!i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco")));
+    const prepInventory = inventory.filter(i => (i.source === "production-prep" || i.source === "came-from-baker") && (!i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco")));
     const activeDesignItem = selectedDesignId ? inventory.find(i => i.id === selectedDesignId) ?? null : null;
 
     const renderDecoCard = (task: DecoTask, opts?: { compact?: boolean; expanded?: boolean; onToggle?: () => void }) => {
@@ -2433,7 +2369,7 @@ return (
     };
 
     const openDesignFromDOS = (dos: DOSItem) => {
-      const inv = inventory.find(i => i.name === dos.product && i.source === "production-prep");
+      const inv = inventory.find(i => i.name === dos.product && (i.source === "production-prep" || i.source === "came-from-baker"));
       if (!inv) { alert(`No "${dos.product}" available in My Inventory. Complete Tasks to Prepare first.`); return; }
       setDesignModal({ product: dos.product, inventoryId: inv.id, qty: inv.onHand, theme: dos.themeOccasion, notes: dos.cakeDesignNotes, colorScheme: dos.colorScheme, topper: dos.topper, referenceImage: dos.referenceImage, messageCaption: dos.messageCaption });
       setDesignTheme(dos.themeOccasion || "");
@@ -2499,15 +2435,72 @@ return (
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight">Cake Productions</h1>
-          <p className="mt-1 text-[13px] text-zinc-500">Pick a product from My Inventory (Production Prep), design it, then start production.</p>
+          <p className="mt-1 text-[13px] text-zinc-500">Pick a product from My Inventory (Production Prep or From Baker), design it, then start production.</p>
         </div>
+
+        {/* DOS Items with Customization */}
+        {(() => {
+          const customDOS = dosForDeco.filter(d => d.themeOccasion || d.colorScheme || d.cakeDesignNotes || d.topper || d.referenceImage || d.messageCaption);
+          return (
+            <div className="rounded-2xl border border-violet-200 bg-violet-50/30 p-5">
+              <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                <div>
+                  <h2 className="text-[15px] font-semibold text-zinc-900">Custom Orders from DOS</h2>
+                  <p className="text-[12px] text-zinc-500 mt-0.5">DOS products with set customization · Select to start design</p>
+                </div>
+                <span className="rounded-full bg-violet-100 border border-violet-200 px-2.5 py-0.5 text-[10px] font-bold text-violet-700 uppercase tracking-wider">{customDOS.length} item{customDOS.length !== 1 ? "s" : ""}</span>
+              </div>
+              {customDOS.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-violet-200 bg-white/60 p-6 text-center">
+                  <p className="text-[12px] text-zinc-500">No DOS items with customization set yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {customDOS.map(dos => {
+                    const alreadyDesigned = decoQueue.some(t => t.product === dos.product && t.status !== "completed");
+                    return (
+                      <div key={dos.id} className={`rounded-xl border p-4 ${alreadyDesigned ? 'border-zinc-200 bg-zinc-50/50' : 'border-violet-200 bg-white shadow-sm'}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[15px] font-semibold text-zinc-900">{dos.product}</span>
+                              {dos.flavor && <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">{dos.flavor}</span>}
+                              {dos.size && <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">{dos.size}</span>}
+                              <span className="text-[11px] text-zinc-400 font-mono">×{dos.qty}</span>
+                              {alreadyDesigned && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">In Queue</span>}
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {dos.themeOccasion && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Theme:</span> {dos.themeOccasion}</div>}
+                              {dos.colorScheme && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Colors:</span> {dos.colorScheme}</div>}
+                              {dos.cakeDesignNotes && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Notes:</span> <span className="text-zinc-500">{dos.cakeDesignNotes}</span></div>}
+                              {dos.topper && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Topper:</span> {dos.topper}</div>}
+                              {dos.messageCaption && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Message:</span> {dos.messageCaption}</div>}
+                              {dos.referenceImage && <div className="text-[12px]"><a href={dos.referenceImage} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline underline-offset-2 hover:text-blue-800">View Reference Image</a></div>}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => openDesignFromDOS(dos)}
+                            disabled={alreadyDesigned}
+                            className={`shrink-0 rounded-lg px-4 py-2 text-[12px] font-medium transition-all ${alreadyDesigned ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed' : 'bg-violet-600 text-white hover:bg-violet-700 shadow-sm'}`}
+                          >
+                            {alreadyDesigned ? "In Queue" : "Start Design →"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Available from My Inventory — Production Prep group */}
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/30 p-5">
           <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
             <div>
               <h2 className="text-[15px] font-semibold text-zinc-900">Available from My Inventory</h2>
-              <p className="text-[12px] text-zinc-500 mt-0.5">Group: <span className="font-semibold text-emerald-700">Production Prep</span> · Select a product to design</p>
+              <p className="text-[12px] text-zinc-500 mt-0.5">Groups: <span className="font-semibold text-emerald-700">Production Prep</span> & <span className="font-semibold text-amber-700">From Baker</span> · Select a product to design</p>
             </div>
             <div className="flex items-center gap-2">
               <div className="relative">
@@ -2611,52 +2604,6 @@ return (
             </div>
           )}
         </div>
-
-        {/* DOS Items with Customization */}
-        {(() => {
-          const customDOS = dosForDeco.filter(d => d.themeOccasion || d.colorScheme || d.cakeDesignNotes || d.topper || d.referenceImage || d.messageCaption);
-          if (customDOS.length === 0) return null;
-          return (
-            <div className="mb-6">
-              <h2 className="text-[15px] font-semibold text-zinc-900 mb-3">🎨 Custom Orders from DOS</h2>
-              <div className="space-y-3">
-                {customDOS.map(dos => {
-                  const alreadyDesigned = decoQueue.some(t => t.product === dos.product && t.status !== "completed");
-                  return (
-                    <div key={dos.id} className={`rounded-2xl border p-4 ${alreadyDesigned ? 'border-zinc-200 bg-zinc-50/50' : 'border-violet-200 bg-white shadow-sm'}`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[15px] font-semibold text-zinc-900">{dos.product}</span>
-                            {dos.flavor && <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">{dos.flavor}</span>}
-                            {dos.size && <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">{dos.size}</span>}
-                            <span className="text-[11px] text-zinc-400 font-mono">×{dos.qty}</span>
-                            {alreadyDesigned && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">In Queue</span>}
-                          </div>
-                          <div className="mt-2 space-y-1">
-                            {dos.themeOccasion && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Theme:</span> {dos.themeOccasion}</div>}
-                            {dos.colorScheme && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Colors:</span> {dos.colorScheme}</div>}
-                            {dos.cakeDesignNotes && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Notes:</span> <span className="text-zinc-500">{dos.cakeDesignNotes}</span></div>}
-                            {dos.topper && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Topper:</span> {dos.topper}</div>}
-                            {dos.messageCaption && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Message:</span> {dos.messageCaption}</div>}
-                            {dos.referenceImage && <div className="text-[12px]"><a href={dos.referenceImage} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline underline-offset-2 hover:text-blue-800">🖼️ View Reference Image</a></div>}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => openDesignFromDOS(dos)}
-                          disabled={alreadyDesigned}
-                          className={`shrink-0 rounded-lg px-4 py-2 text-[12px] font-medium transition-all ${alreadyDesigned ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed' : 'bg-violet-600 text-white hover:bg-violet-700 shadow-sm'}`}
-                        >
-                          {alreadyDesigned ? "In Queue" : "Start Design →"}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Active Cake Productions */}
         <div>
@@ -2994,9 +2941,10 @@ return (
     );
     const sortedInventory = isInventoryTab
       ? ([...filtered as unknown as InventoryItem[]].sort((a, b) => {
-          const aPrep = a.source === "production-prep" ? 0 : 1;
-          const bPrep = b.source === "production-prep" ? 0 : 1;
-          if (aPrep !== bPrep) return aPrep - bPrep;
+          const sourceOrder = (s?: string) => s === "production-prep" ? 0 : s === "came-from-baker" ? 1 : 2;
+          const aOrder = sourceOrder(a.source);
+          const bOrder = sourceOrder(b.source);
+          if (aOrder !== bOrder) return aOrder - bOrder;
           return a.name.localeCompare(b.name);
         }))
       : null;
@@ -3021,6 +2969,7 @@ return (
     };
 
     return (
+      <>
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <div><h1 className="text-[24px] font-semibold">Freezer — Finished Products</h1><p className="mt-1 text-[13px] text-zinc-600">Track decorated products ready for dispatch.</p></div>
@@ -3053,92 +3002,147 @@ return (
           <input value={freezerSearch} onChange={e => setFreezerSearch(e.target.value)} placeholder={isInventoryTab ? "Search inventory..." : "Search products..."} className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
         </div>
 
-        <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            {isInventoryTab ? (
-              <table className="w-full text-left">
-                <thead className="bg-zinc-50 border-b border-zinc-100">
-                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                    <th className="px-5 py-3">Name</th>
-                    <th className="px-5 py-3">SKU</th>
-                    <th className="px-5 py-3 text-right">On Hand</th>
-                    <th className="px-5 py-3 text-right">Threshold</th>
-                    <th className="px-5 py-3">Unit</th>
-                    <th className="px-5 py-3">Section</th>
-                    <th className="px-5 py-3">Group</th>
-                    <th className="px-5 py-3 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-50">
-                  {(sortedInventory ?? []).length === 0 ? (
-                    <tr><td colSpan={8} className="px-5 py-12 text-center text-[13px] text-zinc-400">No inventory items with deco-only access.</td></tr>
-                  ) : (() => {
-                    const rows: React.ReactNode[] = [];
-                    let lastGroup: string | null = null;
-                    (sortedInventory ?? []).forEach((inv, idx) => {
-                      const groupKey = inv.source === "production-prep" ? "production-prep" : "manual";
-                      if (lastGroup !== null && lastGroup !== groupKey) {
-                        rows.push(
-                          <tr key={`divider-${idx}`}>
-                            <td colSpan={8} className="px-5 py-2 bg-zinc-50/60 border-y border-zinc-100">
-                              <div className="flex items-center gap-2">
-                                <span className="h-px flex-1 bg-zinc-200" />
-                                <span className="text-[10px] uppercase tracking-wider font-semibold text-zinc-400">Manual</span>
-                                <span className="h-px flex-1 bg-zinc-200" />
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      }
-                      if (lastGroup !== groupKey && groupKey === "production-prep") {
-                        rows.push(
-                          <tr key={`header-production-prep`}>
-                            <td colSpan={8} className="px-5 py-2 bg-emerald-50/60 border-b border-emerald-100">
-                              <div className="flex items-center gap-2">
-                                <span className="h-px flex-1 bg-emerald-200" />
-                                <span className="text-[10px] uppercase tracking-wider font-semibold text-emerald-700">From Production Prep</span>
-                                <span className="h-px flex-1 bg-emerald-200" />
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      }
-                      lastGroup = groupKey;
-                      const isPrep = inv.source === "production-prep";
-                      rows.push(
-                        <tr key={inv.id} className={`hover:bg-zinc-50/50 transition-colors ${isPrep ? "bg-emerald-50/20" : ""}`}>
-                          <td className="px-5 py-3.5">
-                            <div className="flex items-center gap-2">
+        {isInventoryTab ? (() => {
+          const prepItems = (sortedInventory ?? []).filter(i => i.source === "production-prep");
+          const bakerItems = (sortedInventory ?? []).filter(i => i.source === "came-from-baker");
+          const manualItems = (sortedInventory ?? []).filter(i => !i.source || i.source === "manual");
+          return (
+            <div className="space-y-4">
+              {/* Production Prep Items */}
+              {prepItems.length > 0 && (
+                <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 bg-emerald-50/60 border-b border-emerald-100">
+                    <span className="text-[11px] uppercase tracking-wider font-semibold text-emerald-700">From Production Prep</span>
+                    <span className="ml-2 text-[10px] text-emerald-600">({prepItems.length})</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-zinc-50 border-b border-zinc-100">
+                        <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                          <th className="px-5 py-3">Product</th>
+                          <th className="px-5 py-3">Size</th>
+                          <th className="px-5 py-3 text-right">Qty</th>
+                          <th className="px-5 py-3">Category</th>
+                          <th className="px-5 py-3">Section</th>
+                          <th className="px-5 py-3 w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-50">
+                        {prepItems.map(inv => (
+                          <tr key={inv.id} className="hover:bg-emerald-50/20 transition-colors">
+                            <td className="px-5 py-3.5">
                               <div className="text-[13px] font-medium text-zinc-900">{inv.name}</div>
-                              {isPrep && <span className="rounded-full bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase tracking-wider">Prep</span>}
-                            </div>
-                          </td>
-                          <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{inv.sku}</td>
-                          <td className="px-5 py-3.5 text-[13px] text-right font-mono" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand}</td>
-                          <td className="px-5 py-3.5 text-[13px] text-right font-mono text-zinc-500">{inv.threshold}</td>
-                          <td className="px-5 py-3.5 text-[13px] text-zinc-500">{inv.unit}</td>
-                          <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.group.replace(/-/g, ' ')}</span></td>
-                          <td className="px-5 py-3.5">
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isPrep ? "bg-emerald-100 text-emerald-700 border border-emerald-200" : "bg-zinc-100 text-zinc-600 border border-zinc-200"}`}>
-                              {isPrep ? "Production Prep" : "Manual"}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3.5">
-                            {isPrep && (
+                              <div className="text-[11px] text-zinc-400 font-mono mt-0.5">{inv.sku}</div>
+                            </td>
+                            <td className="px-5 py-3.5 text-[13px] text-zinc-600">{inv.size || "—"}</td>
+                            <td className="px-5 py-3.5 text-[13px] text-right font-mono font-semibold" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand} {inv.unit}</td>
+                            <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category}</span></td>
+                            <td className="px-5 py-3.5"><span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 border border-emerald-200">Production Prep</span></td>
+                            <td className="px-5 py-3.5">
                               <button onClick={() => {
                                 onUpdateInventory((prev: InventoryItem[]) => prev.filter(i => i.id !== inv.id));
                                 db.deleteInventoryItem(inv.id, inv.group).catch(console.error);
                               }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[10px] font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
-                            )}
-                          </td>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* From Baker Items */}
+              {bakerItems.length > 0 && (
+                <div className="rounded-[24px] border border-amber-200 bg-white shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 bg-amber-50/60 border-b border-amber-100">
+                    <span className="text-[11px] uppercase tracking-wider font-semibold text-amber-700">From Baker</span>
+                    <span className="ml-2 text-[10px] text-amber-600">({bakerItems.length})</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-amber-50/30 border-b border-amber-100">
+                        <tr className="text-[11px] uppercase tracking-wider text-amber-700" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                          <th className="px-5 py-3">Product</th>
+                          <th className="px-5 py-3">Size</th>
+                          <th className="px-5 py-3 text-right">Qty</th>
+                          <th className="px-5 py-3">Category</th>
+                          <th className="px-5 py-3">Section</th>
+                          <th className="px-5 py-3 w-10"></th>
                         </tr>
-                      );
-                    });
-                    return rows;
-                  })()}
-                </tbody>
-              </table>
-            ) : freezerTab === "Display Cakes" ? (
+                      </thead>
+                      <tbody className="divide-y divide-amber-50">
+                        {bakerItems.map(inv => (
+                          <tr key={inv.id} className="hover:bg-amber-50/30 transition-colors">
+                            <td className="px-5 py-3.5">
+                              <div className="text-[13px] font-medium text-zinc-900">{inv.name}</div>
+                              <div className="text-[11px] text-zinc-400 font-mono mt-0.5">{inv.sku}</div>
+                            </td>
+                            <td className="px-5 py-3.5 text-[13px] text-zinc-600">{inv.size || "—"}</td>
+                            <td className="px-5 py-3.5 text-[13px] text-right font-mono font-semibold" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand} {inv.unit}</td>
+                            <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category}</span></td>
+                            <td className="px-5 py-3.5"><span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">From Baker</span></td>
+                            <td className="px-5 py-3.5">
+                              <button onClick={() => {
+                                onUpdateInventory((prev: InventoryItem[]) => prev.filter(i => i.id !== inv.id));
+                                db.deleteInventoryItem(inv.id, inv.group).catch(console.error);
+                              }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[10px] font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Manual Items */}
+              {manualItems.length > 0 && (
+                <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 bg-zinc-50 border-b border-zinc-100">
+                    <span className="text-[11px] uppercase tracking-wider font-semibold text-zinc-500">Manual</span>
+                    <span className="ml-2 text-[10px] text-zinc-400">({manualItems.length})</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-zinc-50 border-b border-zinc-100">
+                        <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                          <th className="px-5 py-3">Product</th>
+                          <th className="px-5 py-3">Size</th>
+                          <th className="px-5 py-3 text-right">Qty</th>
+                          <th className="px-5 py-3">Category</th>
+                          <th className="px-5 py-3">Section</th>
+                          <th className="px-5 py-3 w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-50">
+                        {manualItems.map(inv => (
+                          <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
+                            <td className="px-5 py-3.5">
+                              <div className="text-[13px] font-medium text-zinc-900">{inv.name}</div>
+                              <div className="text-[11px] text-zinc-400 font-mono mt-0.5">{inv.sku}</div>
+                            </td>
+                            <td className="px-5 py-3.5 text-[13px] text-zinc-600">{inv.size || "—"}</td>
+                            <td className="px-5 py-3.5 text-[13px] text-right font-mono font-semibold" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand} {inv.unit}</td>
+                            <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category}</span></td>
+                            <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 border border-zinc-200">Manual</span></td>
+                            <td className="px-5 py-3.5"></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {prepItems.length === 0 && bakerItems.length === 0 && manualItems.length === 0 && (
+                <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
+                  <div className="px-5 py-12 text-center text-[13px] text-zinc-400">No inventory items with deco-only access.</div>
+                </div>
+              )}
+            </div>
+          );
+        })() : freezerTab === "Display Cakes" ? (
               <table className="w-full text-left">
                 <thead className="bg-zinc-50 border-b border-zinc-100">
                   <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
@@ -3211,7 +3215,6 @@ return (
               </table>
             )}
           </div>
-        </div>
 
         {showAddFreezer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddFreezer(false)}>
@@ -3276,7 +3279,7 @@ return (
             </div>
           </div>
         )}
-      </div>
+      </>
     );
   }
 
