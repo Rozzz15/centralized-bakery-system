@@ -9,10 +9,10 @@ import type {
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
-  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduledDate: d.scheduled_date || undefined, roles: d.roles || undefined, flavor: d.flavor || undefined, size: d.size || undefined, themeOccasion: d.theme_occasion || undefined, colorScheme: d.color_scheme || undefined, cakeDesignNotes: d.cake_design_notes || undefined, topper: d.topper || undefined, referenceImage: d.reference_image || undefined, messageCaption: d.message_caption || undefined };
+  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduledDate: d.scheduled_date || undefined, roles: d.roles || undefined, flavor: d.flavor || undefined, size: d.size || undefined, themeOccasion: d.theme_occasion || undefined, colorScheme: d.color_scheme || undefined, cakeDesignNotes: d.cake_design_notes || undefined, topper: d.topper || undefined, referenceImage: d.reference_image || undefined, messageCaption: d.message_caption || undefined, customerName: d.customer_name || undefined, pickupDeliveryTime: d.pickup_delivery_time || undefined, contactNumber: d.contact_number || undefined, dateOfEvent: d.date_of_event || undefined, layers: d.layers || undefined };
 }
 function toDOSRow(d: DOSItem) {
-  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduled_date: d.scheduledDate || null, roles: d.roles ?? [], flavor: d.flavor || null, size: d.size || null, theme_occasion: d.themeOccasion || null, color_scheme: d.colorScheme || null, cake_design_notes: d.cakeDesignNotes || null, topper: d.topper || null, reference_image: d.referenceImage || null, message_caption: d.messageCaption || null };
+  return { id: d.id, product: d.product, qty: d.qty, priority: d.priority, status: d.status, scheduled_date: d.scheduledDate || null, roles: d.roles ?? [], flavor: d.flavor || null, size: d.size || null, theme_occasion: d.themeOccasion || null, color_scheme: d.colorScheme || null, cake_design_notes: d.cakeDesignNotes || null, topper: d.topper || null, reference_image: d.referenceImage || null, message_caption: d.messageCaption || null, customer_name: d.customerName || null, pickup_delivery_time: d.pickupDeliveryTime || null, contact_number: d.contactNumber || null, date_of_event: d.dateOfEvent || null, layers: d.layers || null };
 }
 
 function parseProduction(p: any): ProductionTask {
@@ -76,8 +76,10 @@ export async function upsertInventoryItem(item: InventoryItem) {
 }
 
 export async function upsertInventory(items: InventoryItem[]) {
-  // Tables that have a 'size' column
+  // Tables that have 'size', 'source', 'access_roles' columns
   const TABLES_WITH_SIZE = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies"]);
+  const TABLES_WITH_SOURCE = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies"]);
+  const TABLES_WITH_ACCESS = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies"]);
   // Group items by table, then batch-upsert each table with one call
   const grouped = new Map<string, InventoryItem[]>();
   for (const item of items) {
@@ -90,6 +92,8 @@ export async function upsertInventory(items: InventoryItem[]) {
     const rows = tableItems.map(i => {
       const row = toInventoryRow(i);
       if (!TABLES_WITH_SIZE.has(table)) delete row.size;
+      if (!TABLES_WITH_SOURCE.has(table)) delete row.source;
+      if (!TABLES_WITH_ACCESS.has(table)) delete row.access_roles;
       return row;
     });
     return supabase.from(table).upsert(rows, { onConflict: "id" }).then(r => { if (r.error) throw r.error; });
@@ -167,6 +171,11 @@ export async function updateDOS(id: string, updates: Partial<DOSItem>) {
   if ("topper" in updates) row.topper = updates.topper || null;
   if ("referenceImage" in updates) row.reference_image = updates.referenceImage || null;
   if ("messageCaption" in updates) row.message_caption = updates.messageCaption || null;
+  if ("customerName" in updates) row.customer_name = updates.customerName || null;
+  if ("pickupDeliveryTime" in updates) row.pickup_delivery_time = updates.pickupDeliveryTime || null;
+  if ("contactNumber" in updates) row.contact_number = updates.contactNumber || null;
+  if ("dateOfEvent" in updates) row.date_of_event = updates.dateOfEvent || null;
+  if ("layers" in updates) row.layers = updates.layers || null;
   const { error } = await supabase.from("dos_items").update(row).eq("id", id);
   if (error) throw error;
 }
@@ -401,7 +410,7 @@ export async function fetchCategories(): Promise<string[]> {
 }
 
 export async function addCategory(name: string) {
-  const { error } = await supabase.from("product_categories").insert({ name }).maybeSingle();
+  const { error } = await supabase.from("product_categories").upsert({ name }, { onConflict: "name" });
   if (error && (error as any)?.code !== "23505") throw error;
 }
 
@@ -434,7 +443,7 @@ export async function fetchProductCategories(): Promise<Record<string, string>> 
 export async function saveProductCategory(productName: string, category: string | null) {
   // 1. If a category is provided, ensure it exists in product_categories first
   if (category) {
-    const { error: catErr } = await supabase.from("product_categories").insert({ name: category });
+    const { error: catErr } = await supabase.from("product_categories").upsert({ name: category }, { onConflict: "name" });
     if (catErr && (catErr as any).code !== '23505') { // 23505 = unique_violation (duplicate)
       console.error("Failed to ensure category exists:", catErr);
       throw catErr;

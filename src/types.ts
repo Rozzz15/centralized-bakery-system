@@ -10,7 +10,7 @@ export type InventoryItem = {
   cost: number;
   supplier: string;
   lastIn: string;
-  category: "dry" | "dairy" | "produce" | "packaging";
+  category: "dry" | "dairy" | "produce" | "packaging" | "Cakes" | "Breads" | "Pastries" | "Fillings" | "Frostings" | "Toppings" | "Decorations";
   group: "ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies";
   expiryDate?: string;
   accessRoles?: Role[];
@@ -34,6 +34,11 @@ export type DOSItem = {
   topper?: string;
   referenceImage?: string;
   messageCaption?: string;
+  customerName?: string;
+  pickupDeliveryTime?: string;
+  contactNumber?: string;
+  dateOfEvent?: string;
+  layers?: string;
 };
 
 export type ProductionTask = {

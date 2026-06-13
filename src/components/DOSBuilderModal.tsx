@@ -15,7 +15,7 @@ type Props = {
   promosPackages?: PromoPackage[];
 };
 
-type Row = { product: string; qty: number; roles: Set<"baker" | "pastry" | "deco">; flavor: string; size: string; themeOccasion: string; colorScheme: string; cakeDesignNotes: string; topper: string; referenceImage: string; messageCaption: string; showCustomization: boolean };
+type Row = { product: string; qty: number; roles: Set<"baker" | "pastry" | "deco">; flavor: string; size: string; themeOccasion: string; colorScheme: string; cakeDesignNotes: string; topper: string; referenceImage: string; messageCaption: string; showCustomization: boolean; customerName: string; pickupDeliveryTime: string; contactNumber: string; dateOfEvent: string; layers: string };
 
 const FLAVORS = ["", "Chocolate", "Vanilla", "Red Velvet", "Ube", "Mocha", "Carrot", "Lemon", "Strawberry", "Cookies & Cream", "Salted Caramel", "Banana", "Blueberry", "Coffee"];
 const SIZES = ["", "6x1", "6x2", "6x3", "8x1", "8x2", "8x3", "10x1", "10x2", "10x3", "12x1", "12x2", "14x1", "14x2", "16x1", "Sheet"];
@@ -53,7 +53,7 @@ function FileUploadRow({ value, onUpload, onClear }: { value: string; onUpload: 
 }
 
 function defaultRow(): Row {
-  return { product: "", qty: 0, roles: new Set(["baker"]), flavor: "", size: "", themeOccasion: "", colorScheme: "", cakeDesignNotes: "", topper: "", referenceImage: "", messageCaption: "", showCustomization: false };
+  return { product: "", qty: 0, roles: new Set(["baker"]), flavor: "", size: "", themeOccasion: "", colorScheme: "", cakeDesignNotes: "", topper: "", referenceImage: "", messageCaption: "", showCustomization: false, customerName: "", pickupDeliveryTime: "", contactNumber: "", dateOfEvent: "", layers: "" };
 }
 
 export default function DOSBuilderModal({ onClose, onSave, productCatalog, productRoutes, onAddToCatalog, hasTodayItems, presetDate, scheduledDates, promosPackages = [] }: Props) {
@@ -61,6 +61,7 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
   const [priority, setPriority] = useState<"HIGH" | "MEDIUM" | "LOW">("MEDIUM");
   const [productSearch, setProductSearch] = useState<Record<number, string>>({});
   const [showSuggestions, setShowSuggestions] = useState<Record<number, boolean>>({});
+  const [editingCustomIndex, setEditingCustomIndex] = useState<number | null>(null);
   const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
   const defaultDate = presetDate || (hasTodayItems ? (() => { const t = new Date(); t.setDate(t.getDate() + 1); return t.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0]; })() : todayStr);
   const [scheduledDate, setScheduledDate] = useState(defaultDate);
@@ -116,6 +117,11 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
       topper: val.topper || undefined,
       referenceImage: val.referenceImage || undefined,
       messageCaption: val.messageCaption || undefined,
+      customerName: val.customerName || undefined,
+      pickupDeliveryTime: val.pickupDeliveryTime || undefined,
+      contactNumber: val.contactNumber || undefined,
+      dateOfEvent: val.dateOfEvent || undefined,
+      layers: val.layers || undefined,
     }));
 
     const tasksMap = new Map<string, { product: string; role: "baker" | "pastry" | "deco" | "kitchen"; target: number; itemIdx: number }>();
@@ -352,87 +358,21 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
                   <div className="col-span-2 flex items-center justify-end gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, showCustomization: !r.showCustomization } : r))}
+                      onClick={() => setEditingCustomIndex(i)}
                       className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-all ${
-                        row.showCustomization
-                          ? 'bg-zinc-100 border-zinc-300 text-zinc-800'
+                        (row.themeOccasion || row.colorScheme || row.cakeDesignNotes || row.topper || row.referenceImage || row.messageCaption || row.customerName || row.contactNumber || row.dateOfEvent || row.pickupDeliveryTime)
+                          ? 'bg-violet-100 border-violet-300 text-violet-800'
                           : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:border-zinc-300'
                       }`}
                     >
-                      <span className="text-[13px]">{row.showCustomization ? "▲" : "🎨"}</span>
-                      {row.showCustomization ? "Hide" : "Custom"}
+                      <span className="text-[13px]">🎨</span>
+                      Custom
                     </button>
                     {rows.length > 1 && (
                       <button onClick={() => removeRow(i)} className="grid h-7 w-7 place-items-center rounded-lg border border-zinc-200 text-[13px] text-zinc-400 hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-all">✕</button>
                     )}
                   </div>
                 </div>
-                {row.showCustomization && (
-                  <div className="border-t border-zinc-100 bg-zinc-50/50 px-4 py-3">
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                      <div>
-                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🎨 Theme / Occasion</label>
-                        <select
-                          value={row.themeOccasion}
-                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, themeOccasion: e.target.value } : r))}
-                          className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400"
-                        >
-                          {THEMES.map(t => (
-                            <option key={t} value={t}>{t || "Select theme…"}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🎨 Color Scheme</label>
-                        <input
-                          value={row.colorScheme}
-                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, colorScheme: e.target.value } : r))}
-                          placeholder="e.g. White, Sky Blue (as reference image)"
-                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🎂 Cake Design Notes</label>
-                        <textarea
-                          value={row.cakeDesignNotes}
-                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, cakeDesignNotes: e.target.value } : r))}
-                          placeholder="e.g. Please copy same design from reference image"
-                          rows={2}
-                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300 resize-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🧁 Topper</label>
-                        <input
-                          value={row.topper}
-                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, topper: e.target.value } : r))}
-                          placeholder="e.g. Baptism Topper (cross / baby theme)"
-                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">🖼️ Reference Image</label>
-                        <FileUploadRow
-                          value={row.referenceImage}
-                          onUpload={async (file) => {
-                            const url = await uploadReferenceImage(file, `dos-${Date.now()}-${i}`);
-                            setRows(prev => prev.map((r, idx) => idx === i ? { ...r, referenceImage: url } : r));
-                          }}
-                          onClear={() => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, referenceImage: "" } : r))}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[11px] font-semibold text-zinc-600">✍️ Message / Caption <span className="font-normal text-zinc-400">(optional)</span></label>
-                        <input
-                          value={row.messageCaption}
-                          onChange={e => setRows(prev => prev.map((r, idx) => idx === i ? { ...r, messageCaption: e.target.value } : r))}
-                          placeholder='e.g. "Welcome Baby Liam"'
-                          className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
                 </div>
               ))}
             </div>
@@ -486,6 +426,112 @@ export default function DOSBuilderModal({ onClose, onSave, productCatalog, produ
           </div>
         </div>
       </div>
+
+      {/* Customization Modal */}
+      {editingCustomIndex !== null && (() => {
+        const row = rows[editingCustomIndex];
+        const update = (field: keyof Row, value: string) => {
+          setRows(prev => prev.map((r, idx) => idx === editingCustomIndex ? { ...r, [field]: value } : r));
+        };
+        return (
+          <div className="fixed inset-0 z-[60] grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setEditingCustomIndex(null)}>
+            <div className="w-full max-w-[600px] max-h-[85vh] overflow-y-auto rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex items-start justify-between mb-5">
+                <div>
+                  <h3 className="text-[18px] font-semibold">🎨 Customization</h3>
+                  <p className="text-[12px] text-zinc-500 mt-0.5">{row.product || "Product"} — {row.qty} pcs</p>
+                </div>
+                <button onClick={() => setEditingCustomIndex(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors">✕</button>
+              </div>
+
+              {/* Customer Details */}
+              <div className="mb-5">
+                <h4 className="text-[12px] font-semibold text-zinc-900 mb-3 flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-blue-100 grid place-items-center text-[10px]">1</span>
+                  Customer Details
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Customer Name</label>
+                    <input value={row.customerName} onChange={e => update("customerName", e.target.value)} placeholder="e.g. Juan Dela Cruz" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Contact Number</label>
+                    <input value={row.contactNumber} onChange={e => update("contactNumber", e.target.value)} placeholder="e.g. 09171234567" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Date of Event</label>
+                    <input type="date" value={row.dateOfEvent} onChange={e => update("dateOfEvent", e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Pickup / Delivery Time</label>
+                    <input type="time" value={row.pickupDeliveryTime} onChange={e => update("pickupDeliveryTime", e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Design Details */}
+              <div className="mb-5">
+                <h4 className="text-[12px] font-semibold text-zinc-900 mb-3 flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-violet-100 grid place-items-center text-[10px]">2</span>
+                  Design Details
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Theme / Occasion</label>
+                    <select value={row.themeOccasion} onChange={e => update("themeOccasion", e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400">
+                      {THEMES.map(t => <option key={t} value={t}>{t || "Select theme…"}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cake Layers</label>
+                    <select value={row.layers} onChange={e => update("layers", e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400">
+                      <option value="">Select layers…</option>
+                      <option value="1">1 Layer</option>
+                      <option value="2">2 Layers</option>
+                      <option value="3">3 Layers</option>
+                      <option value="4">4 Layers</option>
+                      <option value="5">5+ Layers</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Color Scheme</label>
+                    <input value={row.colorScheme} onChange={e => update("colorScheme", e.target.value)} placeholder="e.g. White, Sky Blue" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Topper</label>
+                    <input value={row.topper} onChange={e => update("topper", e.target.value)} placeholder="e.g. Baptism Topper" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Message / Caption</label>
+                    <input value={row.messageCaption} onChange={e => update("messageCaption", e.target.value)} placeholder='e.g. "Welcome Baby Liam"' className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cake Design Notes</label>
+                    <textarea value={row.cakeDesignNotes} onChange={e => update("cakeDesignNotes", e.target.value)} placeholder="e.g. Please copy same design from reference image" rows={3} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300 resize-none" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Reference Image</label>
+                    <FileUploadRow
+                      value={row.referenceImage}
+                      onUpload={async (file) => {
+                        const url = await uploadReferenceImage(file, `dos-${Date.now()}-${editingCustomIndex}`);
+                        update("referenceImage", url);
+                      }}
+                      onClear={() => update("referenceImage", "")}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-3 border-t border-zinc-100">
+                <button onClick={() => setEditingCustomIndex(null)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                <button onClick={() => setEditingCustomIndex(null)} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

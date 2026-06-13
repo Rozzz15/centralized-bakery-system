@@ -38,72 +38,72 @@ function DOSRecipeDetailModal({ recipe, totalQty, onClose }: {
   const estTotal = batchesNeeded * yieldBatch;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-[480px] max-h-[85vh] rounded-[24px] bg-zinc-900 border border-zinc-700 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[520px] max-h-[85vh] rounded-[28px] bg-zinc-900 border border-zinc-700 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-800">
           <div>
-            <h3 className="text-[16px] font-semibold text-white">{recipe.productName}</h3>
-            <p className="text-[12px] text-zinc-400 mt-0.5">{recipe.ingredients.length} ingredients · {totalQty} total qty</p>
+            <h3 className="text-[22px] font-bold text-white">{recipe.productName}</h3>
+            <p className="text-[14px] text-zinc-400 mt-1">{recipe.ingredients.length} ingredients · {totalQty} total qty</p>
           </div>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors">✕</button>
+          <button onClick={onClose} className="grid h-10 w-10 place-items-center rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors text-[18px]">✕</button>
         </div>
-        <div className="overflow-y-auto px-5 py-4 space-y-3">
+        <div className="overflow-y-auto px-6 py-5 space-y-4">
           {/* Yield Display */}
-          <div className="rounded-xl border border-amber-800 bg-amber-950/40 px-4 py-3">
-            <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="rounded-2xl border border-amber-800 bg-amber-950/40 px-5 py-4">
+            <div className="grid grid-cols-3 gap-4 mb-4">
               <div className="text-center">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Total Demand</div>
-                <div className="text-[16px] font-bold text-white mt-0.5">{totalQty} <span className="text-[11px] font-normal text-zinc-400">pcs</span></div>
+                <div className="text-[12px] uppercase tracking-wider text-zinc-500 font-semibold">Total Demand</div>
+                <div className="text-[24px] font-bold text-white mt-1">{totalQty} <span className="text-[14px] font-normal text-zinc-400">pcs</span></div>
               </div>
               <div className="text-center">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Yield/Batch</div>
-                <div className="text-[16px] font-bold text-amber-200 mt-0.5">{yieldBatch} <span className="text-[11px] font-normal text-amber-400">pcs</span></div>
+                <div className="text-[12px] uppercase tracking-wider text-zinc-500 font-semibold">Yield/Batch</div>
+                <div className="text-[24px] font-bold text-amber-200 mt-1">{yieldBatch} <span className="text-[14px] font-normal text-amber-400">pcs</span></div>
               </div>
               <div className="text-center">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Expected</div>
-                <div className="text-[16px] font-bold text-emerald-300 mt-0.5">{estTotal} <span className="text-[11px] font-normal text-emerald-400">pcs</span></div>
+                <div className="text-[12px] uppercase tracking-wider text-zinc-500 font-semibold">Expected</div>
+                <div className="text-[24px] font-bold text-emerald-300 mt-1">{estTotal} <span className="text-[14px] font-normal text-emerald-400">pcs</span></div>
               </div>
             </div>
-            <div className="text-[11px] text-center text-amber-400/80 font-mono bg-amber-950/60 rounded-lg px-3 py-2">
+            <div className="text-[13px] text-center text-amber-400/80 font-mono bg-amber-950/60 rounded-xl px-4 py-2.5">
               CEIL({totalQty} ÷ {yieldBatch}) = {batchesNeeded} batch × {yieldBatch} = {estTotal}
             </div>
           </div>
           {/* Ingredients */}
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Ingredients</div>
+          <div className="text-[13px] uppercase tracking-wider text-zinc-400 font-semibold">Ingredients</div>
           {recipe.ingredients.map((ing, i) => (
-            <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
+            <div key={i} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-3">
               <div>
-                <span className="text-[13px] font-medium text-zinc-200">{ing.name}</span>
-                <span className="text-[11px] text-zinc-500 ml-2">{ing.unit}</span>
+                <span className="text-[16px] font-semibold text-zinc-200">{ing.name}</span>
+                <span className="text-[13px] text-zinc-500 ml-2">{ing.unit}</span>
               </div>
-              <span className="text-[13px] font-mono font-semibold text-zinc-300">{ing.qtyPerBatch * batchesNeeded}</span>
+              <span className="text-[16px] font-mono font-bold text-zinc-300">{ing.qtyPerBatch * batchesNeeded}</span>
             </div>
           ))}
           {(recipe.packagingMaterials ?? []).length > 0 && (
             <>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium pt-2">Packaging</div>
+              <div className="text-[13px] uppercase tracking-wider text-zinc-400 font-semibold pt-2">Packaging</div>
               {recipe.packagingMaterials.map((mat, i) => (
-                <div key={`pkg-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
-                  <span className="text-[13px] font-medium text-zinc-200">{mat.name}</span>
-                  <span className="text-[12px] font-mono text-zinc-400">{mat.qtyPerBatch * batchesNeeded} {mat.unit}</span>
+                <div key={`pkg-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-3">
+                  <span className="text-[16px] font-semibold text-zinc-200">{mat.name}</span>
+                  <span className="text-[15px] font-mono font-bold text-zinc-400">{mat.qtyPerBatch * batchesNeeded} {mat.unit}</span>
                 </div>
               ))}
             </>
           )}
           {(recipe.decorationSupplies ?? []).length > 0 && (
             <>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium pt-2">Decoration</div>
+              <div className="text-[13px] uppercase tracking-wider text-zinc-400 font-semibold pt-2">Decoration</div>
               {recipe.decorationSupplies.map((sup, i) => (
-                <div key={`deco-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-2.5">
-                  <span className="text-[13px] font-medium text-zinc-200">{sup.name}</span>
-                  <span className="text-[12px] font-mono text-zinc-400">{sup.qtyPerBatch * batchesNeeded} {sup.unit}</span>
+                <div key={`deco-${i}`} className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-800/50 px-4 py-3">
+                  <span className="text-[16px] font-semibold text-zinc-200">{sup.name}</span>
+                  <span className="text-[15px] font-mono font-bold text-zinc-400">{sup.qtyPerBatch * batchesNeeded} {sup.unit}</span>
                 </div>
               ))}
             </>
           )}
         </div>
-        <div className="px-5 py-3 border-t border-zinc-800 flex gap-2">
-          <button onClick={onClose} className="flex-1 rounded-xl bg-zinc-800 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-700 transition-all">Close</button>
+        <div className="px-6 py-4 border-t border-zinc-800 flex gap-3">
+          <button onClick={onClose} className="flex-1 rounded-xl bg-zinc-800 py-3 text-[15px] font-semibold text-white hover:bg-zinc-700 transition-all">Close</button>
         </div>
       </div>
     </div>
@@ -138,6 +138,9 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   // "Cannot update a component (App) while rendering DecoDashboard" warning.
   // queueMicrotask is NOT enough — React's setState also runs in microtasks.
   const defer = (fn: () => void) => { setTimeout(fn, 0); };
+
+  // Product categories for From Baker dropdown
+  const [productCategories, setProductCategories] = useState<string[]>([]);
 
   // StrictMode dev-mode dedup: React calls setState updater functions twice.
   // This ref tracks (id+status) pairs we've already processed side effects for,
@@ -193,8 +196,8 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [productQty, setProductQty] = useState<Record<string, number>>({});
   const [activePreparation, setActivePreparation] = useState<{ dos: DOSItem; recipe: ProductRecipe; route: "baker" | "deco"; demandQty?: number } | null>(null);
   const [additionalIngredients, setAdditionalIngredients] = useState<AdditionalIngredient[]>([]);
-  const [actualOutput, setActualOutput] = useState<number | "">("");
   const [showAddIngredientModal, setShowAddIngredientModal] = useState(false);
+  const [ingredientSearch, setIngredientSearch] = useState("");
   const [newAddIngredient, setNewAddIngredient] = useState<AdditionalIngredient>({ name: "", qty: 0, unit: "", reason: "", source: "" });
   const [productAdditionalIngredients, setProductAdditionalIngredients] = useState<Record<string, AdditionalIngredient[]>>({});
 
@@ -256,6 +259,11 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   // Freezer state
   const [showAddFreezer, setShowAddFreezer] = useState(false);
+  const [showAddBakerInventory, setShowAddBakerInventory] = useState(false);
+  const [bakerInvProduct, setBakerInvProduct] = useState("");
+  const [bakerInvSize, setBakerInvSize] = useState("");
+  const [bakerInvQty, setBakerInvQty] = useState(0);
+  const [bakerInvCategory, setBakerInvCategory] = useState("dry");
   const [showEditFreezer, setShowEditFreezer] = useState(false);
   const [editingFreezerItem, setEditingFreezerItem] = useState<FreezerItem | null>(null);
   const [newProduct, setNewProduct] = useState("");
@@ -313,10 +321,13 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     return unsub;
   }, []);
 
-  const [designModal, setDesignModal] = useState<{ product: string; inventoryId: string; qty: number; theme?: string; notes?: string; colorScheme?: string; designNotes?: string; topper?: string; referenceImage?: string; messageCaption?: string } | null>(null);
+  const [designModal, setDesignModal] = useState<{ product: string; inventoryId: string; qty: number; theme?: string; notes?: string; colorScheme?: string; designNotes?: string; topper?: string; referenceImage?: string; messageCaption?: string; layers?: string } | null>(null);
   const [designTheme, setDesignTheme] = useState("");
   const [designNotes, setDesignNotes] = useState("");
   const [designQty, setDesignQty] = useState(1);
+  const [selectedBaseCakes, setSelectedBaseCakes] = useState<{ inventoryId: string; name: string; qty: number; unit: string; source: string }[]>([]);
+  const [extraPackaging, setExtraPackaging] = useState<{ name: string; qty: number; unit: string; inventoryId: string }[]>([]);
+  const [extraDecoration, setExtraDecoration] = useState<{ name: string; qty: number; unit: string; inventoryId: string }[]>([]);
   const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
   const [prepSearch, setPrepSearch] = useState("");
   const [prepSlide, setPrepSlide] = useState(0);
@@ -386,6 +397,11 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Fetch product categories for From Baker dropdown
+  useEffect(() => {
+    db.fetchCategories().then(cats => setProductCategories(cats)).catch(() => {});
   }, []);
 
   const allIngredients = inventory.filter(i => i.group === "ingredients" || i.group === "decoration-supplies" || i.group === "packaging-materials");
@@ -667,7 +683,7 @@ defer(() => onUpdateInventory(prevInv => {
       .map(name => recipes.find(r => r.productName === name))
       .filter(Boolean)
       .filter(r => r!.productName !== d.product);
-    return s + linkedRecipes.length;
+    return s + linkedRecipes.reduce((sum, r) => sum + (r!.ingredients?.length ?? 0), 0);
   }, 0);
   const totalPrepared = preMixPrepared.size;
   const allMixesDone = dosForDeco.every(d => preMixDone.has(d.product));
@@ -1034,49 +1050,46 @@ return (
             )}
 
             {/* Workflow Nav inside Pre-Mix */}
-            <div className="flex items-center justify-between pt-4 border-t border-zinc-200">
+            <div className="flex items-center justify-end pt-4 border-t border-zinc-200">
               <div className="text-[12px] text-zinc-400">Step 2 of 4</div>
-              <button onClick={() => setActiveTab("advanced-premix")} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
-                Next: Advanced Premix →
-              </button>
             </div>
           </div>
         ) : (<>
-          <div className="rounded-2xl bg-zinc-900 p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
+          <div className="rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 p-8 shadow-lg">
+          <div className="flex items-start justify-between gap-6">
             <div>
-              <h1 className="text-[28px] font-semibold tracking-tight text-white">DOS Received</h1>
-              <p className="mt-1 text-[13px] text-zinc-400">Admin issued these items. Your job is to prepare the Pre-Mix (ingredient pre-mixes) for each product.</p>
+              <h1 className="text-[36px] font-bold tracking-tight text-white">DOS Received</h1>
+              <p className="mt-2 text-[15px] text-zinc-400">Admin issued these items. Your job is to prepare the Pre-Mix (ingredient pre-mixes) for each product.</p>
             </div>
             {dosForDeco.length > 0 && (
-              <div className="shrink-0 rounded-xl bg-white/10 px-4 py-2.5 text-center">
-                <div className="text-[10px] text-zinc-400 uppercase font-medium tracking-wider">DOS Total</div>
-                <div className="text-[22px] font-bold text-white mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{dosForDeco.reduce((s, d) => s + d.qty, 0)}</div>
-                <div className="text-[10px] text-zinc-500">{dosForDeco.length} item{dosForDeco.length > 1 ? "s" : ""}</div>
+              <div className="shrink-0 rounded-2xl bg-white/10 px-6 py-4 text-center border border-white/10">
+                <div className="text-[12px] text-zinc-400 uppercase font-semibold tracking-wider">DOS Total</div>
+                <div className="text-[32px] font-bold text-white mt-1" style={{ fontFamily: "Fragment Mono, monospace" }}>{dosForDeco.reduce((s, d) => s + d.qty, 0)}</div>
+                <div className="text-[12px] text-zinc-500 mt-1">{dosForDeco.length} item{dosForDeco.length > 1 ? "s" : ""}</div>
               </div>
             )}
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
-            <button onClick={() => setSummaryModal("products")} className="rounded-xl border border-zinc-700 bg-zinc-800 p-3 text-left hover:border-zinc-500 hover:shadow-sm transition-all">
-              <div className="text-[11px] text-zinc-400 uppercase tracking-wider">Products to Mix</div>
-              <div className="text-[22px] font-semibold mt-0.5 text-white">{dosForDeco.length}</div>
-              <div className="text-[10px] text-zinc-500 mt-1">Click to view →</div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+            <button onClick={() => setSummaryModal("products")} className="rounded-2xl border border-zinc-700 bg-zinc-800/80 p-5 text-left hover:border-zinc-500 hover:shadow-md transition-all">
+              <div className="text-[13px] text-zinc-400 uppercase tracking-wider font-semibold">Products to Mix</div>
+              <div className="text-[32px] font-bold mt-2 text-white">{dosForDeco.length}</div>
+              <div className="text-[12px] text-zinc-500 mt-2">Click to view →</div>
             </button>
-            <button onClick={() => setSummaryModal("ingredients")} className="rounded-xl border border-rose-800 bg-rose-950/50 p-3 text-left hover:border-rose-600 hover:shadow-sm transition-all">
-              <div className="text-[11px] text-rose-400 uppercase tracking-wider">Recipe Needed</div>
-              <div className="text-[22px] font-semibold mt-0.5 text-rose-300">{totalNeeded}</div>
-              <div className="text-[10px] text-rose-500 mt-1">Click to view →</div>
+            <button onClick={() => setSummaryModal("ingredients")} className="rounded-2xl border border-rose-800 bg-rose-950/50 p-5 text-left hover:border-rose-600 hover:shadow-md transition-all">
+              <div className="text-[13px] text-rose-400 uppercase tracking-wider font-semibold">Premix Needed</div>
+              <div className="text-[32px] font-bold mt-2 text-rose-300">{totalNeeded}</div>
+              <div className="text-[12px] text-rose-500 mt-2">Click to view →</div>
             </button>
-            <button onClick={() => setSummaryModal("packaging")} className="rounded-xl border border-blue-800 bg-blue-950/50 p-3 text-left hover:border-blue-600 hover:shadow-sm transition-all">
-              <div className="text-[11px] text-blue-400 uppercase tracking-wider">Packaging Materials</div>
-              <div className="text-[22px] font-semibold mt-0.5 text-blue-300">{totalPkg}</div>
-              <div className="text-[10px] text-blue-500 mt-1">Click to view →</div>
+            <button onClick={() => setSummaryModal("packaging")} className="rounded-2xl border border-blue-800 bg-blue-950/50 p-5 text-left hover:border-blue-600 hover:shadow-md transition-all">
+              <div className="text-[13px] text-blue-400 uppercase tracking-wider font-semibold">Packaging Materials</div>
+              <div className="text-[32px] font-bold mt-2 text-blue-300">{totalPkg}</div>
+              <div className="text-[12px] text-blue-500 mt-2">Click to view →</div>
             </button>
-            <button onClick={() => setSummaryModal("deco")} className="rounded-xl border border-purple-800 bg-purple-950/50 p-3 text-left hover:border-purple-600 hover:shadow-sm transition-all">
-              <div className="text-[11px] text-purple-400 uppercase tracking-wider">Deco Supplies</div>
-              <div className="text-[22px] font-semibold mt-0.5 text-purple-300">{totalDecoItems}</div>
-              <div className="text-[10px] text-purple-500 mt-1">Click to view →</div>
+            <button onClick={() => setSummaryModal("deco")} className="rounded-2xl border border-purple-800 bg-purple-950/50 p-5 text-left hover:border-purple-600 hover:shadow-md transition-all">
+              <div className="text-[13px] text-purple-400 uppercase tracking-wider font-semibold">Deco Supplies</div>
+              <div className="text-[32px] font-bold mt-2 text-purple-300">{totalDecoItems}</div>
+              <div className="text-[12px] text-purple-500 mt-2">Click to view →</div>
             </button>
           </div>
         </div>
@@ -1138,12 +1151,12 @@ return (
           <div className="overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-zinc-700 bg-zinc-800 text-left text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
-                  <th className="px-3 py-2.5">Recipe</th>
-                  <th className="px-3 py-2.5 text-right">Ingredients</th>
-                  <th className="px-3 py-2.5 text-right">Yield/Batch</th>
-                  <th className="px-3 py-2.5 text-right">Total Qty</th>
-                  <th className="px-3 py-2.5 text-right">EST Prod. Total QTY</th>
+                <tr className="border-b border-zinc-700 bg-zinc-800 text-left text-[13px] font-semibold text-zinc-300 uppercase tracking-wider">
+                  <th className="px-5 py-4">Recipe</th>
+                  <th className="px-5 py-4 text-right">Premix</th>
+                  <th className="px-5 py-4 text-right">Yield/Batch</th>
+                  <th className="px-5 py-4 text-right">Total Qty</th>
+                  <th className="px-5 py-4 text-right">EST Prod. Total QTY</th>
                 </tr>
               </thead>
               <tbody>
@@ -1152,12 +1165,12 @@ return (
                   const batchesNeeded = Math.ceil(totalQty / yieldPerBatch);
                   const estProdTotal = batchesNeeded * yieldPerBatch;
                   return (
-                  <tr key={recipe.productName} onClick={() => setViewingDOSRecipe({ recipe, totalQty })} className="border-b border-zinc-800 text-[13px] hover:bg-zinc-800/50 transition-colors cursor-pointer">
-                    <td className="px-3 py-2.5 font-medium text-zinc-100">{recipe.productName}</td>
-                    <td className="px-3 py-2.5 text-right text-zinc-500">{recipe.ingredients.length}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-zinc-400">{yieldPerBatch}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-zinc-300">{totalQty}</td>
-                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-emerald-300">{estProdTotal}</td>
+                  <tr key={recipe.productName} onClick={() => setViewingDOSRecipe({ recipe, totalQty })} className="border-b border-zinc-800 text-[15px] hover:bg-zinc-800/50 transition-colors cursor-pointer">
+                    <td className="px-5 py-4 font-semibold text-zinc-100">{recipe.productName}</td>
+                    <td className="px-5 py-4 text-right font-bold text-zinc-300">{recipe.ingredients.length}</td>
+                    <td className="px-5 py-4 text-right font-mono font-bold text-zinc-300">{yieldPerBatch}</td>
+                    <td className="px-5 py-4 text-right font-mono font-bold text-zinc-200">{totalQty}</td>
+                    <td className="px-5 py-4 text-right font-mono font-bold text-emerald-300 text-[17px]">{estProdTotal}</td>
                   </tr>
                   );
                 })}
@@ -1186,12 +1199,12 @@ return (
               </div>
               <div className="overflow-y-auto px-6 py-4 space-y-2">
                 {summaryModal === "products" && dosForDeco.map(d => (
-                  <div key={d.id} className="flex items-center justify-between rounded-xl border border-zinc-100 px-3.5 py-2.5">
-                    <div>
-                      <span className="text-[13px] font-medium text-zinc-900">{d.product}</span>
-                      <span className="ml-2 text-[12px] text-zinc-400 font-mono">×{d.qty}</span>
+                  <div key={d.id} className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-zinc-50/50 px-5 py-4 mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[18px] font-bold text-zinc-900">{d.product}</span>
+                      <span className="text-[20px] font-mono font-bold text-zinc-500">×{d.qty}</span>
                     </div>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${d.priority === "HIGH" ? "bg-red-100 text-red-700" : d.priority === "MEDIUM" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{d.priority}</span>
+                    <span className={`rounded-full px-3 py-1 text-[13px] font-semibold ${d.priority === "HIGH" ? "bg-red-100 text-red-700" : d.priority === "MEDIUM" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{d.priority}</span>
                   </div>
                 ))}
                 {summaryModal === "ingredients" && dosForDeco.map(d => {
@@ -1200,18 +1213,25 @@ return (
                     .map(name => recipes.find(r => r.productName === name))
                     .filter(Boolean)
                     .filter(r => r!.productName !== d.product);
-                  const recipeNames = linkedRecipes.map(r => r!.productName);
-                  if (recipeNames.length === 0) return null;
+                  if (linkedRecipes.length === 0) return null;
                   return (
-                    <div key={d.id} className="rounded-xl border border-rose-100 px-3.5 py-2.5">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[13px] font-medium text-zinc-900">{d.product} <span className="text-[12px] text-zinc-400 font-mono">×{d.qty}</span></span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {recipeNames.map(name => (
-                          <span key={name} className="rounded-lg bg-rose-100 border border-rose-200 px-2 py-1 text-[11px] font-medium text-rose-700">{name}</span>
-                        ))}
-                      </div>
+                    <div key={d.id} className="rounded-2xl border border-rose-200 bg-rose-50/50 px-5 py-4 mb-3">
+                      {linkedRecipes.map(recipe => (
+                        <div key={recipe!.productName} className="mb-4 last:mb-0">
+                          <div className="flex items-center gap-3 mb-3">
+                            <span className="text-[18px] font-bold text-zinc-900">{recipe!.productName}</span>
+                            <span className="text-[20px] font-mono font-bold text-rose-600">×{d.qty}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {(recipe!.ingredients ?? []).map((ing, idx) => (
+                              <div key={ing.inventoryId} className="flex items-center gap-2 rounded-xl bg-white border border-rose-200 px-3 py-2 shadow-sm">
+                                <span className="flex-none w-6 h-6 rounded-lg bg-rose-100 text-rose-600 text-[12px] font-bold flex items-center justify-center">{idx + 1}</span>
+                                <span className="text-[14px] font-semibold text-zinc-800 truncate">{ing.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   );
                 })}
@@ -1235,12 +1255,12 @@ return (
                   });
                   return [...pkgMap.values()];
                 }).map(item => (
-                  <div key={item.key} className="flex items-center justify-between rounded-xl border border-blue-100 px-3.5 py-2.5">
+                  <div key={item.key} className="flex items-center justify-between rounded-2xl border border-blue-200 bg-blue-50/50 px-5 py-4 mb-3">
                     <div>
-                      <span className="text-[13px] font-medium text-zinc-900">{item.name}</span>
-                      <span className="ml-2 text-[11px] text-zinc-400">for {item.product}</span>
+                      <span className="text-[18px] font-bold text-zinc-900">{item.name}</span>
+                      <span className="ml-3 text-[14px] text-blue-500 font-medium">for {item.product}</span>
                     </div>
-                    <span className="text-[13px] font-mono font-medium text-blue-600">{item.qty} {item.unit}</span>
+                    <span className="text-[16px] font-mono font-semibold text-blue-600">{item.qty} {item.unit}</span>
                   </div>
                 ))}
                 {summaryModal === "deco" && dosForDeco.flatMap(d => {
@@ -1263,12 +1283,12 @@ return (
                   });
                   return [...decoMap.values()];
                 }).map(item => (
-                  <div key={item.key} className="flex items-center justify-between rounded-xl border border-purple-100 px-3.5 py-2.5">
+                  <div key={item.key} className="flex items-center justify-between rounded-2xl border border-purple-200 bg-purple-50/50 px-5 py-4 mb-3">
                     <div>
-                      <span className="text-[13px] font-medium text-zinc-900">{item.name}</span>
-                      <span className="ml-2 text-[11px] text-zinc-400">for {item.product}</span>
+                      <span className="text-[18px] font-bold text-zinc-900">{item.name}</span>
+                      <span className="ml-3 text-[14px] text-purple-500 font-medium">for {item.product}</span>
                     </div>
-                    <span className="text-[13px] font-mono font-medium text-purple-600">{item.qty} {item.unit}</span>
+                    <span className="text-[16px] font-mono font-semibold text-purple-600">{item.qty} {item.unit}</span>
                   </div>
                 ))}
               </div>
@@ -1284,7 +1304,7 @@ return (
           <div className="text-[12px] text-zinc-400">Step 1 of 5</div>
           <button
             onClick={() => setActiveTab("tasks-to-prepare")}
-            className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all"
+            className="rounded-2xl bg-zinc-900 px-8 py-3.5 text-[15px] font-semibold text-white hover:bg-zinc-800 transition-all shadow-lg hover:shadow-xl"
           >
             Next: Tasks to Prepare →
           </button>
@@ -1389,40 +1409,42 @@ return (
                 const activeDOS = dosItems.find(d => !preMixDone.has(d.id + ":::" + recipe.productName.toLowerCase())) || dosItems[0];
                 const doneCount = dosItems.filter(d => preMixDone.has(d.id + ":::" + recipe.productName.toLowerCase())).length;
                 return (
-                  <div key={recipeName} className={`rounded-2xl border p-5 transition-all ${allDone ? "border-emerald-700/50 bg-zinc-900/50" : "border-zinc-700 bg-zinc-900"}`}>
-                        <div className="flex items-start justify-between mb-3">
+                  <div key={recipeName} className={`rounded-3xl border-2 p-6 transition-all ${allDone ? "border-emerald-700/50 bg-emerald-950/30" : "border-zinc-600 bg-gradient-to-br from-zinc-800 to-zinc-900 shadow-lg"}`}>
+                        <div className="flex items-start justify-between mb-4">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className={`text-[17px] font-semibold ${allDone ? "text-zinc-500" : "text-white"}`}>{recipe.productName}</h3>
+                        <div className="flex items-center gap-3">
+                          <h3 className={`text-[22px] font-bold ${allDone ? "text-zinc-500" : "text-white"}`}>{recipe.productName}</h3>
                           {Array.from(routes).map(r => (
-                            <span key={r} className={`text-[14px] ${allDone ? "opacity-50" : ""}`}>{r === "baker" ? "🍞" : "🎂"}</span>
+                            <span key={r} className={`text-[20px] ${allDone ? "opacity-50" : ""}`}>{r === "baker" ? "🍞" : "🎂"}</span>
                           ))}
                         </div>
-                        <div className={`flex items-center gap-3 mt-1 text-[13px] ${allDone ? "text-zinc-500" : "text-zinc-400"}`}>
-                          <span>Total Demand: <span className={`font-mono font-semibold ${allDone ? "text-zinc-500" : "text-zinc-200"}`}>{totalQty} pcs</span></span>
-                          <span>Yield/Batch: <span className={`font-mono font-semibold ${allDone ? "text-zinc-500" : "text-zinc-200"}`}>{yieldPerBatch} pcs</span></span>
-                          <span>Expected: <span className={`font-mono font-semibold ${allDone ? "text-zinc-500" : "text-emerald-300"}`}>{estProdTotal} pcs</span></span>
+                        <div className={`flex items-center gap-4 mt-2 text-[15px] ${allDone ? "text-zinc-500" : "text-zinc-300"}`}>
+                          <span className="flex items-center gap-1.5"><span className="text-zinc-500">Demand:</span> <span className={`font-mono font-bold ${allDone ? "text-zinc-500" : "text-white"}`}>{totalQty} pcs</span></span>
+                          <span className="text-zinc-600">|</span>
+                          <span className="flex items-center gap-1.5"><span className="text-zinc-500">Yield:</span> <span className={`font-mono font-bold ${allDone ? "text-zinc-500" : "text-white"}`}>{yieldPerBatch} pcs/batch</span></span>
+                          <span className="text-zinc-600">|</span>
+                          <span className="flex items-center gap-1.5"><span className="text-zinc-500">Expected:</span> <span className={`font-mono font-bold ${allDone ? "text-zinc-500" : "text-emerald-400"}`}>{estProdTotal} pcs</span></span>
                         </div>
-                        <div className={`text-[10px] mt-0.5 ${allDone ? "text-zinc-600" : "text-zinc-500"}`}>CEIL({totalQty} ÷ {yieldPerBatch}) = {batchesNeeded} batch × {yieldPerBatch} = {estProdTotal}</div>
+                        <div className={`text-[12px] mt-2 px-3 py-1.5 rounded-lg inline-block ${allDone ? "bg-zinc-800 text-zinc-600" : "bg-zinc-700/50 text-zinc-400"}`}>CEIL({totalQty} ÷ {yieldPerBatch}) = {batchesNeeded} batch × {yieldPerBatch} = {estProdTotal}</div>
                         {dosItems.length > 1 && (
-                          <div className={`text-[10px] mt-1.5 leading-relaxed ${allDone ? "text-zinc-600" : "text-zinc-500"}`}>
+                          <div className={`text-[12px] mt-2 leading-relaxed ${allDone ? "text-zinc-600" : "text-zinc-400"}`}>
                             From: {dosItems.map((d, i) => {
                               const pk = d.id + ":::" + recipe.productName.toLowerCase();
                               const dDone = preMixDone.has(pk);
-                              return <span key={d.id} className={dDone ? "text-emerald-500" : ""}>{i > 0 ? ", " : ""}{d.product} ({d.qty} pcs{dDone ? " ✓" : ""})</span>;
+                              return <span key={d.id} className={dDone ? "text-emerald-400" : ""}>{i > 0 ? ", " : ""}{d.product} ({d.qty} pcs{dDone ? " ✓" : ""})</span>;
                             })}
                           </div>
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-2 items-center">
-                      <button onClick={() => setViewingDOSRecipe({ recipe, totalQty })} className={`rounded-xl border px-3 py-2 text-[12px] font-medium transition-all ${allDone ? "border-zinc-700 text-zinc-500 cursor-not-allowed" : "border-zinc-600 text-zinc-300 hover:bg-zinc-800"}`} disabled={allDone}>View Ingredients</button>
+                    <div className="flex gap-3 items-center pt-3 border-t border-zinc-700/50">
+                      <button onClick={() => setViewingDOSRecipe({ recipe, totalQty })} className={`rounded-xl border-2 px-4 py-2.5 text-[13px] font-semibold transition-all ${allDone ? "border-zinc-700 text-zinc-500 cursor-not-allowed" : "border-zinc-500 text-zinc-200 hover:bg-zinc-700 hover:border-zinc-400"}`} disabled={allDone}>View Premix</button>
                       {allDone ? (
-                        <button disabled className="rounded-xl bg-emerald-800/40 px-4 py-2 text-[12px] font-medium text-emerald-400/70 cursor-not-allowed">✓ Completed</button>
+                        <button disabled className="rounded-xl bg-emerald-800/40 px-5 py-2.5 text-[13px] font-semibold text-emerald-400/70 cursor-not-allowed">✓ Completed</button>
                       ) : (
                         <>
-                          <button onClick={() => { const activeRoute: "baker" | "deco" = productRoutes[activeDOS.product] === "deco" ? "deco" : "baker"; setActivePreparation({ dos: activeDOS, recipe, route: activeRoute, demandQty: totalQty }); setAdditionalIngredients([]); setActualOutput(""); }} className={`rounded-xl px-4 py-2 text-[12px] font-medium text-white transition-all ${productRoutes[activeDOS.product] === "deco" ? "bg-rose-600 hover:bg-rose-700" : "bg-amber-600 hover:bg-amber-700"}`}>{productRoutes[activeDOS.product] === "deco" ? "Start Preparation" : "Start Pre-Mix"}</button>
-                          {doneCount > 0 && <span className="text-[11px] text-zinc-500">{doneCount}/{dosItems.length} done</span>}
+                          <button onClick={() => { const activeRoute: "baker" | "deco" = productRoutes[activeDOS.product] === "deco" ? "deco" : "baker"; setActivePreparation({ dos: activeDOS, recipe, route: activeRoute, demandQty: totalQty }); setAdditionalIngredients([]); }} className={`rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-all shadow-md ${productRoutes[activeDOS.product] === "deco" ? "bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 shadow-rose-900/30" : "bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 shadow-amber-900/30"}`}>{productRoutes[activeDOS.product] === "deco" ? "Start Preparation" : "Start Pre-Mix"}</button>
+                          {doneCount > 0 && <span className="text-[12px] font-medium text-zinc-400">{doneCount}/{dosItems.length} done</span>}
                         </>
                       )}
                     </div>
@@ -1440,9 +1462,8 @@ return (
             />
           )}
 
-          <div className="flex items-center justify-between pt-4 border-t border-zinc-700">
+          <div className="flex items-center justify-end pt-4 border-t border-zinc-700">
             <div className="text-[12px] text-zinc-500">Step 2 of 5</div>
-            <button onClick={() => setActiveTab("advanced-premix")} className="rounded-xl bg-zinc-800 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-700 transition-all">Next: Advanced Premix →</button>
           </div>
         </div>
       );
@@ -1462,7 +1483,7 @@ return (
     const savedAddIngs = preMixDone.has(prepKey) ? [] : (productAdditionalIngredients[prepKey] || []);
 
     const handleComplete = () => {
-      const output = actualOutput === "" ? expectedOutput : Number(actualOutput);
+      const output = expectedOutput;
       const oldSavedIngs = productAdditionalIngredients[prepKey] || [];
       const finalAddIngs = [...oldSavedIngs, ...additionalIngredients];
       setProductAdditionalIngredients(prev => ({ ...prev, [prepKey]: finalAddIngs }));
@@ -1710,17 +1731,17 @@ return (
 
         <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
           <h3 className="text-[14px] font-bold text-zinc-200 mb-4 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-zinc-400"></span> Standard Ingredients
+            <span className="w-2 h-2 rounded-full bg-zinc-400"></span> Standard Premix
           </h3>
           <div className="space-y-4">
             {/* Main recipe */}
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-2">{recipe.productName}</div>
-              <div className="space-y-1.5">
+              <div className="text-[14px] uppercase tracking-wider text-zinc-400 font-bold mb-3">{recipe.productName}</div>
+              <div className="space-y-2">
                 {recipe.ingredients.map((ing, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/50 px-3 py-2">
-                    <span className="text-[13px] text-zinc-300 font-medium">{ing.name}</span>
-                    <span className="font-mono text-[13px] text-zinc-400">{ing.qtyPerBatch * batchesNeeded}{ing.unit}</span>
+                  <div key={i} className="flex items-center justify-between rounded-xl bg-zinc-800/50 px-4 py-3">
+                    <span className="text-[16px] text-zinc-200 font-semibold">{ing.name}</span>
+                    <span className="font-mono text-[16px] font-bold text-zinc-300">{ing.qtyPerBatch * batchesNeeded}{ing.unit}</span>
                   </div>
                 ))}
               </div>
@@ -1728,12 +1749,12 @@ return (
             {/* Linked recipes */}
             {linkedRecipesForPrep.map(lr => (
               <div key={lr.productName}>
-                <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-2">↳ {lr.productName}</div>
-                <div className="space-y-1.5">
+                <div className="text-[14px] uppercase tracking-wider text-zinc-400 font-bold mb-3">↳ {lr.productName}</div>
+                <div className="space-y-2">
                   {lr.ingredients.map((ing, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/30 border border-zinc-700/50 px-3 py-2">
-                      <span className="text-[13px] text-zinc-400 font-medium">{ing.name}</span>
-                      <span className="font-mono text-[13px] text-zinc-500">{ing.qtyPerBatch * batchesNeeded}{ing.unit}</span>
+                    <div key={i} className="flex items-center justify-between rounded-xl bg-zinc-800/30 border border-zinc-700/50 px-4 py-3">
+                      <span className="text-[16px] text-zinc-300 font-semibold">{ing.name}</span>
+                      <span className="font-mono text-[16px] font-bold text-zinc-400">{ing.qtyPerBatch * batchesNeeded}{ing.unit}</span>
                     </div>
                   ))}
                 </div>
@@ -1822,24 +1843,29 @@ return (
           )}
 
           {showAddIngredientModal && (
-            <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setShowAddIngredientModal(false)}>
+            <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => { setShowAddIngredientModal(false); setIngredientSearch(""); }}>
               <div className="w-full max-w-[500px] max-h-[80vh] overflow-y-auto rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-[16px] font-bold text-white">Add Additional Ingredient</h3>
-                  <button onClick={() => setShowAddIngredientModal(false)} className="text-zinc-400 hover:text-white text-[18px]">✕</button>
+                  <button onClick={() => { setShowAddIngredientModal(false); setIngredientSearch(""); }} className="text-zinc-400 hover:text-white text-[18px]">✕</button>
                 </div>
                 <p className="text-[12px] text-zinc-400 mb-3">Select from Deco Freezer inventory</p>
-                {inventory.filter(i => i.group === "ingredients" && (!i.accessRoles || i.accessRoles.includes("deco"))).length === 0 ? (
-                  <p className="text-[13px] text-zinc-500 text-center py-6">No items in Deco Freezer.</p>
+                <div className="relative mb-4">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+                  <input type="text" value={ingredientSearch} onChange={e => setIngredientSearch(e.target.value)} placeholder="Search ingredients..." className="w-full rounded-xl border border-zinc-700 bg-zinc-800 py-2.5 pl-10 pr-4 text-[13px] text-white outline-none focus:border-zinc-500 placeholder:text-zinc-500" />
+                </div>
+                {inventory.filter(i => i.group === "ingredients" && (!i.accessRoles || i.accessRoles.includes("deco")) && (ingredientSearch === "" || i.name.toLowerCase().includes(ingredientSearch.toLowerCase()))).length === 0 ? (
+                  <p className="text-[13px] text-zinc-500 text-center py-6">No items found.</p>
                 ) : (
                   <div className="space-y-2">
-                    {inventory.filter(i => i.group === "ingredients" && (!i.accessRoles || i.accessRoles.includes("deco"))).map(item => {
+                    {inventory.filter(i => i.group === "ingredients" && (!i.accessRoles || i.accessRoles.includes("deco")) && (ingredientSearch === "" || i.name.toLowerCase().includes(ingredientSearch.toLowerCase()))).map(item => {
                       const alreadyExists = savedAddIngs.some(a => a.name === item.name) || additionalIngredients.some(a => a.name === item.name);
                       return (
                         <button key={item.id} onClick={() => {
                           if (alreadyExists) return;
                           setAdditionalIngredients(prev => [...prev, { name: item.name, qty: 0, unit: item.unit, reason: "", source: "Deco", timestamp: new Date().toISOString() }]);
                           setShowAddIngredientModal(false);
+                          setIngredientSearch("");
                         }} className={`w-full flex items-center justify-between rounded-xl border px-4 py-3 transition-all text-left ${alreadyExists ? "border-zinc-800 bg-zinc-800/30 opacity-50 cursor-not-allowed" : "border-zinc-700 bg-zinc-800/50 hover:bg-zinc-800"}`}>
                           <div>
                             <div className="text-[13px] font-medium text-white">{item.name}</div>
@@ -1860,23 +1886,15 @@ return (
           )}
         </div>
 
-        <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-5">
-          <h3 className="text-[14px] font-bold text-zinc-200 mb-4 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-zinc-400"></span> Production Result
+        <div className="rounded-3xl border-2 border-emerald-700/50 bg-gradient-to-br from-emerald-950/50 to-zinc-900 p-6 text-center">
+          <h3 className="text-[14px] font-bold text-emerald-400 mb-4 flex items-center justify-center gap-2 uppercase tracking-wider">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span> Production Result
           </h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-lg bg-zinc-800/50 p-3">
-              <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">Expected Production</div>
-              <div className="text-[20px] font-bold text-emerald-300 mt-1">{expectedOutput}</div>
-              <div className="text-[10px] text-zinc-500 mt-1.5 leading-tight">
-                CEIL({prepDemandQty} ÷ {yieldPerBatch}) = {batchesNeeded} batch × {yieldPerBatch} (yield) = {expectedOutput}
-              </div>
-            </div>
-            <div className="rounded-lg bg-zinc-800/50 p-3">
-              <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">Actual Production</div>
-              <div className="mt-1">
-                <input type="number" min={0} value={actualOutput} onChange={e => setActualOutput(e.target.value === "" ? "" : Math.max(0, Number(e.target.value)))} placeholder={String(expectedOutput)} className="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-2 text-[16px] font-bold font-mono text-white outline-none focus:border-emerald-500" />
-              </div>
+          <div className="inline-block rounded-2xl bg-zinc-800/50 px-8 py-5 border border-zinc-700/50">
+            <div className="text-[13px] uppercase tracking-wider text-zinc-400 font-medium mb-2">Expected Production</div>
+            <div className="text-[48px] font-bold text-emerald-300 font-mono leading-none">{expectedOutput}</div>
+            <div className="text-[12px] text-zinc-400 mt-3 font-mono">
+              CEIL({prepDemandQty} ÷ {yieldPerBatch}) = {batchesNeeded} batch × {yieldPerBatch} = {expectedOutput}
             </div>
           </div>
         </div>
@@ -2366,19 +2384,101 @@ return (
       setDesignTheme("");
       setDesignNotes("");
       setDesignQty(Math.max(1, qty));
+      setExtraPackaging([]);
+      setExtraDecoration([]);
     };
 
     const openDesignFromDOS = (dos: DOSItem) => {
       const inv = inventory.find(i => i.name === dos.product && (i.source === "production-prep" || i.source === "came-from-baker"));
       if (!inv) { alert(`No "${dos.product}" available in My Inventory. Complete Tasks to Prepare first.`); return; }
-      setDesignModal({ product: dos.product, inventoryId: inv.id, qty: inv.onHand, theme: dos.themeOccasion, notes: dos.cakeDesignNotes, colorScheme: dos.colorScheme, topper: dos.topper, referenceImage: dos.referenceImage, messageCaption: dos.messageCaption });
+      setDesignModal({ product: dos.product, inventoryId: inv.id, qty: inv.onHand, theme: dos.themeOccasion, notes: dos.cakeDesignNotes, colorScheme: dos.colorScheme, topper: dos.topper, referenceImage: dos.referenceImage, messageCaption: dos.messageCaption, layers: dos.layers });
       setDesignTheme(dos.themeOccasion || "");
       setDesignNotes(dos.cakeDesignNotes || "");
       setDesignQty(Math.max(1, dos.qty));
+      setExtraPackaging([]);
+      setExtraDecoration([]);
     };
 
     const confirmDesign = () => {
       if (!designModal) return;
+
+      // Handle multiple base cakes
+      if (selectedBaseCakes.length > 0) {
+        let hasError = false;
+        // Check availability first
+        for (const bc of selectedBaseCakes) {
+          const sourceItem = inventory.find(i => i.id === bc.inventoryId);
+          if (!sourceItem) {
+            alert(`Base cake "${bc.name}" no longer exists in inventory.`);
+            hasError = true;
+            break;
+          }
+          if (sourceItem.onHand < bc.qty) {
+            if (!confirm(`Only ${sourceItem.onHand} ${bc.unit} of "${bc.name}" available. Design ${bc.qty} anyway?`)) {
+              hasError = true;
+              break;
+            }
+          }
+        }
+        if (hasError) return;
+
+        // Create tasks for each selected base cake
+        const newTasks: DecoTask[] = selectedBaseCakes.map(bc => ({
+          id: `DQ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${bc.inventoryId.slice(-4)}`,
+          product: bc.name,
+          orderRef: `INV-${bc.inventoryId.slice(-6).toUpperCase()}`,
+          theme: designTheme.trim() || "Custom Design",
+          status: "pending",
+          notes: designNotes.trim() || "Designed from My Inventory",
+          sourceInventoryId: bc.inventoryId,
+          sourceQty: bc.qty,
+          sourceSnapshot: { ...inventory.find(i => i.id === bc.inventoryId)! },
+          createdAt: new Date().toISOString(),
+        }));
+
+        // Add all tasks to queue
+        setDecoQueue(prev => [...newTasks, ...prev]);
+
+        // Save each task to database
+        newTasks.forEach(task => {
+          db.upsertDecorationQueueTask({
+            id: task.id, product: task.product, orderRef: task.orderRef,
+            theme: task.theme, status: task.status, notes: task.notes,
+            sourceInventoryId: task.sourceInventoryId, sourceQty: task.sourceQty,
+            sourceBatchRef: undefined, sourceProducedBy: undefined, createdAt: task.createdAt,
+            sourceSnapshot: task.sourceSnapshot,
+          }).catch(console.error);
+        });
+
+        // Deduct from inventory for each base cake
+        selectedBaseCakes.forEach(bc => {
+          const sourceItem = inventory.find(i => i.id === bc.inventoryId);
+          if (!sourceItem) return;
+
+          const remaining = sourceItem.onHand - bc.qty;
+          if (remaining <= 0) {
+            onUpdateInventory(prev => prev.filter(i => i.id !== sourceItem.id));
+            db.deleteInventoryItem(sourceItem.id, sourceItem.group).catch(err => {
+              console.error("Inventory delete failed:", err);
+            });
+            onAddAuditLog?.("INVENTORY_REMOVED", `${sourceItem.name} removed (0 on hand after design)`);
+          } else {
+            const updatedItem = { ...sourceItem, onHand: remaining };
+            onUpdateInventory(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+            db.upsertInventoryItem(updatedItem).catch(err => {
+              console.error("Inventory update failed:", err);
+            });
+          }
+        });
+
+        const summary = selectedBaseCakes.map(bc => `${bc.name} ×${bc.qty}`).join(", ");
+        onAddAuditLog?.("DECO_TASK_CREATED", `Added to Decoration Queue: ${summary}`);
+        setSelectedBaseCakes([]);
+        setDesignModal(null);
+        return;
+      }
+
+      // Legacy single base cake flow
       const sourceItem = inventory.find(i => i.id === designModal.inventoryId);
       if (!sourceItem) {
         alert("Source inventory item no longer exists.");
@@ -2440,48 +2540,143 @@ return (
 
         {/* DOS Items with Customization */}
         {(() => {
-          const customDOS = dosForDeco.filter(d => d.themeOccasion || d.colorScheme || d.cakeDesignNotes || d.topper || d.referenceImage || d.messageCaption);
+          const customDOS = dosForDeco.filter(d => d.themeOccasion || d.colorScheme || d.cakeDesignNotes || d.topper || d.referenceImage || d.messageCaption || d.customerName || d.contactNumber || d.dateOfEvent || d.pickupDeliveryTime || d.layers);
           return (
-            <div className="rounded-2xl border border-violet-200 bg-violet-50/30 p-5">
-              <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-                <div>
-                  <h2 className="text-[15px] font-semibold text-zinc-900">Custom Orders from DOS</h2>
-                  <p className="text-[12px] text-zinc-500 mt-0.5">DOS products with set customization · Select to start design</p>
+            <div className="rounded-[24px] border border-violet-200 bg-white shadow-sm overflow-hidden">
+              <div className="px-6 py-4 bg-gradient-to-r from-violet-50 to-fuchsia-50 border-b border-violet-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center">
+                      <span className="text-[18px]">🎂</span>
+                    </div>
+                    <div>
+                      <h2 className="text-[15px] font-semibold text-zinc-900">Cake Custom Orders</h2>
+                      <p className="text-[12px] text-zinc-500">DOS cakes with customization — start decorating</p>
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-violet-600 px-3 py-1 text-[11px] font-bold text-white">{customDOS.length}</span>
                 </div>
-                <span className="rounded-full bg-violet-100 border border-violet-200 px-2.5 py-0.5 text-[10px] font-bold text-violet-700 uppercase tracking-wider">{customDOS.length} item{customDOS.length !== 1 ? "s" : ""}</span>
               </div>
               {customDOS.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-violet-200 bg-white/60 p-6 text-center">
-                  <p className="text-[12px] text-zinc-500">No DOS items with customization set yet.</p>
+                <div className="px-6 py-10 text-center">
+                  <div className="w-12 h-12 rounded-full bg-violet-100 flex items-center justify-center mx-auto mb-3">
+                    <span className="text-[20px]">🎂</span>
+                  </div>
+                  <p className="text-[13px] text-zinc-500">No cake custom orders yet</p>
+                  <p className="text-[11px] text-zinc-400 mt-1">DOS cakes with design customization will appear here</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="divide-y divide-violet-100">
                   {customDOS.map(dos => {
                     const alreadyDesigned = decoQueue.some(t => t.product === dos.product && t.status !== "completed");
                     return (
-                      <div key={dos.id} className={`rounded-xl border p-4 ${alreadyDesigned ? 'border-zinc-200 bg-zinc-50/50' : 'border-violet-200 bg-white shadow-sm'}`}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[15px] font-semibold text-zinc-900">{dos.product}</span>
-                              {dos.flavor && <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">{dos.flavor}</span>}
-                              {dos.size && <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">{dos.size}</span>}
-                              <span className="text-[11px] text-zinc-400 font-mono">×{dos.qty}</span>
-                              {alreadyDesigned && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">In Queue</span>}
+                      <div key={dos.id} className={`px-6 py-5 hover:bg-violet-50/30 transition-colors ${alreadyDesigned ? 'opacity-60' : ''}`}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            {/* Header Row */}
+                            <div className="flex items-center gap-2 flex-wrap mb-3">
+                              <span className="text-[16px] font-bold text-zinc-900">{dos.product}</span>
+                              {dos.flavor && <span className="rounded-lg bg-violet-100 px-2.5 py-1 text-[11px] font-bold text-violet-700 uppercase">{dos.flavor}</span>}
+                              {dos.size && <span className="rounded-lg bg-zinc-100 px-2.5 py-1 text-[11px] font-bold text-zinc-600">{dos.size}</span>}
+                              <span className="text-[12px] text-zinc-400 font-mono font-medium">×{dos.qty}</span>
+                              {alreadyDesigned && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold text-amber-700">In Queue</span>}
                             </div>
-                            <div className="mt-2 space-y-1">
-                              {dos.themeOccasion && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Theme:</span> {dos.themeOccasion}</div>}
-                              {dos.colorScheme && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Colors:</span> {dos.colorScheme}</div>}
-                              {dos.cakeDesignNotes && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Notes:</span> <span className="text-zinc-500">{dos.cakeDesignNotes}</span></div>}
-                              {dos.topper && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Topper:</span> {dos.topper}</div>}
-                              {dos.messageCaption && <div className="text-[12px] text-zinc-600"><span className="font-medium text-zinc-500">Message:</span> {dos.messageCaption}</div>}
-                              {dos.referenceImage && <div className="text-[12px]"><a href={dos.referenceImage} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline underline-offset-2 hover:text-blue-800">View Reference Image</a></div>}
-                            </div>
+
+                            {/* Customer Details Card */}
+                            {(dos.customerName || dos.contactNumber || dos.dateOfEvent || dos.pickupDeliveryTime) && (
+                              <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 mb-3">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-blue-600 mb-3">Customer Details</div>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
+                                  {dos.customerName && (
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="text-[13px] text-zinc-500">Customer:</span>
+                                      <span className="text-[14px] font-semibold text-zinc-800">{dos.customerName}</span>
+                                    </div>
+                                  )}
+                                  {dos.contactNumber && (
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="text-[13px] text-zinc-500">Contact:</span>
+                                      <span className="text-[14px] font-semibold text-zinc-800">{dos.contactNumber}</span>
+                                    </div>
+                                  )}
+                                  {dos.dateOfEvent && (
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="text-[13px] text-zinc-500">Event Date:</span>
+                                      <span className="text-[14px] font-semibold text-zinc-800">{dos.dateOfEvent}</span>
+                                    </div>
+                                  )}
+                                  {dos.pickupDeliveryTime && (
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="text-[13px] text-zinc-500">Pickup/Delivery:</span>
+                                      <span className="text-[14px] font-semibold text-zinc-800">{dos.pickupDeliveryTime}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Design Details Card */}
+                            {(dos.themeOccasion || dos.colorScheme || dos.topper || dos.messageCaption || dos.layers) && (
+                              <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-4 mb-3">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-violet-600 mb-3">Design Details</div>
+                                <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
+                                  {dos.themeOccasion && (
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-violet-400 shrink-0"></span>
+                                      <span className="text-[13px] text-zinc-500">Theme:</span>
+                                      <span className="text-[14px] font-semibold text-zinc-800">{dos.themeOccasion}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
+                                    <span className="text-[13px] text-zinc-500">Layers:</span>
+                                    <span className="text-[14px] font-semibold text-zinc-800">{dos.layers ? `${dos.layers} Layer${dos.layers !== "1" ? "s" : ""}` : "—"}</span>
+                                  </div>
+                                  {dos.colorScheme && (
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-pink-400 shrink-0"></span>
+                                      <span className="text-[13px] text-zinc-500">Colors:</span>
+                                      <span className="text-[14px] font-semibold text-zinc-800">{dos.colorScheme}</span>
+                                    </div>
+                                  )}
+                                  {dos.topper && (
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0"></span>
+                                      <span className="text-[13px] text-zinc-500">Topper:</span>
+                                      <span className="text-[14px] font-semibold text-zinc-800">{dos.topper}</span>
+                                    </div>
+                                  )}
+                                  {dos.messageCaption && (
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-blue-400 shrink-0"></span>
+                                      <span className="text-[13px] text-zinc-500">Message:</span>
+                                      <span className="text-[14px] font-semibold text-zinc-800 italic">"{dos.messageCaption}"</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Notes */}
+                            {dos.cakeDesignNotes && (
+                              <div className="rounded-xl bg-zinc-50 border border-zinc-100 px-4 py-3 mb-3">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Notes</div>
+                                <p className="text-[14px] text-zinc-600 leading-relaxed">{dos.cakeDesignNotes}</p>
+                              </div>
+                            )}
+
+                            {/* Reference Image */}
+                            {dos.referenceImage && (
+                              <div className="flex items-center gap-2.5 rounded-xl bg-violet-50 border border-violet-100 px-4 py-3">
+                                <svg className="w-5 h-5 text-violet-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                <a href={dos.referenceImage} target="_blank" rel="noopener noreferrer" className="text-[13px] text-violet-600 hover:text-violet-800 font-medium">View Reference Image</a>
+                              </div>
+                            )}
                           </div>
                           <button
                             onClick={() => openDesignFromDOS(dos)}
                             disabled={alreadyDesigned}
-                            className={`shrink-0 rounded-lg px-4 py-2 text-[12px] font-medium transition-all ${alreadyDesigned ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed' : 'bg-violet-600 text-white hover:bg-violet-700 shadow-sm'}`}
+                            className={`shrink-0 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition-all ${alreadyDesigned ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed' : 'bg-violet-600 text-white hover:bg-violet-700 shadow-md shadow-violet-200'}`}
                           >
                             {alreadyDesigned ? "In Queue" : "Start Design →"}
                           </button>
@@ -2494,116 +2689,6 @@ return (
             </div>
           );
         })()}
-
-        {/* Available from My Inventory — Production Prep group */}
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/30 p-5">
-          <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-            <div>
-              <h2 className="text-[15px] font-semibold text-zinc-900">Available from My Inventory</h2>
-              <p className="text-[12px] text-zinc-500 mt-0.5">Groups: <span className="font-semibold text-emerald-700">Production Prep</span> & <span className="font-semibold text-amber-700">From Baker</span> · Select a product to design</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
-                <input
-                  value={prepSearch}
-                  onChange={e => { setPrepSearch(e.target.value); setPrepSlide(0); }}
-                  placeholder="Search products..."
-                  className="w-56 rounded-xl border border-emerald-200 bg-white pl-9 pr-3 py-2 text-[13px] outline-none focus:border-emerald-400"
-                />
-              </div>
-              <span className="rounded-full bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 uppercase tracking-wider">{prepInventory.length} item{prepInventory.length !== 1 ? "s" : ""}</span>
-            </div>
-          </div>
-          {prepInventory.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-emerald-200 bg-white/60 p-6 text-center">
-              <p className="text-[12px] text-zinc-500">No Production Prep items in My Inventory yet. Put items in My Inventory from <span className="font-semibold">Production Prep</span> first.</p>
-            </div>
-          ) : (() => {
-            const filtered = prepInventory.filter(inv => !prepSearch || inv.name.toLowerCase().includes(prepSearch.toLowerCase()) || inv.sku.toLowerCase().includes(prepSearch.toLowerCase()));
-            const pageSize = 3;
-            const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-            const safeSlide = Math.min(prepSlide, totalPages - 1);
-            const pageItems = filtered.slice(safeSlide * pageSize, safeSlide * pageSize + pageSize);
-            return (
-            <>
-            {filtered.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-emerald-200 bg-white/60 p-6 text-center">
-                <p className="text-[12px] text-zinc-500">No products match "<span className="font-semibold">{prepSearch}</span>".</p>
-              </div>
-            ) : (
-              <div className="relative">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                  {pageItems.map(inv => {
-                    const isSelected = selectedDesignId === inv.id;
-                    return (
-                      <div
-                        key={inv.id}
-                        onClick={() => setSelectedDesignId(isSelected ? null : inv.id)}
-                        className={`rounded-xl border p-3.5 cursor-pointer transition-all ${isSelected ? "border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200" : "border-zinc-200 bg-white hover:border-emerald-300"}`}
-                      >
-                    <div className="flex items-start justify-between mb-1.5">
-                      <div>
-                        <div className="text-[13px] font-semibold text-zinc-900 truncate">{inv.name}</div>
-                        <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{inv.sku}</div>
-                      </div>
-                      {isSelected && <span className="shrink-0 rounded-full bg-emerald-500 text-white w-5 h-5 grid place-items-center text-[10px] font-bold">✓</span>}
-                    </div>
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="text-[11px] text-zinc-500">On hand: <span className="font-mono font-semibold text-zinc-900">{inv.onHand}</span> {inv.unit}</span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); openDesign(inv.name, inv.id, inv.onHand); }}
-                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 transition-all"
-                      >Design →</button>
-                    </div>
-                  </div>
-                    );
-                  })}
-                </div>
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between mt-3">
-                    <button
-                      onClick={() => setPrepSlide(s => Math.max(0, s - 1))}
-                      disabled={safeSlide === 0}
-                      className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                    >← Prev</button>
-                    <div className="flex items-center gap-1.5">
-                      {Array.from({ length: totalPages }).map((_, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setPrepSlide(i)}
-                          className={`h-2 rounded-full transition-all ${i === safeSlide ? "w-6 bg-emerald-600" : "w-2 bg-emerald-200 hover:bg-emerald-300"}`}
-                          aria-label={`Go to page ${i + 1}`}
-                        />
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => setPrepSlide(s => Math.min(totalPages - 1, s + 1))}
-                      disabled={safeSlide === totalPages - 1}
-                      className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                    >Next →</button>
-                  </div>
-                )}
-              </div>
-            )}
-            </>
-            );
-          })()}
-
-          {activeDesignItem && (
-            <div className="mt-4 rounded-xl border border-emerald-300 bg-white p-4 flex items-center justify-between">
-              <div className="text-[12px] text-zinc-700">
-                <span className="text-zinc-400">Selected:</span> <span className="font-semibold text-zinc-900">{activeDesignItem.name}</span>
-                <span className="ml-2 text-zinc-400">·</span>
-                <span className="ml-2 text-zinc-500">on hand <span className="font-mono font-semibold">{activeDesignItem.onHand}</span> {activeDesignItem.unit}</span>
-              </div>
-              <button
-                onClick={() => openDesign(activeDesignItem.name, activeDesignItem.id, activeDesignItem.onHand)}
-                className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-zinc-800 transition-all"
-              >Open Design</button>
-            </div>
-          )}
-        </div>
 
         {/* Active Cake Productions */}
         <div>
@@ -2685,111 +2770,430 @@ return (
           const packagingItems = [...pkgMap.values()];
           const decorationItems = [...decoMap.values()];
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => setDesignModal(null)}>
-              <div className="w-full max-w-[560px] max-h-[90vh] rounded-[28px] border border-[#E8E0D5] bg-white shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
-                  <div>
-                    <h3 className="text-[16px] font-semibold text-zinc-900">Design Product</h3>
-                    <p className="text-[12px] text-zinc-500 mt-0.5">from My Inventory · <span className="font-semibold text-emerald-700">{designModal.product}</span></p>
-                  </div>
-                  <button onClick={() => setDesignModal(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600">✕</button>
-                </div>
-                <div className="overflow-y-auto px-6 py-5 space-y-4 flex-1">
-                  <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Quantity to Design</label>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setDesignQty(q => Math.max(1, q - 1))} className="w-9 h-9 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center">−</button>
-                      <input
-                        type="number"
-                        min={1}
-                        max={designModal.qty}
-                        value={designQty}
-                        onChange={e => setDesignQty(Math.max(1, Math.min(designModal.qty, parseInt(e.target.value) || 1)))}
-                        className="flex-1 text-center font-mono text-[14px] font-bold text-zinc-900 rounded-lg border border-zinc-200 bg-zinc-50/60 px-3 py-2 outline-none focus:border-zinc-400"
-                      />
-                      <button onClick={() => setDesignQty(q => Math.min(designModal.qty, q + 1))} className="w-9 h-9 rounded-lg border border-zinc-200 bg-white text-[14px] font-medium text-zinc-600 hover:bg-zinc-100 flex items-center justify-center">+</button>
-                      <span className="text-[11px] text-zinc-400 font-mono">/ {designModal.qty} avail</span>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => { setDesignModal(null); setSelectedBaseCakes([]); }}>
+              <div className="w-full max-w-[780px] max-h-[92vh] rounded-[32px] bg-white shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="bg-gradient-to-r from-violet-600 to-fuchsia-600 px-8 py-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-[24px] font-bold text-white">Design Product</h2>
+                      <p className="text-[14px] text-violet-200 mt-1">Review customization details and link materials</p>
                     </div>
+                    <button onClick={() => { setDesignModal(null); setSelectedBaseCakes([]); }} className="grid h-10 w-10 place-items-center rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors text-[18px]">✕</button>
                   </div>
+                </div>
 
-                  {/* DOS Customization Info */}
-                  {(designModal.theme || designModal.colorScheme || designModal.notes || designModal.topper || designModal.referenceImage || designModal.messageCaption) && (
-                    <div className="rounded-xl border border-violet-200 bg-violet-50/40 p-3">
-                      <label className="text-[11px] font-medium uppercase tracking-wider text-violet-600 mb-2 block">🎨 Customer Customization</label>
-                      <div className="space-y-1.5">
-                        {designModal.theme && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Theme:</span> {designModal.theme}</div>}
-                        {designModal.colorScheme && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Colors:</span> {designModal.colorScheme}</div>}
-                        {designModal.notes && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Notes:</span> {designModal.notes}</div>}
-                        {designModal.topper && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Topper:</span> {designModal.topper}</div>}
-                        {designModal.messageCaption && <div className="text-[12px] text-zinc-700"><span className="font-medium text-zinc-500">Message:</span> {designModal.messageCaption}</div>}
-                        {designModal.referenceImage && <div className="text-[12px]"><a href={designModal.referenceImage} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline underline-offset-2 hover:text-blue-800">🖼️ View Reference Image</a></div>}
+                <div className="overflow-y-auto px-8 py-6 space-y-6 flex-1">
+                  {/* Customer Customization Card */}
+                  {(designModal.theme || designModal.colorScheme || designModal.notes || designModal.topper || designModal.referenceImage || designModal.messageCaption || designModal.layers) && (
+                    <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-fuchsia-50 overflow-hidden">
+                      <div className="px-6 py-4 bg-violet-100/60 border-b border-violet-200/60">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-violet-500 flex items-center justify-center text-[20px]">🎨</div>
+                          <div>
+                            <h3 className="text-[16px] font-bold text-violet-900">Customer Customization</h3>
+                            <p className="text-[12px] text-violet-600">Special requests for this order</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-6">
+                        <div className="grid grid-cols-2 gap-4">
+                          {designModal.theme && (
+                            <div className="rounded-xl bg-white/80 border border-violet-100 px-4 py-3">
+                              <div className="text-[11px] uppercase tracking-wider text-violet-500 font-semibold">Theme</div>
+                              <div className="text-[16px] text-zinc-800 font-bold mt-1">{designModal.theme}</div>
+                            </div>
+                          )}
+                          {designModal.layers && (
+                            <div className="rounded-xl bg-white/80 border border-violet-100 px-4 py-3">
+                              <div className="text-[11px] uppercase tracking-wider text-violet-500 font-semibold">Layers</div>
+                              <div className="text-[16px] text-zinc-800 font-bold mt-1">{designModal.layers} Layer{designModal.layers !== "1" ? "s" : ""}</div>
+                            </div>
+                          )}
+                          {designModal.colorScheme && (
+                            <div className="rounded-xl bg-white/80 border border-violet-100 px-4 py-3">
+                              <div className="text-[11px] uppercase tracking-wider text-violet-500 font-semibold">Colors</div>
+                              <div className="text-[16px] text-zinc-800 font-bold mt-1">{designModal.colorScheme}</div>
+                            </div>
+                          )}
+                          {designModal.topper && (
+                            <div className="rounded-xl bg-white/80 border border-violet-100 px-4 py-3">
+                              <div className="text-[11px] uppercase tracking-wider text-violet-500 font-semibold">Topper</div>
+                              <div className="text-[16px] text-zinc-800 font-bold mt-1">{designModal.topper}</div>
+                            </div>
+                          )}
+                        </div>
+                        {designModal.messageCaption && (
+                          <div className="mt-4 rounded-xl bg-white/80 border border-violet-100 px-5 py-4">
+                            <div className="text-[11px] uppercase tracking-wider text-violet-500 font-semibold">Message on Cake</div>
+                            <div className="text-[18px] text-zinc-800 font-bold mt-1 italic">"{designModal.messageCaption}"</div>
+                          </div>
+                        )}
+                        {designModal.notes && (
+                          <div className="mt-4 rounded-xl bg-white/80 border border-violet-100 px-5 py-4">
+                            <div className="text-[11px] uppercase tracking-wider text-violet-500 font-semibold">Special Notes</div>
+                            <p className="text-[14px] text-zinc-600 mt-1 leading-relaxed">{designModal.notes}</p>
+                          </div>
+                        )}
+                        {designModal.referenceImage && (
+                          <a href={designModal.referenceImage} target="_blank" rel="noopener noreferrer" className="mt-4 flex items-center gap-3 rounded-xl bg-violet-500 hover:bg-violet-600 border border-violet-400 px-5 py-3 transition-colors cursor-pointer">
+                            <svg className="w-5 h-5 text-white shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                            <span className="text-[14px] text-white font-semibold">View Reference Image</span>
+                          </a>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  {/* Linked Packaging */}
-                  <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Linked Packaging</label>
-                    {packagingItems.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/40 px-3 py-2.5 text-[12px] text-zinc-400">No packaging materials linked to this product.</div>
-                    ) : (
-                      <div className="rounded-xl border border-blue-100 bg-blue-50/30 divide-y divide-blue-100/60 overflow-hidden">
-                        {packagingItems.map((p, i) => (
-                          <div key={`pkg-${i}`} className="flex items-center justify-between px-3 py-2.5">
-                            <div>
-                              <div className="text-[12px] font-medium text-zinc-800">{p.name}</div>
-                              <div className="text-[10px] text-zinc-400">from {p.source}</div>
+                  {/* Base Cake Selection */}
+                  {(() => {
+                    const bakerInventory = inventory.filter(i => i.source === "came-from-baker" && i.onHand > 0);
+                    const prepInventory = inventory.filter(i => i.source === "production-prep" && i.onHand > 0);
+                    const allBaseCakes = [...bakerInventory, ...prepInventory];
+                    if (allBaseCakes.length === 0) return null;
+
+                    const toggleBaseCake = (item: typeof allBaseCakes[0], source: string) => {
+                      const isSelected = selectedBaseCakes.some(b => b.inventoryId === item.id);
+                      if (isSelected) {
+                        setSelectedBaseCakes(prev => prev.filter(b => b.inventoryId !== item.id));
+                      } else {
+                        setSelectedBaseCakes(prev => [...prev, {
+                          inventoryId: item.id,
+                          name: item.name,
+                          qty: 1,
+                          unit: item.unit,
+                          source: source
+                        }]);
+                      }
+                    };
+
+                    const updateBaseCakeQty = (inventoryId: string, newQty: number) => {
+                      setSelectedBaseCakes(prev => prev.map(b =>
+                        b.inventoryId === inventoryId ? { ...b, qty: Math.max(1, newQty) } : b
+                      ));
+                    };
+
+                    const totalSelected = selectedBaseCakes.reduce((sum, b) => sum + b.qty, 0);
+
+                    return (
+                      <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 overflow-hidden">
+                        <div className="px-6 py-4 bg-amber-100/60 border-b border-amber-200/60">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-[18px]">🎂</div>
+                              <div>
+                                <h3 className="text-[15px] font-bold text-amber-900">Base Cake Selection</h3>
+                                <p className="text-[12px] text-amber-600">Select one or more base cakes to decorate</p>
+                              </div>
                             </div>
-                            <div className="text-[12px] font-mono text-zinc-700">{formatQty(p.qty * designQty, p.unit)} {p.unit}</div>
+                            {selectedBaseCakes.length > 0 && (
+                              <div className="rounded-xl bg-amber-500 px-3 py-1.5 text-[12px] font-bold text-white">
+                                {selectedBaseCakes.length} selected · {totalSelected} total
+                              </div>
+                            )}
                           </div>
-                        ))}
+                        </div>
+                        <div className="p-5 space-y-4">
+                          {/* From Baker Section */}
+                          {bakerInventory.length > 0 && (
+                            <div>
+                              <div className="text-[11px] uppercase tracking-wider text-amber-700 font-semibold mb-3">From Baker</div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {bakerInventory.map(item => {
+                                  const selected = selectedBaseCakes.find(b => b.inventoryId === item.id);
+                                  return (
+                                    <div key={`baker-${item.id}`} className={`rounded-xl border p-4 transition-all ${selected ? 'border-amber-500 bg-amber-100 shadow-md' : 'border-amber-200 bg-white/80 hover:border-amber-400 hover:shadow-sm'}`}>
+                                      <div className="flex items-start gap-3">
+                                        <button
+                                          onClick={() => toggleBaseCake(item, "From Baker")}
+                                          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${selected ? 'border-amber-500 bg-amber-500 text-white' : 'border-amber-300 bg-white hover:border-amber-400'}`}
+                                        >
+                                          {selected && <span className="text-[12px] font-bold">✓</span>}
+                                        </button>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-[13px] font-bold text-zinc-900 truncate">{item.name}</div>
+                                          <div className="text-[11px] text-zinc-500">{item.onHand} {item.unit} available</div>
+                                        </div>
+                                      </div>
+                                      {selected && (
+                                        <div className="mt-3 flex items-center gap-2 pl-9">
+                                          <span className="text-[11px] text-amber-700 font-semibold">Qty:</span>
+                                          <button
+                                            onClick={() => updateBaseCakeQty(item.id, selected.qty - 1)}
+                                            className="w-7 h-7 rounded-lg border border-amber-300 bg-white flex items-center justify-center text-amber-700 hover:bg-amber-100 font-bold text-[14px]"
+                                          >−</button>
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            max={item.onHand}
+                                            value={selected.qty}
+                                            onChange={e => updateBaseCakeQty(item.id, parseInt(e.target.value) || 1)}
+                                            className="w-14 text-center rounded-lg border border-amber-300 px-1 py-1 text-[13px] font-mono font-bold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+                                          />
+                                          <button
+                                            onClick={() => updateBaseCakeQty(item.id, Math.min(selected.qty + 1, item.onHand))}
+                                            className="w-7 h-7 rounded-lg border border-amber-300 bg-white flex items-center justify-center text-amber-700 hover:bg-amber-100 font-bold text-[14px]"
+                                          >+</button>
+                                          <span className="text-[11px] text-zinc-500">{item.unit}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Production Prep Section */}
+                          {prepInventory.length > 0 && (
+                            <div>
+                              <div className="text-[11px] uppercase tracking-wider text-blue-700 font-semibold mb-3">Production Prep</div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {prepInventory.map(item => {
+                                  const selected = selectedBaseCakes.find(b => b.inventoryId === item.id);
+                                  return (
+                                    <div key={`prep-${item.id}`} className={`rounded-xl border p-4 transition-all ${selected ? 'border-blue-500 bg-blue-100 shadow-md' : 'border-blue-200 bg-white/80 hover:border-blue-400 hover:shadow-sm'}`}>
+                                      <div className="flex items-start gap-3">
+                                        <button
+                                          onClick={() => toggleBaseCake(item, "Production Prep")}
+                                          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${selected ? 'border-blue-500 bg-blue-500 text-white' : 'border-blue-300 bg-white hover:border-blue-400'}`}
+                                        >
+                                          {selected && <span className="text-[12px] font-bold">✓</span>}
+                                        </button>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-[13px] font-bold text-zinc-900 truncate">{item.name}</div>
+                                          <div className="text-[11px] text-zinc-500">{item.onHand} {item.unit} available</div>
+                                        </div>
+                                      </div>
+                                      {selected && (
+                                        <div className="mt-3 flex items-center gap-2 pl-9">
+                                          <span className="text-[11px] text-blue-700 font-semibold">Qty:</span>
+                                          <button
+                                            onClick={() => updateBaseCakeQty(item.id, selected.qty - 1)}
+                                            className="w-7 h-7 rounded-lg border border-blue-300 bg-white flex items-center justify-center text-blue-700 hover:bg-blue-100 font-bold text-[14px]"
+                                          >−</button>
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            max={item.onHand}
+                                            value={selected.qty}
+                                            onChange={e => updateBaseCakeQty(item.id, parseInt(e.target.value) || 1)}
+                                            className="w-14 text-center rounded-lg border border-blue-300 px-1 py-1 text-[13px] font-mono font-bold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                          />
+                                          <button
+                                            onClick={() => updateBaseCakeQty(item.id, Math.min(selected.qty + 1, item.onHand))}
+                                            className="w-7 h-7 rounded-lg border border-blue-300 bg-white flex items-center justify-center text-blue-700 hover:bg-blue-100 font-bold text-[14px]"
+                                          >+</button>
+                                          <span className="text-[11px] text-zinc-500">{item.unit}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedBaseCakes.length === 0 && (
+                            <div className="rounded-xl border border-dashed border-amber-300 bg-white/60 px-4 py-6 text-center">
+                              <p className="text-[13px] text-amber-600 font-semibold">Click on items above to select base cakes</p>
+                              <p className="text-[11px] text-zinc-400 mt-1">You can select multiple base cakes and set quantity for each</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    );
+                  })()}
+
+                  {/* Linked Packaging */}
+                  <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-sky-50 overflow-hidden">
+                    <div className="px-6 py-4 bg-blue-100/60 border-b border-blue-200/60">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-500 flex items-center justify-center text-[18px]">📦</div>
+                        <div>
+                          <h3 className="text-[15px] font-bold text-blue-900">Packaging Materials</h3>
+                          <p className="text-[12px] text-blue-600">Select boxes, stickers, and packaging</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-5 space-y-3">
+                      {packagingItems.length === 0 && extraPackaging.length === 0 ? (
+                        <>
+                          <div className="rounded-xl border border-dashed border-blue-300 bg-white/60 px-4 py-4 text-center">
+                            <p className="text-[13px] text-blue-400">No packaging materials linked yet</p>
+                            <p className="text-[11px] text-zinc-400 mt-1">Select from dropdown below to add</p>
+                          </div>
+                          <select
+                            onChange={e => {
+                              const inv = inventory.find(i => i.id === e.target.value);
+                              if (inv && !extraPackaging.some(p => p.inventoryId === inv.id)) {
+                                setExtraPackaging(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]);
+                              }
+                              e.target.value = "";
+                            }}
+                            defaultValue=""
+                            className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-[14px] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                          >
+                            <option value="">+ Add packaging item...</option>
+                            {inventory.filter(i => i.group === "packaging-materials" && i.onHand > 0 && !extraPackaging.some(p => p.inventoryId === i.id)).map(i => (
+                              <option key={i.id} value={i.id}>{i.name} ({i.onHand} {i.unit} available)</option>
+                            ))}
+                          </select>
+                        </>
+                      ) : (
+                        <>
+                          <div className="rounded-xl border border-blue-200 bg-white/80 divide-y divide-blue-100/60 overflow-hidden">
+                            {packagingItems.map((p, i) => (
+                              <div key={`pkg-${i}`} className="flex items-center justify-between px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-[14px]">📦</div>
+                                  <div>
+                                    <div className="text-[14px] font-semibold text-zinc-800">{p.name}</div>
+                                    <div className="text-[11px] text-zinc-400">from {p.source}</div>
+                                  </div>
+                                </div>
+                                <div className="text-[14px] font-mono font-bold text-blue-600">{formatQty(p.qty * designQty, p.unit)} {p.unit}</div>
+                              </div>
+                            ))}
+                            {extraPackaging.map((p, i) => (
+                              <div key={`extra-pkg-${i}`} className="flex items-center justify-between px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-[14px]">📦</div>
+                                  <div>
+                                    <div className="text-[14px] font-semibold text-zinc-800">{p.name}</div>
+                                    <div className="text-[11px] text-blue-500">manually added</div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <input type="number" min="1" value={p.qty} onChange={e => {
+                                    const val = Math.max(1, parseInt(e.target.value) || 1);
+                                    setExtraPackaging(prev => prev.map((item, idx) => idx === i ? { ...item, qty: val } : item));
+                                  }} className="w-16 text-center rounded-lg border border-blue-200 px-2 py-1.5 text-[13px] font-mono outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                                  <span className="text-[12px] text-zinc-500">{p.unit}</span>
+                                  <button onClick={() => setExtraPackaging(prev => prev.filter((_, idx) => idx !== i))} className="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-500 hover:text-red-700 transition-colors text-[12px]">✕</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <select
+                            onChange={e => {
+                              const inv = inventory.find(i => i.id === e.target.value);
+                              if (inv && !extraPackaging.some(p => p.inventoryId === inv.id)) {
+                                setExtraPackaging(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]);
+                              }
+                              e.target.value = "";
+                            }}
+                            defaultValue=""
+                            className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-[14px] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                          >
+                            <option value="">+ Add more packaging...</option>
+                            {inventory.filter(i => i.group === "packaging-materials" && i.onHand > 0 && !extraPackaging.some(p => p.inventoryId === i.id)).map(i => (
+                              <option key={i.id} value={i.id}>{i.name} ({i.onHand} {i.unit} available)</option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   {/* Linked Decoration Supplies */}
-                  <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Linked Decoration Supplies</label>
-                    {decorationItems.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/40 px-3 py-2.5 text-[12px] text-zinc-400">No decoration supplies linked to this product.</div>
-                    ) : (
-                      <div className="rounded-xl border border-purple-100 bg-purple-50/30 divide-y divide-purple-100/60 overflow-hidden">
-                        {decorationItems.map((s, i) => (
-                          <div key={`deco-${i}`} className="flex items-center justify-between px-3 py-2.5">
-                            <div>
-                              <div className="text-[12px] font-medium text-zinc-800">{s.name}</div>
-                              <div className="text-[10px] text-zinc-400">from {s.source}</div>
-                            </div>
-                            <div className="text-[12px] font-mono text-zinc-700">{formatQty(s.qty * designQty, s.unit)} {s.unit}</div>
-                          </div>
-                        ))}
+                  <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50 overflow-hidden">
+                    <div className="px-6 py-4 bg-purple-100/60 border-b border-purple-200/60">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-purple-500 flex items-center justify-center text-[18px]">✨</div>
+                        <div>
+                          <h3 className="text-[15px] font-bold text-purple-900">Decoration Supplies</h3>
+                          <p className="text-[12px] text-purple-600">Toppers, candles, and decorations</p>
+                        </div>
                       </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Theme / Design Style</label>
-                    <input
-                      value={designTheme}
-                      onChange={e => setDesignTheme(e.target.value)}
-                      placeholder="e.g. Frozen Theme, Floral, Minimalist"
-                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1.5 block">Design Notes / Decorations</label>
-                    <textarea
-                      value={designNotes}
-                      onChange={e => setDesignNotes(e.target.value)}
-                      rows={3}
-                      placeholder="e.g. Blue icing, snowflake toppers, gold ribbon"
-                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50/60 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400 resize-none"
-                    />
+                    </div>
+                    <div className="p-5 space-y-3">
+                      {decorationItems.length === 0 && extraDecoration.length === 0 ? (
+                        <>
+                          <div className="rounded-xl border border-dashed border-purple-300 bg-white/60 px-4 py-4 text-center">
+                            <p className="text-[13px] text-purple-400">No decoration supplies linked yet</p>
+                            <p className="text-[11px] text-zinc-400 mt-1">Select from dropdown below to add</p>
+                          </div>
+                          <select
+                            onChange={e => {
+                              const inv = inventory.find(i => i.id === e.target.value);
+                              if (inv && !extraDecoration.some(d => d.inventoryId === inv.id)) {
+                                setExtraDecoration(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]);
+                              }
+                              e.target.value = "";
+                            }}
+                            defaultValue=""
+                            className="w-full rounded-xl border border-purple-200 bg-white px-4 py-3 text-[14px] outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                          >
+                            <option value="">+ Add decoration item...</option>
+                            {inventory.filter(i => i.group === "decoration-supplies" && i.onHand > 0 && !extraDecoration.some(d => d.inventoryId === i.id)).map(i => (
+                              <option key={i.id} value={i.id}>{i.name} ({i.onHand} {i.unit} available)</option>
+                            ))}
+                          </select>
+                        </>
+                      ) : (
+                        <>
+                          <div className="rounded-xl border border-purple-200 bg-white/80 divide-y divide-purple-100/60 overflow-hidden">
+                            {decorationItems.map((s, i) => (
+                              <div key={`deco-${i}`} className="flex items-center justify-between px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-[14px]">✨</div>
+                                  <div>
+                                    <div className="text-[14px] font-semibold text-zinc-800">{s.name}</div>
+                                    <div className="text-[11px] text-zinc-400">from {s.source}</div>
+                                  </div>
+                                </div>
+                                <div className="text-[14px] font-mono font-bold text-purple-600">{formatQty(s.qty * designQty, s.unit)} {s.unit}</div>
+                              </div>
+                            ))}
+                            {extraDecoration.map((d, i) => (
+                              <div key={`extra-deco-${i}`} className="flex items-center justify-between px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-[14px]">✨</div>
+                                  <div>
+                                    <div className="text-[14px] font-semibold text-zinc-800">{d.name}</div>
+                                    <div className="text-[11px] text-purple-500">manually added</div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <input type="number" min="1" value={d.qty} onChange={e => {
+                                    const val = Math.max(1, parseInt(e.target.value) || 1);
+                                    setExtraDecoration(prev => prev.map((item, idx) => idx === i ? { ...item, qty: val } : item));
+                                  }} className="w-16 text-center rounded-lg border border-purple-200 px-2 py-1.5 text-[13px] font-mono outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100" />
+                                  <span className="text-[12px] text-zinc-500">{d.unit}</span>
+                                  <button onClick={() => setExtraDecoration(prev => prev.filter((_, idx) => idx !== i))} className="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-500 hover:text-red-700 transition-colors text-[12px]">✕</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <select
+                            onChange={e => {
+                              const inv = inventory.find(i => i.id === e.target.value);
+                              if (inv && !extraDecoration.some(d => d.inventoryId === inv.id)) {
+                                setExtraDecoration(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]);
+                              }
+                              e.target.value = "";
+                            }}
+                            defaultValue=""
+                            className="w-full rounded-xl border border-purple-200 bg-white px-4 py-3 text-[14px] outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                          >
+                            <option value="">+ Add more decoration...</option>
+                            {inventory.filter(i => i.group === "decoration-supplies" && i.onHand > 0 && !extraDecoration.some(d => d.inventoryId === i.id)).map(i => (
+                              <option key={i.id} value={i.id}>{i.name} ({i.onHand} {i.unit} available)</option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="px-6 py-4 border-t border-zinc-100 flex gap-2">
-                  <button onClick={() => setDesignModal(null)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
-                  <button onClick={confirmDesign} className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-[13px] font-medium text-white hover:bg-emerald-700">Add to Queue</button>
+
+                {/* Footer */}
+                <div className="px-8 py-5 border-t border-zinc-100 bg-zinc-50/50 flex gap-3">
+                  <button onClick={() => { setDesignModal(null); setSelectedBaseCakes([]); }} className="flex-1 rounded-2xl border-2 border-zinc-200 py-3.5 text-[15px] font-semibold text-zinc-600 hover:bg-zinc-100 transition-all">Cancel</button>
+                  <button onClick={confirmDesign} className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3.5 text-[15px] font-semibold text-white hover:from-emerald-600 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl">
+                    {selectedBaseCakes.length > 0 ? `Add ${selectedBaseCakes.length} Base Cake${selectedBaseCakes.length > 1 ? 's' : ''} to Queue` : 'Add to Queue'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -2800,7 +3204,7 @@ return (
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
           <div className="text-[12px] text-zinc-400">Step {currentStepIdx + 1} of {workflowSteps.length}</div>
           {nextStep && (
-            <button onClick={() => setActiveTab(nextStep.id)} className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">
+            <button onClick={() => setActiveTab(nextStep.id)} className="rounded-2xl bg-zinc-900 px-8 py-3.5 text-[15px] font-semibold text-white hover:bg-zinc-800 transition-all shadow-lg hover:shadow-xl">
               Next: {nextStep.label} →
             </button>
           )}
@@ -2973,7 +3377,6 @@ return (
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <div><h1 className="text-[24px] font-semibold">Freezer — Finished Products</h1><p className="mt-1 text-[13px] text-zinc-600">Track decorated products ready for dispatch.</p></div>
-          <button onClick={() => setShowAddFreezer(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Product</button>
         </div>
 
         {/* Tabs */}
@@ -3020,7 +3423,6 @@ return (
                       <thead className="bg-zinc-50 border-b border-zinc-100">
                         <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                           <th className="px-5 py-3">Product</th>
-                          <th className="px-5 py-3">Size</th>
                           <th className="px-5 py-3 text-right">Qty</th>
                           <th className="px-5 py-3">Category</th>
                           <th className="px-5 py-3">Section</th>
@@ -3034,7 +3436,6 @@ return (
                               <div className="text-[13px] font-medium text-zinc-900">{inv.name}</div>
                               <div className="text-[11px] text-zinc-400 font-mono mt-0.5">{inv.sku}</div>
                             </td>
-                            <td className="px-5 py-3.5 text-[13px] text-zinc-600">{inv.size || "—"}</td>
                             <td className="px-5 py-3.5 text-[13px] text-right font-mono font-semibold" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand} {inv.unit}</td>
                             <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category}</span></td>
                             <td className="px-5 py-3.5"><span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 border border-emerald-200">Production Prep</span></td>
@@ -3053,18 +3454,20 @@ return (
               )}
 
               {/* From Baker Items */}
-              {bakerItems.length > 0 && (
+              {true && (
                 <div className="rounded-[24px] border border-amber-200 bg-white shadow-sm overflow-hidden">
-                  <div className="px-5 py-3 bg-amber-50/60 border-b border-amber-100">
-                    <span className="text-[11px] uppercase tracking-wider font-semibold text-amber-700">From Baker</span>
-                    <span className="ml-2 text-[10px] text-amber-600">({bakerItems.length})</span>
+                  <div className="flex items-center justify-between px-5 py-3 bg-amber-50/60 border-b border-amber-100">
+                    <div>
+                      <span className="text-[11px] uppercase tracking-wider font-semibold text-amber-700">From Baker</span>
+                      <span className="ml-2 text-[10px] text-amber-600">({bakerItems.length})</span>
+                    </div>
+                    <button onClick={() => { setBakerInvProduct(""); setBakerInvSize(""); setBakerInvQty(0); setBakerInvCategory("dry"); setShowAddBakerInventory(true); }} className="rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-amber-700 transition-colors">+ Add</button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
                       <thead className="bg-amber-50/30 border-b border-amber-100">
                         <tr className="text-[11px] uppercase tracking-wider text-amber-700" style={{ fontFamily: "Fragment Mono, monospace" }}>
                           <th className="px-5 py-3">Product</th>
-                          <th className="px-5 py-3">Size</th>
                           <th className="px-5 py-3 text-right">Qty</th>
                           <th className="px-5 py-3">Category</th>
                           <th className="px-5 py-3">Section</th>
@@ -3078,7 +3481,6 @@ return (
                               <div className="text-[13px] font-medium text-zinc-900">{inv.name}</div>
                               <div className="text-[11px] text-zinc-400 font-mono mt-0.5">{inv.sku}</div>
                             </td>
-                            <td className="px-5 py-3.5 text-[13px] text-zinc-600">{inv.size || "—"}</td>
                             <td className="px-5 py-3.5 text-[13px] text-right font-mono font-semibold" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand} {inv.unit}</td>
                             <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category}</span></td>
                             <td className="px-5 py-3.5"><span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 border border-amber-200">From Baker</span></td>
@@ -3108,7 +3510,6 @@ return (
                       <thead className="bg-zinc-50 border-b border-zinc-100">
                         <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                           <th className="px-5 py-3">Product</th>
-                          <th className="px-5 py-3">Size</th>
                           <th className="px-5 py-3 text-right">Qty</th>
                           <th className="px-5 py-3">Category</th>
                           <th className="px-5 py-3">Section</th>
@@ -3122,7 +3523,6 @@ return (
                               <div className="text-[13px] font-medium text-zinc-900">{inv.name}</div>
                               <div className="text-[11px] text-zinc-400 font-mono mt-0.5">{inv.sku}</div>
                             </td>
-                            <td className="px-5 py-3.5 text-[13px] text-zinc-600">{inv.size || "—"}</td>
                             <td className="px-5 py-3.5 text-[13px] text-right font-mono font-semibold" style={{ color: inv.onHand === 0 ? "#ef4444" : inv.onHand < inv.threshold ? "#f59e0b" : "#16a34a" }}>{inv.onHand} {inv.unit}</td>
                             <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category}</span></td>
                             <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 border border-zinc-200">Manual</span></td>
@@ -3279,6 +3679,67 @@ return (
             </div>
           </div>
         )}
+
+        {showAddBakerInventory && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddBakerInventory(false)}>
+            <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <h2 className="text-[18px] font-semibold mb-4">Add to From Baker</h2>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Product</label>
+                  <select value={bakerInvProduct} onChange={e => setBakerInvProduct(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+                    <option value="">Select product...</option>
+                    {productCatalog.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Size</label>
+                  <select value={bakerInvSize} onChange={e => setBakerInvSize(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+                    <option value="">No size</option>
+                    {["Small","Regular","Large","6x1","6x2","6x3","8x1","8x2","8x3","10x1","10x2","10x3","12x1","12x2","14x1","14x2","16x1","Sheet"].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Qty</label>
+                  <input type="number" min={1} value={bakerInvQty || ""} onChange={e => setBakerInvQty(Number(e.target.value) || 0)} placeholder="0" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] font-mono outline-none focus:border-zinc-400" />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-5">
+                <button onClick={() => setShowAddBakerInventory(false)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                <button disabled={!bakerInvProduct || bakerInvQty <= 0} onClick={() => {
+                  const newItem: InventoryItem = {
+                    id: `INV-BAKER-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    name: bakerInvProduct,
+                    sku: `BAKE-DECO-${Date.now()}`,
+                    unit: "pcs",
+                    onHand: bakerInvQty,
+                    threshold: 0,
+                    cost: 0,
+                    supplier: "",
+                    lastIn: new Date().toISOString(),
+                    category: "dry",
+                    group: "ingredients",
+                    accessRoles: ["deco"],
+                    source: "came-from-baker",
+                    size: bakerInvSize || undefined,
+                  };
+                  onUpdateInventory((prev: InventoryItem[]) => [...prev, newItem]);
+                  db.upsertInventory([newItem]).then(() => {
+                    showToast("Item saved to database");
+                  }).catch(err => {
+                    console.error(err);
+                    showToast("Failed to save to database: " + (err.message || "Unknown error"));
+                    onUpdateInventory((prev: InventoryItem[]) => prev.filter(i => i.id !== newItem.id));
+                  });
+                  setShowAddBakerInventory(false);
+                }} className="flex-1 rounded-xl bg-amber-600 py-2.5 text-[13px] font-medium text-white hover:bg-amber-700 disabled:opacity-40">Add Item</button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </>
     );
   }

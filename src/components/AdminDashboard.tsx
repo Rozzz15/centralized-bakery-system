@@ -223,6 +223,7 @@ export default function AdminDashboard({
   const [renamingCategory, setRenamingCategory] = useState("");
 const [productCategoryMap, setProductCategoryMap] = useState<Record<string, string>>({});
   const [productSort, setProductSort] = useState<"a-z" | "z-a" | "category">("a-z");
+  const [productCategoryFilter, setProductCategoryFilter] = useState("all");
   const [viewingProduct, setViewingProduct] = useState<string | null>(null);
   const [viewingRecipe, setViewingRecipe] = useState<string | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<string | null>(null);
@@ -289,15 +290,17 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         (activeProductSubTab === "Other" && !recipes.some(r => r.productName === p));
 
       if (!isCategoryMatch) return false;
+
+      if (productCategoryFilter !== "all") {
+        const catFilter = productCategoryMap[p] || "";
+        if (catFilter !== productCategoryFilter) return false;
+      }
+
       if (!invSearch) return true;
       if (p.toLowerCase().includes(searchTerm)) return true;
-      const recipe = recipes.find(r => r.productName === p);
-      if (!recipe) return false;
-      return (
-        recipe.ingredients.some(i => i.name.toLowerCase().includes(searchTerm)) ||
-        (recipe.packagingMaterials ?? []).some(i => i.name.toLowerCase().includes(searchTerm)) ||
-        (recipe.decorationSupplies ?? []).some(i => i.name.toLowerCase().includes(searchTerm))
-      );
+      const productCat = productCategoryMap[p];
+      if (productCat && productCat.toLowerCase().includes(searchTerm)) return true;
+      return false;
     });
 
     const computeRecipeCost = (recipe: ProductRecipe) => {
@@ -335,11 +338,19 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             <input type="text" value={activeProductSubTab === "Recipes" ? recipeSearch : invSearch} onChange={e => activeProductSubTab === "Recipes" ? setRecipeSearch(e.target.value) : setInvSearch(e.target.value)} placeholder={`Search ${activeProductSubTab.toLowerCase()}...`} className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
           </div>
           {activeProductSubTab === "Products" && (
-            <select value={productSort} onChange={e => setProductSort(e.target.value as typeof productSort)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400">
-              <option value="a-z">A-Z</option>
-              <option value="z-a">Z-A</option>
-              <option value="category">Category</option>
-            </select>
+            <>
+              <select value={productCategoryFilter} onChange={e => setProductCategoryFilter(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400">
+                <option value="all">All Categories</option>
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              <select value={productSort} onChange={e => setProductSort(e.target.value as typeof productSort)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400">
+                <option value="a-z">A-Z</option>
+                <option value="z-a">Z-A</option>
+                <option value="category">Category</option>
+              </select>
+            </>
           )}
         </div>
 
@@ -749,6 +760,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                                     }
                                     return next;
                                   });
+                                  if (productCategoryFilter === cat) setProductCategoryFilter("all");
                                 }
                               }} className="text-[11px] text-red-500 hover:text-red-700">Delete</button>
                             </>
@@ -3794,51 +3806,12 @@ return (
 
   /* ── Default: Admin Dashboard ── */
 
-  function handleExport() {
-    const rows: string[][] = [];
-
-    rows.push(["BAKEFLOW ERP — FULL EXPORT", "", "", ""]);
-    rows.push([`Generated: ${new Date().toLocaleString('en-PH')}`, "", "", ""]);
-    rows.push([]);
-
-    rows.push(["=== INVENTORY ===", "", "", ""]);
-    rows.push(["ID", "Name", "SKU", "On Hand", "Threshold", "Unit", "Cost", "Supplier", "Category", "Group"]);
-    inventory.forEach(i => rows.push([i.id, i.name, i.sku, String(i.onHand), String(i.threshold), i.unit, String(i.cost), i.supplier, i.category, i.group]));
-    rows.push([]);
-
-    rows.push(["=== DOS ITEMS ===", "", "", ""]);
-rows.push(["ID", "Product", "Qty", "Priority", "Status"]);
-dosItems.forEach(d => rows.push([d.id, d.product, String(d.qty), d.priority, d.status]));
-    rows.push([]);
-
-    rows.push(["=== PRODUCTION ===", "", "", ""]);
-    rows.push(["ID", "Product", "Target", "Completed", "Assigned To", "Status"]);
-    production.forEach(p => rows.push([p.id, p.product, String(p.target), String(p.completed), p.assignedTo, p.status]));
-    rows.push([]);
-
-    rows.push(["=== DELIVERIES ===", "", "", ""]);
-    rows.push(["ID", "Branch", "Status", "ETA", "Items"]);
-    deliveries.forEach(d => rows.push([d.id, d.branch, d.status, d.eta, d.items.map(i => `${i.product}(${i.qty})`).join(", ")]));
-
-    const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;header=present" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `bakeflow-export-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div><h1 className="text-[28px] font-semibold tracking-tight text-zinc-900" style={{ fontFamily: "Instrument Sans, system-ui" }}>Admin Dashboard</h1><p className="mt-1 text-[13px] text-zinc-600">Real-time bakery ERP • Single source of truth</p></div>
         <div className="flex items-center gap-2">
           <button onClick={onOpenDOSBuilder} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ New DOS</button>
-          <button onClick={handleExport} className="rounded-xl border border-[#E8E0D5] bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50">Export</button>
         </div>
       </div>
 
@@ -4483,7 +4456,12 @@ function EditDOSModal({ item, onClose, onSave }: { item: DOSItem; onClose: () =>
   const [topper, setTopper] = useState(item.topper || "");
   const [referenceImage, setReferenceImage] = useState(item.referenceImage || "");
   const [messageCaption, setMessageCaption] = useState(item.messageCaption || "");
-  const [showCustomization, setShowCustomization] = useState(!!(item.themeOccasion || item.colorScheme || item.cakeDesignNotes || item.topper || item.referenceImage || item.messageCaption));
+  const [customerName, setCustomerName] = useState(item.customerName || "");
+  const [pickupDeliveryTime, setPickupDeliveryTime] = useState(item.pickupDeliveryTime || "");
+  const [contactNumber, setContactNumber] = useState(item.contactNumber || "");
+  const [dateOfEvent, setDateOfEvent] = useState(item.dateOfEvent || "");
+  const [layers, setLayers] = useState(item.layers || "");
+  const [showCustomization, setShowCustomization] = useState(false);
 
   const FLAVORS = ["", "Chocolate", "Vanilla", "Red Velvet", "Ube", "Mocha", "Carrot", "Lemon", "Strawberry", "Cookies & Cream", "Salted Caramel", "Banana", "Blueberry", "Coffee"];
   const SIZES = ["", "6x1", "6x2", "6x3", "8x1", "8x2", "8x3", "10x1", "10x2", "10x3", "12x1", "12x2", "14x1", "14x2", "16x1", "Sheet"];
@@ -4493,7 +4471,7 @@ function EditDOSModal({ item, onClose, onSave }: { item: DOSItem; onClose: () =>
   const handleSubmit = (e: React.FormEvent) => { 
     e.preventDefault(); 
     const rolesArray = Array.from(selectedRoles);
-    onSave({ ...item, product, qty, priority, scheduledDate: isScheduled ? scheduledDate : undefined, roles: rolesArray, flavor: flavor || undefined, size: size || undefined, themeOccasion: themeOccasion || undefined, colorScheme: colorScheme || undefined, cakeDesignNotes: cakeDesignNotes || undefined, topper: topper || undefined, referenceImage: referenceImage || undefined, messageCaption: messageCaption || undefined }); 
+    onSave({ ...item, product, qty, priority, scheduledDate: isScheduled ? scheduledDate : undefined, roles: rolesArray, flavor: flavor || undefined, size: size || undefined, themeOccasion: themeOccasion || undefined, colorScheme: colorScheme || undefined, cakeDesignNotes: cakeDesignNotes || undefined, topper: topper || undefined, referenceImage: referenceImage || undefined, messageCaption: messageCaption || undefined, customerName: customerName || undefined, pickupDeliveryTime: pickupDeliveryTime || undefined, contactNumber: contactNumber || undefined, dateOfEvent: dateOfEvent || undefined, layers: layers || undefined }); 
     onClose(); 
   };
 
@@ -4543,52 +4521,115 @@ function EditDOSModal({ item, onClose, onSave }: { item: DOSItem; onClose: () =>
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Schedule Date</label><input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" /></div>
           )}
           <div className="border-t border-zinc-100 pt-3 mt-3">
-            <button type="button" onClick={() => setShowCustomization(!showCustomization)} className={`flex items-center gap-1.5 text-[12px] font-medium transition-all ${showCustomization ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'}`}>
-              {showCustomization ? "▲" : "🎨"} Customization {showCustomization ? '' : <span className="text-zinc-400 font-normal">(optional)</span>}
+            <button type="button" onClick={() => setShowCustomization(true)} className={`flex items-center gap-1.5 text-[12px] font-medium transition-all ${
+              (themeOccasion || colorScheme || cakeDesignNotes || topper || referenceImage || messageCaption || customerName || contactNumber || dateOfEvent || pickupDeliveryTime)
+                ? 'text-violet-700 hover:text-violet-800'
+                : 'text-zinc-500 hover:text-zinc-700'
+            }`}>
+              🎨 Customization {showCustomization ? '' : <span className="text-zinc-400 font-normal">(optional)</span>}
             </button>
-            {showCustomization && (
-              <div className="mt-3 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🎨 Theme / Occasion</label>
-                    <select value={themeOccasion} onChange={e => setThemeOccasion(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">{THEMES.map(t => <option key={t} value={t}>{t || "Select theme…"}</option>)}</select>
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🎨 Color Scheme</label>
-                    <input value={colorScheme} onChange={e => setColorScheme(e.target.value)} placeholder="e.g. White, Sky Blue (as reference image)" className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🎂 Cake Design Notes</label>
-                  <textarea value={cakeDesignNotes} onChange={e => setCakeDesignNotes(e.target.value)} placeholder="e.g. Please copy same design from reference image" rows={2} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300 resize-none" />
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🧁 Topper</label>
-                    <input value={topper} onChange={e => setTopper(e.target.value)} placeholder="e.g. Baptism Topper (cross / baby theme)" className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
-                  </div>
-                    <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">🖼️ Reference Image</label>
-                    <div className="mt-1 flex items-center gap-2">
-                      <input ref={uploadRef} type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { const url = await db.uploadReferenceImage(f, `edit-${item.id}`); setReferenceImage(url); } catch (err) { console.error("Upload failed", err); } if (e.target) e.target.value = ""; }} className="hidden" />
-                      <button type="button" onClick={() => uploadRef.current?.click()} className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300 transition-all">📁 Choose Image</button>
-                      {referenceImage && (
-                        <><a href={referenceImage} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-600 underline underline-offset-2 hover:text-blue-800">Preview</a>
-                        <button type="button" onClick={() => setReferenceImage("")} className="text-[11px] text-red-500 hover:text-red-700">✕</button></>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">✍️ Message / Caption <span className="font-normal text-zinc-400">(optional)</span></label>
-                    <input value={messageCaption} onChange={e => setMessageCaption(e.target.value)} placeholder='e.g. "Welcome Baby Liam"' className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
           <div className="flex gap-2 pt-1"><button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button><button type="submit" className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">Save Changes</button></div>
         </form>
       </div>
+
+      {/* Customization Modal */}
+      {showCustomization && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setShowCustomization(false)}>
+          <div className="w-full max-w-[600px] max-h-[85vh] overflow-y-auto rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-5">
+              <div>
+                <h3 className="text-[18px] font-semibold">🎨 Customization</h3>
+                <p className="text-[12px] text-zinc-500 mt-0.5">{item.product} — {item.qty} pcs</p>
+              </div>
+              <button onClick={() => setShowCustomization(false)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors">✕</button>
+            </div>
+
+            {/* Customer Details */}
+            <div className="mb-5">
+              <h4 className="text-[12px] font-semibold text-zinc-900 mb-3 flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-blue-100 grid place-items-center text-[10px]">1</span>
+                Customer Details
+              </h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Customer Name</label>
+                  <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="e.g. Juan Dela Cruz" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Contact Number</label>
+                  <input value={contactNumber} onChange={e => setContactNumber(e.target.value)} placeholder="e.g. 09171234567" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Date of Event</label>
+                  <input type="date" value={dateOfEvent} onChange={e => setDateOfEvent(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Pickup / Delivery Time</label>
+                  <input type="time" value={pickupDeliveryTime} onChange={e => setPickupDeliveryTime(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400" />
+                </div>
+              </div>
+            </div>
+
+            {/* Design Details */}
+            <div className="mb-5">
+              <h4 className="text-[12px] font-semibold text-zinc-900 mb-3 flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-violet-100 grid place-items-center text-[10px]">2</span>
+                Design Details
+              </h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Theme / Occasion</label>
+                  <select value={themeOccasion} onChange={e => setThemeOccasion(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400">{THEMES.map(t => <option key={t} value={t}>{t || "Select theme…"}</option>)}</select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cake Layers</label>
+                  <select value={layers} onChange={e => setLayers(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400">
+                    <option value="">Select layers…</option>
+                    <option value="1">1 Layer</option>
+                    <option value="2">2 Layers</option>
+                    <option value="3">3 Layers</option>
+                    <option value="4">4 Layers</option>
+                    <option value="5">5+ Layers</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Color Scheme</label>
+                  <input value={colorScheme} onChange={e => setColorScheme(e.target.value)} placeholder="e.g. White, Sky Blue" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Topper</label>
+                  <input value={topper} onChange={e => setTopper(e.target.value)} placeholder="e.g. Baptism Topper" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Message / Caption</label>
+                  <input value={messageCaption} onChange={e => setMessageCaption(e.target.value)} placeholder='e.g. "Welcome Baby Liam"' className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300" />
+                </div>
+                <div className="col-span-2">
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cake Design Notes</label>
+                  <textarea value={cakeDesignNotes} onChange={e => setCakeDesignNotes(e.target.value)} placeholder="e.g. Please copy same design from reference image" rows={3} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[14px] outline-none focus:border-zinc-400 placeholder:text-zinc-300 resize-none" />
+                </div>
+                <div className="col-span-2">
+                  <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-zinc-500">Reference Image</label>
+                  <div className="mt-1 flex items-center gap-2">
+                    <input ref={uploadRef} type="file" accept="image/*" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { const url = await db.uploadReferenceImage(f, `edit-${item.id}`); setReferenceImage(url); } catch (err) { console.error("Upload failed", err); } if (e.target) e.target.value = ""; }} className="hidden" />
+                    <button type="button" onClick={() => uploadRef.current?.click()} className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300 transition-all">📁 Choose Image</button>
+                    {referenceImage && (
+                      <><a href={referenceImage} target="_blank" rel="noopener noreferrer" className="text-[12px] text-blue-600 underline underline-offset-2 hover:text-blue-800">Preview</a>
+                      <button type="button" onClick={() => setReferenceImage("")} className="text-[12px] text-red-500 hover:text-red-700">✕</button></>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-3 border-t border-zinc-100">
+              <button onClick={() => setShowCustomization(false)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+              <button onClick={() => setShowCustomization(false)} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
