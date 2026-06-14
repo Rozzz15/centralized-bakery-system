@@ -4188,10 +4188,18 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
           <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 resize-none" rows={3} placeholder="Optional notes about this recipe..." />
         </div>
 
-        <div className="rounded-xl border border-zinc-100 bg-zinc-50/60 p-3 mb-4">
-          <div className="flex items-center justify-between text-[12px]">
-            <span className="text-zinc-600">{ingredients.length} ingredient{ingredients.length !== 1 ? "s" : ""}</span>
-            <span className="font-medium text-zinc-800" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{totalCost.toFixed(2)}</span>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-emerald-600 font-semibold">Total Cost</div>
+              <div className="text-[12px] text-emerald-700 mt-0.5">{ingredients.length} ingredient{ingredients.length !== 1 ? "s" : ""}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[20px] font-bold text-emerald-800" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{totalCost.toFixed(2)}</div>
+              {yieldQty && yieldQty > 0 && (
+                <div className="text-[11px] text-emerald-600 mt-0.5">₱{(totalCost / yieldQty).toFixed(2)} per yield</div>
+              )}
+            </div>
           </div>
         </div>
 
