@@ -42,6 +42,11 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
     labelAttached: false,
   });
 
+  const [viewingPromo, setViewingPromo] = useState<PromoPackage | null>(null);
+  const [showBakerFreezer, setShowBakerFreezer] = useState(false);
+  const [bakerFreezerSearch, setBakerFreezerSearch] = useState("");
+  const [promoSearch, setPromoSearch] = useState("");
+
   const [showAddFreezer, setShowAddFreezer] = useState(false);
   const [showEditFreezer, setShowEditFreezer] = useState(false);
   const [editingFreezerItem, setEditingFreezerItem] = useState<FreezerItem | null>(null);
@@ -53,12 +58,49 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
   const [freezerSearch, setFreezerSearch] = useState("");
   const [freezerTab, setFreezerTab] = useState<"assembled" | "components" | "my-inventory">("assembled");
 
-  const [assemblySearch, setAssemblySearch] = useState("");
-  const [assembleQtys, setAssembleQtys] = useState<Record<string, string>>({});
+
 
   useEffect(() => {
     db.fetchPastryAssemblyTasks().then(setAssemblyTasks).catch(console.error);
   }, [activeTab]);
+
+  // Auto-allocate products when entering Step 1 if stock is available
+  useEffect(() => {
+    if (step !== 1 || !selectedDOS) return;
+    const need = getNeedPerProduct();
+    const allStock = [...bakedProducts, ...decoProductionRecipes, ...advancedPremix];
+    setSelectedFreezerItems(prev => {
+      const next = new Map(prev);
+      let changed = false;
+      need.forEach((productNeed, productName) => {
+        const alreadyAllocated = [...next.values()].filter(e => e.item.productName === productName).reduce((s, e) => s + e.qty, 0);
+        if (alreadyAllocated >= productNeed) return;
+        const stockItems = allStock.filter(i => i.productName === productName && i.qty > 0);
+        const totalAvailable = stockItems.reduce((s, i) => s + i.qty, 0);
+        const toAllocate = Math.min(productNeed, totalAvailable);
+        if (toAllocate <= alreadyAllocated) return;
+        let remaining = toAllocate - alreadyAllocated;
+        for (const si of stockItems) {
+          if (remaining <= 0) break;
+          const existing = next.get(si.id);
+          const existingQty = existing ? existing.qty : 0;
+          const batchAvail = si.qty - existingQty;
+          if (batchAvail <= 0) continue;
+          const take = Math.min(remaining, batchAvail);
+          if (existing) {
+            next.set(si.id, { ...existing, qty: existingQty + take });
+          } else {
+            next.set(si.id, { item: si, qty: take });
+          }
+          remaining -= take;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [step, selectedDOS]);
+
+  const pastryAccessInventory = inventory.filter(i => i.group === "pastry-inventory" || i.group === "ingredients");
 
   const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
   const todayDOS = dosItems.filter(d => {
@@ -267,7 +309,7 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
   }
 
   if (activeTab === "dashboard") {
-    return (
+    return (<>
       <div className="min-h-screen bg-zinc-50/50">
         <div className="max-w-4xl mx-auto space-y-6 p-6">
           <div className="flex items-center justify-between">
@@ -317,11 +359,36 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
           {/* ─── Step 0: My Orders ─── */}
           {step === 0 && (
             <div className="space-y-6">
-              <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-                <div className="mb-6">
-                  <h2 className="text-2xl font-bold text-zinc-900">Your DOS Orders</h2>
-                  <p className="mt-2 text-base text-zinc-500">Select an order below to begin assembly.</p>
+              {/* Stat cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {(() => {
+                  const all = pastryDOS.length;
+                  const pending = pendingDOS.length;
+                  const inProgress = pastryDOS.filter(d => d.status === "in-progress").length;
+                  const completed = doneDOS.length;
+                  return [
+                    { label: "Total Orders", value: all, color: "text-zinc-900", bg: "bg-white border-zinc-200" },
+                    { label: "Pending", value: pending, color: "text-zinc-500", bg: "bg-zinc-50 border-zinc-200" },
+                    { label: "In Progress", value: inProgress, color: "text-amber-600", bg: "bg-amber-50 border-amber-200" },
+                    { label: "Completed", value: completed, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200" },
+                  ].map((stat, i) => (
+                    <div key={i} className={`rounded-2xl border ${stat.bg} p-4 text-center shadow-sm`}>
+                      <div className={`text-2xl font-extrabold font-mono ${stat.color}`}>{stat.value}</div>
+                      <div className="text-[10px] text-zinc-400 uppercase tracking-wider mt-1 font-semibold">{stat.label}</div>
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold text-zinc-900">Today's DOS</h2>
+                    <p className="text-sm text-zinc-400 mt-0.5">Daily Order Schedule &mdash; {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "numeric" })}</p>
+                  </div>
+                  <span className="text-xs font-semibold text-zinc-400">{pastryDOS.length} order{pastryDOS.length !== 1 ? "s" : ""}</span>
                 </div>
+
                 {pastryDOS.length === 0 ? (
                   <div className="text-center py-16">
                     <div className="w-20 h-20 rounded-full bg-zinc-100 flex items-center justify-center mx-auto mb-5">
@@ -331,85 +398,120 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
                     <p className="text-sm text-zinc-400 mt-2">Wait for Admin to create a DOS.</p>
                   </div>
                 ) : (
-                  <>
-                    <div className="grid gap-4">
-                      {pastryDOS.map(d => {
-                        const isDone = completedTasks.has(d.id) || d.status === "completed";
-                        const isSelected = selectedDOS?.id === d.id;
-                        const p = findPromo(d.product);
+                  <div className="space-y-3">
+                    {(() => {
+                      const grouped = new Map<string, { dos: typeof pastryDOS; totalQty: number }>();
+                      pastryDOS.forEach(d => {
+                        if (!grouped.has(d.product)) grouped.set(d.product, { dos: [], totalQty: 0 });
+                        const g = grouped.get(d.product)!;
+                        g.dos.push(d);
+                        g.totalQty += d.qty;
+                      });
+                      return [...grouped.entries()].map(([productName, group]) => {
+                        const allDone = group.dos.every(d => completedTasks.has(d.id) || d.status === "completed");
+                        const someInProgress = group.dos.some(d => d.status === "in-progress" || completedTasks.has(d.id));
+                        const groupStatus = allDone ? "completed" : someInProgress ? "in-progress" : "pending";
+                        const p = findPromo(productName);
+                        const isSelected = group.dos.some(d => d.id === selectedDOS?.id);
+                        const totalQty = group.totalQty;
+                        const totalDemand = group.dos.reduce((s, d) => s + (d.qty ?? 0), 0);
                         return (
-                          <button
-                            key={d.id}
-                            disabled={isDone}
-                            onClick={() => { if (!isDone) setSelectedDOS(isSelected ? null : d); }}
-                            className={`w-full text-left rounded-2xl border-2 p-6 transition-all ${
-                              isDone
-                                ? "border-zinc-100 bg-zinc-50 opacity-50 cursor-not-allowed"
-                                : isSelected
-                                  ? "border-amber-400 bg-amber-50 shadow-lg ring-2 ring-amber-200"
-                                  : "border-zinc-100 bg-white hover:border-zinc-300 hover:shadow-md cursor-pointer"
-                            }`}
-                          >
-                            <div className="flex items-start gap-5">
-                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                                isDone ? "bg-emerald-100" : isSelected ? "bg-amber-500" : "bg-zinc-100"
-                              }`}>
-                                {isDone ? (
-                                  <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                ) : (
-                                  <svg className="w-6 h-6 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                )}
-                              </div>
+                          <div key={productName} onClick={() => { if (!allDone) { setSelectedDOS(group.dos[0]); } }} className={`rounded-2xl border-2 p-5 transition-all ${
+                            allDone
+                              ? "border-emerald-100 bg-emerald-50/50"
+                              : isSelected
+                                ? "border-amber-400 bg-amber-50 shadow-lg ring-2 ring-amber-200"
+                                : "border-zinc-100 bg-white hover:border-zinc-300 hover:shadow-md"
+                          } ${!allDone ? "cursor-pointer" : ""}`}>
+                            <div className="flex items-start justify-between">
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-3 flex-wrap">
-                                  <span className="text-lg font-semibold text-zinc-900">{d.product}</span>
-                                  {newDOSIds?.has(d.id) && !isDone && (
-                                    <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-700">NEW</span>
-                                  )}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-[15px] font-bold text-zinc-900 truncate">{productName}</span>
                                   {p && (
-                                    <span className="inline-flex items-center rounded-full bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-700 uppercase">{p.type}</span>
+                                    <button onClick={(e) => { e.stopPropagation(); setViewingPromo(p); }} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider hover:opacity-80 transition-opacity ${p.type === "promo" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
+                                      {p.type}
+                                      <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
+                                    </button>
                                   )}
-                                  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                                    d.priority === "HIGH" ? "bg-red-50 text-red-700 border-red-200" : d.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-zinc-100 text-zinc-600 border-zinc-200"
-                                  }`}>{d.priority}</span>
+                                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                    groupStatus === "completed" ? "bg-emerald-100 text-emerald-700" :
+                                    groupStatus === "in-progress" ? "bg-amber-100 text-amber-700" :
+                                    "bg-zinc-100 text-zinc-500"
+                                  }`}>
+                                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                                      groupStatus === "completed" ? "bg-emerald-500" :
+                                      groupStatus === "in-progress" ? "bg-amber-500 animate-pulse" :
+                                      "bg-zinc-400"
+                                    }`} />
+                                    {groupStatus === "completed" ? "Completed" : groupStatus === "in-progress" ? "In Progress" : "Pending"}
+                                  </span>
                                 </div>
-                                <div className="mt-1.5 text-sm text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.id}</div>
+
+                                <div className="flex items-center gap-3 mt-2.5">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">Demand</span>
+                                    <span className="text-[15px] font-bold text-zinc-900 font-mono">{totalDemand}<span className="text-[10px] font-medium text-zinc-400 ml-0.5">pcs</span></span>
+                                  </div>
+                                  <div className="w-px h-4 bg-zinc-200" />
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">Orders</span>
+                                    <span className="text-[15px] font-bold text-zinc-900 font-mono">{group.dos.length}</span>
+                                  </div>
+                                  <div className="w-px h-4 bg-zinc-200" />
+                                  <span className="text-[10px] text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}>{group.dos[0].id}</span>
+                                </div>
+
+                                {/* Priority badges for individual DOS items */}
+                                {group.dos.length > 1 && (
+                                  <div className="flex flex-wrap gap-1.5 mt-2.5">
+                                    {group.dos.map(d => (
+                                      <span key={d.id} className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-semibold ${
+                                        d.priority === "HIGH" ? "bg-red-50 text-red-600 border-red-200" :
+                                        d.priority === "MEDIUM" ? "bg-amber-50 text-amber-600 border-amber-200" :
+                                        "bg-zinc-50 text-zinc-500 border-zinc-200"
+                                      }`}>
+                                        {d.qty} pcs
+                                        {completedTasks.has(d.id) && <svg className="w-3 h-3 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+
                                 {p && (
-                                  <div className="flex flex-wrap gap-2 mt-3">
+                                  <div className="flex flex-wrap gap-1.5 mt-2.5">
                                     {p.items.map((item, idx) => (
-                                      <span key={idx} className="inline-flex items-center rounded-lg bg-zinc-100 border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600">
-                                        {item.productName} x{item.qty}
+                                      <span key={idx} className="inline-flex items-center rounded-lg bg-zinc-100 border border-zinc-200 px-2.5 py-1 text-[11px] font-medium text-zinc-600">
+                                        {item.productName} x{item.qty * totalQty}
                                       </span>
                                     ))}
                                   </div>
                                 )}
                               </div>
-                              <div className="text-right shrink-0">
-                                <div className="text-3xl font-bold text-zinc-900" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.qty}</div>
-                                <div className="text-sm text-zinc-400 mt-0.5">pcs</div>
+                              <div className="text-right shrink-0 ml-4">
+                                <div className="text-2xl font-extrabold text-zinc-900 font-mono">{totalDemand}</div>
+                                <div className="text-[10px] text-zinc-400 uppercase tracking-wider mt-0.5">pcs</div>
                               </div>
                             </div>
-                          </button>
+                          </div>
                         );
-                      })}
-                    </div>
-
-                    <div className="flex items-center justify-between mt-6 px-2">
-                      <span className="text-sm text-zinc-400">{pendingDOS.length} pending &middot; {doneDOS.length} completed</span>
-                      <span className="text-sm text-zinc-400">Total: <span className="font-semibold text-zinc-600" style={{ fontFamily: "Fragment Mono, monospace" }}>{pastryDOS.reduce((s, d) => s + d.qty, 0)} pcs</span></span>
-                    </div>
-
-                    <div className="mt-6">
-                      <button
-                        onClick={() => { if (selectedDOS) setStep(1); }}
-                        disabled={!selectedDOS}
-                        className="w-full rounded-2xl bg-amber-600 py-4 text-lg font-bold text-white hover:bg-amber-700 transition-all shadow-md active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
-                      >
-                        {selectedDOS ? `Continue with ${selectedDOS.product}` : "Select an order to continue"}
-                      </button>
-                    </div>
-                  </>
+                      });
+                    })()}
+                  </div>
                 )}
+              </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-zinc-400">{pendingDOS.length} pending &middot; {doneDOS.length} completed</span>
+                  <span className="text-sm text-zinc-400">Total: <span className="font-semibold text-zinc-600 font-mono">{pastryDOS.reduce((s, d) => s + (d.qty ?? 0), 0)} pcs</span></span>
+                </div>
+                <button
+                  onClick={() => { if (selectedDOS) setStep(1); }}
+                  disabled={!selectedDOS}
+                  className="w-full mt-4 rounded-2xl bg-amber-600 py-3.5 text-[15px] font-bold text-white hover:bg-amber-700 transition-all shadow-md active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
+                >
+                  {selectedDOS ? `Continue with ${selectedDOS.product}` : "Select an order to continue"}
+                </button>
               </div>
             </div>
           )}
@@ -426,6 +528,11 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
                   <p className="mt-1 text-base text-zinc-500">Pick what you need from Baker &amp; Deco freezers.</p>
                 </div>
               </div>
+
+              <button onClick={() => setShowBakerFreezer(true)} className="w-full rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/50 py-3.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 hover:border-amber-400 transition-all flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+                View Baker Freezer — {bakedProducts.length} products available
+              </button>
 
               {/* Order summary */}
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
@@ -566,12 +673,27 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
 
               <div className="flex gap-4">
                 <button onClick={() => setStep(0)} className="rounded-2xl border border-zinc-200 bg-white py-4 px-6 text-base font-medium text-zinc-700 hover:bg-zinc-50 transition-all">Back</button>
-                <button onClick={() => setStep(2)} className="flex-1 rounded-2xl bg-amber-600 py-4 text-lg font-bold text-white hover:bg-amber-700 transition-all shadow-md">Continue</button>
+                <button
+                  onClick={() => setStep(2)}
+                  disabled={(() => {
+                    const need = getNeedPerProduct();
+                    const allocated = getAllocatedPerProduct();
+                    return [...need.entries()].some(([name, needed]) => (allocated.get(name) || 0) < needed);
+                  })()}
+                  className="flex-1 rounded-2xl bg-amber-600 py-4 text-lg font-bold text-white hover:bg-amber-700 transition-all shadow-md active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
+                >
+                  {(() => {
+                    const need = getNeedPerProduct();
+                    const allocated = getAllocatedPerProduct();
+                    const allFulfilled = [...need.entries()].every(([name, needed]) => (allocated.get(name) || 0) >= needed);
+                    return allFulfilled ? "Continue" : "Allocate all products first";
+                  })()}
+                </button>
               </div>
             </div>
           )}
 
-          {/* ─── Step 2: Accept Task ─── */}
+          {/* ─── Step 2: Production Planning & Review ─── */}
           {step === 2 && selectedDOS && (
             <div className="space-y-6">
               <div className="flex items-center gap-4">
@@ -579,34 +701,186 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
                 </button>
                 <div>
-                  <h2 className="text-2xl font-bold text-zinc-900">Accept Task</h2>
-                  <p className="mt-1 text-base text-zinc-500">Confirm you will work on this order.</p>
+                  <h2 className="text-2xl font-bold text-zinc-900">Production Planning</h2>
+                  <p className="mt-1 text-base text-zinc-500">Review order details before accepting.</p>
                 </div>
               </div>
 
-              <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 p-8">
-                <div className="text-center">
-                  <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-8 h-8 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              {/* Order Summary Card */}
+              <div className="rounded-2xl border-2 border-amber-200 bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-50 p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-700">Order Summary</span>
+                </div>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className="text-2xl font-extrabold text-zinc-900">{selectedDOS.product}</h3>
+                      {promo && (
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${promo.type === "promo" ? "bg-amber-200/70 text-amber-800" : "bg-blue-200/70 text-blue-800"}`}>{promo.type}</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-1.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{selectedDOS.id}</p>
                   </div>
-                  <h3 className="text-xl font-bold text-zinc-900">{selectedDOS.product}</h3>
-                  <p className="text-sm text-zinc-500 mt-1" style={{ fontFamily: "Fragment Mono, monospace" }}>{selectedDOS.id}</p>
-                  <div className="text-4xl font-bold text-amber-700 mt-4" style={{ fontFamily: "Fragment Mono, monospace" }}>{selectedDOS.qty} pcs</div>
-                  {promo && (
-                    <div className="flex flex-wrap gap-2 mt-4 justify-center">
-                      {promo.items.map((item, idx) => (
-                        <span key={idx} className="inline-flex items-center rounded-lg bg-white border border-amber-200 px-3 py-1.5 text-sm font-medium text-amber-800">
-                          {item.productName} x{item.qty * (selectedDOS.qty ?? 1)}
-                        </span>
-                      ))}
+                  <div className="text-right shrink-0 ml-4">
+                    <div className="text-xs text-zinc-500 uppercase tracking-wider font-medium">Target Qty</div>
+                    <div className="text-4xl font-extrabold text-amber-700 mt-1 font-mono">{selectedDOS.qty}</div>
+                    <div className="text-sm text-zinc-500">pieces</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Product Category */}
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" /></svg>
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Product Category</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {(() => {
+                    const categories = [
+                      { label: "Pastry Products", active: !promo, icon: "🧁" },
+                      { label: "Cake Components", active: false, icon: "🎂" },
+                      { label: promo ? `${promo.type === "promo" ? "Promo" : "Package"} Inclusions` : "Package Inclusions", active: !!promo, icon: promo ? "📦" : "📦" },
+                      { label: "Custom Orders", active: false, icon: "✨" },
+                      { label: "Rush Orders", active: selectedDOS.priority === "HIGH", icon: "🚨" },
+                    ];
+                    return categories.map((cat, i) => (
+                      <div key={i} className={`rounded-xl border px-4 py-3 text-center transition-all ${cat.active ? "border-amber-300 bg-amber-50" : "border-zinc-100 bg-zinc-50/50"}`}>
+                        <div className="text-lg mb-1">{cat.icon}</div>
+                        <div className={`text-xs font-semibold ${cat.active ? "text-amber-700" : "text-zinc-400"}`}>{cat.label}</div>
+                        {cat.active && <div className="mt-1 inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">THIS ORDER</div>}
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Required Quantities — breakdown */}
+              <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-zinc-100 bg-zinc-50 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" /></svg>
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">Required Quantities</span>
+                </div>
+                <div className="divide-y divide-zinc-100">
+                  {promo ? promo.items.map((item, idx) => {
+                    const totalNeeded = item.qty * (selectedDOS.qty ?? 1);
+                    const allStock = [...bakedProducts, ...decoProductionRecipes, ...advancedPremix];
+                    const available = allStock.filter(i => i.productName === item.productName).reduce((s, i) => s + i.qty, 0);
+                    const hasEnough = available >= totalNeeded;
+                    return (
+                      <div key={idx} className="flex items-center justify-between px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${hasEnough ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>{idx + 1}</div>
+                          <div>
+                            <span className="text-sm font-semibold text-zinc-800">{item.productName}</span>
+                            <div className="text-xs text-zinc-400 mt-0.5">{item.qty} per unit × {selectedDOS.qty} units</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-zinc-900 font-mono">{totalNeeded}</div>
+                          <div className={`text-xs font-medium ${hasEnough ? "text-emerald-600" : "text-red-500"}`}>{available} avail</div>
+                        </div>
+                      </div>
+                    );
+                  }) : (
+                    <div className="flex items-center justify-between px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold bg-emerald-100 text-emerald-700">1</div>
+                        <div>
+                          <span className="text-sm font-semibold text-zinc-800">{selectedDOS.product}</span>
+                          <div className="text-xs text-zinc-400 mt-0.5">Single product order</div>
+                        </div>
+                      </div>
+                      <div className="text-lg font-bold text-zinc-900 font-mono">{selectedDOS.qty}</div>
                     </div>
                   )}
                 </div>
               </div>
 
+              {/* Priority & Scheduling */}
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Priority & Schedule</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className={`rounded-xl border p-4 text-center ${selectedDOS.priority === "HIGH" ? "border-red-200 bg-red-50" : selectedDOS.priority === "MEDIUM" ? "border-amber-200 bg-amber-50" : "border-zinc-200 bg-zinc-50"}`}>
+                    <div className="text-xs uppercase tracking-wider font-semibold text-zinc-400 mb-1">Priority</div>
+                    <div className={`text-lg font-bold ${selectedDOS.priority === "HIGH" ? "text-red-700" : selectedDOS.priority === "MEDIUM" ? "text-amber-700" : "text-zinc-700"}`}>{selectedDOS.priority || "NORMAL"}</div>
+                    {selectedDOS.priority === "HIGH" && <div className="mt-1 text-[10px] font-bold text-red-600 uppercase">⚡ Rush Order</div>}
+                  </div>
+                  <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-center">
+                    <div className="text-xs uppercase tracking-wider font-semibold text-zinc-400 mb-1">Due</div>
+                    <div className="text-lg font-bold text-zinc-700">{selectedDOS.scheduledDate || todayStr}</div>
+                    <div className="text-[10px] text-zinc-400 mt-1">Today</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Production Queue Position */}
+              <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" /></svg>
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Production Queue</span>
+                </div>
+                <div className="space-y-2">
+                  {(() => {
+                    const queue: { label: string; status: "done" | "current" | "pending"; desc: string }[] = [
+                      { label: "Receive DOS from Admin", status: "done", desc: "Order received" },
+                      { label: "Review & Plan Production", status: "current", desc: "Analyzing requirements" },
+                      { label: "Check Freezer Availability", status: "pending", desc: "Step 1" },
+                      { label: "Accept & Begin Assembly", status: "pending", desc: "Step 3" },
+                      { label: "QC & Complete", status: "pending", desc: "Final check" },
+                    ];
+                    return queue.map((item, i) => (
+                      <div key={i} className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all ${item.status === "current" ? "bg-amber-50 border border-amber-200" : item.status === "done" ? "bg-emerald-50/50" : "bg-zinc-50"}`}>
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${item.status === "done" ? "bg-emerald-500 text-white" : item.status === "current" ? "bg-amber-500 text-white animate-pulse" : "bg-zinc-200 text-zinc-500"}`}>
+                          {item.status === "done" ? <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg> : i + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-sm font-semibold ${item.status === "current" ? "text-amber-800" : item.status === "done" ? "text-emerald-700" : "text-zinc-500"}`}>{item.label}</div>
+                          <div className="text-xs text-zinc-400">{item.desc}</div>
+                        </div>
+                        {item.status === "current" && <span className="shrink-0 rounded-full bg-amber-200 px-2.5 py-1 text-[10px] font-bold text-amber-800 uppercase">Current</span>}
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Notes & Special Instructions */}
+              {(selectedDOS.notes || promo?.description) && (
+                <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Notes & Special Instructions</span>
+                  </div>
+                  {selectedDOS.notes && (
+                    <div className="rounded-xl bg-zinc-50 border border-zinc-100 px-4 py-3 mb-3">
+                      <p className="text-sm text-zinc-700 leading-relaxed">{selectedDOS.notes}</p>
+                    </div>
+                  )}
+                  {promo?.description && (
+                    <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-amber-600 mb-1">Promo Description</div>
+                      <p className="text-sm text-amber-800 leading-relaxed">{promo.description}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-4">
                 <button onClick={() => setStep(1)} className="rounded-2xl border border-zinc-200 bg-white py-4 px-6 text-base font-medium text-zinc-700 hover:bg-zinc-50 transition-all">Back</button>
-                <button onClick={handleAcceptTask} className="flex-1 rounded-2xl bg-amber-600 py-4 text-lg font-bold text-white hover:bg-amber-700 transition-all shadow-md active:scale-[0.98]">
+                <button
+                  onClick={handleAcceptTask}
+                  disabled={(() => {
+                    const need = getNeedPerProduct();
+                    const allocated = getAllocatedPerProduct();
+                    return [...need.entries()].some(([name, needed]) => (allocated.get(name) || 0) < needed);
+                  })()}
+                  className="flex-1 rounded-2xl bg-amber-600 py-4 text-lg font-bold text-white hover:bg-amber-700 transition-all shadow-md active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
+                >
                   Accept Task
                 </button>
               </div>
@@ -801,479 +1075,227 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
           )}
         </div>
       </div>
-    );
-  }
 
-  /* ── Assembly Tab ── */
-  if (activeTab === "assembly") {
-    const promoPackages = promosPackages.filter(p => p.status === "active");
-    const promoNames = new Set(promoPackages.map(p => p.name));
-    const decoRecipeNames = new Set(freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.qty > 0).map(i => i.productName));
-    const normalProducts = productCatalog.filter(n => {
-      if (promoNames.has(n)) return false;
-      if (decoRecipeNames.has(n)) return true;
-      const recipeForProduct = recipes.find(r => r.productName === n);
-      return recipeForProduct?.linkedIngredients?.some(lp => decoRecipeNames.has(lp)) ?? false;
-    });
-
-    const handleBulkAssemble = (promo: PromoPackage, qty: number) => {
-      const today = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-      const allAvailable = [...bakedProducts, ...decoProductionRecipes, ...advancedPremix];
-      const canFulfill = promo.items.every(pi => {
-        const available = allAvailable.filter(i => i.productName === pi.productName).reduce((s, i) => s + i.qty, 0);
-        return available >= pi.qty * qty;
-      });
-      if (!canFulfill) { alert("Not enough stock in Baker/Deco freezers for all components."); return; }
-
-      const componentDeductions: { item: FreezerItem; deduct: number }[] = [];
-      promo.items.forEach(pi => {
-        let needed = pi.qty * qty;
-        const directItems = allAvailable.filter(i => i.productName === pi.productName && i.qty > 0);
-        if (directItems.length > 0) {
-          directItems.forEach(i => {
-            if (needed <= 0) return;
-            const take = Math.min(needed, i.qty);
-            componentDeductions.push({ item: i, deduct: take });
-            needed -= take;
-          });
-        } else {
-          const recipeForProduct = recipes.find(r => r.productName === pi.productName);
-          const linkedNames = recipeForProduct?.linkedIngredients ?? [];
-          allAvailable.filter(i => linkedNames.includes(i.productName) && i.qty > 0).forEach(i => {
-            if (needed <= 0) return;
-            const take = Math.min(needed, i.qty);
-            componentDeductions.push({ item: i, deduct: take });
-            needed -= take;
-          });
-        }
-      });
-
-      const updatedFreezer = freezerItems.map(f => {
-        const deduction = componentDeductions.find(d => d.item.id === f.id);
-        return deduction ? { ...f, qty: f.qty - deduction.deduct } : f;
-      });
-      onUpdateFreezer?.(updatedFreezer);
-      db.upsertFreezerItems(updatedFreezer.filter(f => componentDeductions.some(d => d.item.id === f.id))).catch(console.error);
-
-      const assembledItem: FreezerItem = {
-        id: `FRZ-${Date.now()}`,
-        productName: `${promo.name} (${promo.type})`,
-        qty,
-        unit: "pcs",
-        batchRef: `PASM-${Date.now()}`,
-        producedBy: "pastry",
-        dateProduced: today,
-        status: "stored",
-        notes: `Assembled ${promo.type} - ${promo.name}`,
-      };
-      onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, assembledItem]);
-      db.upsertFreezerItems([assembledItem]).catch(console.error);
-
-      const historyEntry: FreezerHistory = {
-        id: `FRZH-${Date.now()}`,
-        productName: assembledItem.productName,
-        producedBy: "pastry",
-        qtyChanged: qty,
-        action: "assembled",
-        reference: promo.id,
-        timestamp: new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }),
-      };
-      db.insertFreezerHistory(historyEntry).catch(console.error);
-      setAssembleQtys(prev => ({ ...prev, [promo.id]: "" }));
-    };
-
-    const handlePackageProduct = (productName: string, qty: number) => {
-      const today = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-      const directItems = freezerItems.filter(i => i.productName === productName && i.status === "stored" && i.qty > 0);
-      const recipeForProduct = recipes.find(r => r.productName === productName);
-      const linkedNames = recipeForProduct?.linkedIngredients ?? [];
-      const matchingItems = directItems.length > 0 ? directItems : freezerItems.filter(i => linkedNames.includes(i.productName) && i.status === "stored" && i.qty > 0);
-      let needed = qty;
-      const deductions: { item: FreezerItem; deduct: number }[] = [];
-      matchingItems.forEach(i => {
-        if (needed <= 0) return;
-        const take = Math.min(needed, i.qty);
-        deductions.push({ item: i, deduct: take });
-        needed -= take;
-      });
-      if (needed > 0) { alert(`Not enough ${productName} in freezers. Available: ${qty - needed}, needed: ${qty}`); return; }
-
-      const updatedFreezer = freezerItems.map(f => {
-        const d = deductions.find(dd => dd.item.id === f.id);
-        return d ? { ...f, qty: f.qty - d.deduct } : f;
-      });
-      onUpdateFreezer?.(updatedFreezer);
-      db.upsertFreezerItems(updatedFreezer.filter(f => deductions.some(d => d.item.id === f.id))).catch(console.error);
-
-      const packaged: FreezerItem = {
-        id: `FRZ-${Date.now()}`,
-        productName,
-        qty,
-        unit: "pcs",
-        batchRef: `PKG-${Date.now()}`,
-        producedBy: "pastry",
-        dateProduced: today,
-        status: "stored",
-        notes: `Packaged - ${productName}`,
-      };
-      onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, packaged]);
-      db.upsertFreezerItems([packaged]).catch(console.error);
-
-      const historyEntry: FreezerHistory = {
-        id: `FRZH-${Date.now()}`,
-        productName,
-        producedBy: "pastry",
-        qtyChanged: qty,
-        action: "packaged",
-        reference: "",
-        timestamp: new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" }),
-      };
-      db.insertFreezerHistory(historyEntry).catch(console.error);
-      setAssembleQtys(prev => ({ ...prev, [`pkg-${productName}`]: "" }));
-    };
-
-    return (
-      <div className="min-h-screen bg-zinc-50/50">
-        <div className="max-w-5xl mx-auto space-y-6 p-6">
-          <div>
-            <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">Assembly</h1>
-            <p className="mt-1.5 text-base text-zinc-500">Assemble promo/package bundles or package normal products.</p>
-          </div>
-
-          <div className="relative max-w-md">
-            <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
-            <input value={assemblySearch} onChange={e => setAssemblySearch(e.target.value)} placeholder="Search products..." className="w-full rounded-xl border border-zinc-200 bg-white pl-12 pr-4 py-3.5 text-base focus:outline-none focus:border-zinc-400 transition-all" />
-          </div>
-
-          {/* Assemble — unified DOS products + promos/packages */}
-          {pastryDOS.length > 0 && (() => {
-            const decoRecipeItems = freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.qty > 0);
-            const pastryBakedQtyMap = new Map<string, number>();
-            freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored" && i.qty > 0).forEach(i => {
-              pastryBakedQtyMap.set(i.productName, (pastryBakedQtyMap.get(i.productName) || 0) + i.qty);
-            });
-            const allAvailable = [...bakedProducts, ...decoRecipeItems, ...advancedPremix];
-            const totalAvail = (name: string) => {
-              const direct = allAvailable.filter(i => i.productName === name).reduce((s, i) => s + i.qty, 0);
-              if (direct > 0) return direct;
-              const recipeForProduct = recipes.find(r => r.productName === name);
-              if (recipeForProduct?.linkedIngredients?.length) {
-                return allAvailable.filter(i => recipeForProduct.linkedIngredients!.includes(i.productName)).reduce((s, i) => s + i.qty, 0);
-              }
-              return 0;
-            };
-            return (
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400 mb-3">Assemble</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {pastryDOS
-                    .filter(d => !assemblySearch || d.product.toLowerCase().includes(assemblySearch.toLowerCase()))
-                    .map(dos => {
-                      const promo = findPromo(dos.product);
-                      const isPromoOrPkg = promo && (promo.type === "promo" || promo.type === "package");
-                      const done = pastryBakedQtyMap.get(dos.product) || 0;
-                      const left = dos.qty - done;
-                      const assembleQty = Number(assembleQtys[dos.id] ?? "1") || 0;
-
-                      if (isPromoOrPkg && promo) {
-                        const maxQty = promo.items.length > 0 ? Math.min(...promo.items.map(pi => Math.floor(totalAvail(pi.productName) / pi.qty))) : 0;
-                        return (
-                          <div key={dos.id} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm flex flex-col">
-                            <div className="flex items-start justify-between mb-2">
-                              <div>
-                                <h3 className="text-base font-bold text-zinc-900">{dos.product}</h3>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700 uppercase">{promo.type}</span>
-                                  <span className="text-xs text-zinc-400">Need {dos.qty} | Done {done} | Left <span className={left > 0 ? "text-amber-600" : "text-emerald-600"}>{Math.max(0, left)}</span></span>
-                                </div>
-                              </div>
-                              <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${maxQty > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                                {maxQty > 0 ? `Up to ${maxQty}` : "No stock"}
-                              </span>
-                            </div>
-                            <div className="space-y-1.5 mb-4 flex-1">
-                              {promo.items.map((item, idx) => {
-                                const avail = totalAvail(item.productName);
-                                const hasEnough = avail >= item.qty * Math.max(1, assembleQty);
-                                return (
-                                  <div key={idx} className="flex items-center justify-between text-sm">
-                                    <span className="text-zinc-600">{item.productName} x{item.qty}</span>
-                                    <span className={`font-medium ${hasEnough ? "text-emerald-600" : "text-red-500"}`}>{avail} avail</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <input type="number" min={1} max={maxQty} value={assembleQtys[dos.id] ?? "1"}
-                                onChange={e => setAssembleQtys(prev => ({ ...prev, [dos.id]: e.target.value }))}
-                                className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-center outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-200" />
-                              <button onClick={() => handleBulkAssemble(promo, assembleQty)}
-                                disabled={maxQty <= 0 || assembleQty <= 0}
-                                className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">Assemble</button>
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      // Normal product — assemble from Deco recipes
-                      const matchedRecipes = recipes.filter(r => r.productName === dos.product || r.linkedIngredients?.includes(dos.product));
-                      const allRecipeNames = matchedRecipes.map(r => r.productName);
-                      const allRecipeLinked = [...new Set(matchedRecipes.flatMap(r => r.linkedIngredients ?? []))];
-                      const matchingRecipes = decoRecipeItems.filter(p =>
-                        allRecipeNames.includes(p.productName) ||
-                        allRecipeLinked.includes(p.productName) ||
-                        p.productName === dos.product
-                      );
-                      const recipesByProduct = new Map<string, number>();
-                      matchingRecipes.forEach(p => recipesByProduct.set(p.productName, (recipesByProduct.get(p.productName) || 0) + p.qty));
-                      const minRecipeQty = recipesByProduct.size > 0 ? Math.min(...recipesByProduct.values()) : 0;
-                      const maxAssemble = Math.min(left, minRecipeQty);
-                      return (
-                        <div key={dos.id} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm flex flex-col">
-                          <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <h3 className="text-base font-bold text-zinc-900">{dos.product}</h3>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs text-zinc-400">Recipe: {allRecipeNames.length > 0 ? allRecipeNames.join(", ") : dos.product}</span>
-                              </div>
-                            </div>
-                            {matchingRecipes.length > 0 ? (
-                              <span className="shrink-0 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-medium text-emerald-700">Ready</span>
-                            ) : (
-                              <span className="shrink-0 rounded-full bg-zinc-100 border border-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-400">No recipe</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-zinc-500 mb-4">
-                            <span>Need <strong className="text-zinc-700">{dos.qty}</strong></span>
-                            <span className="text-zinc-200">|</span>
-                            <span>Done <strong className="text-zinc-700">{done}</strong></span>
-                            <span className="text-zinc-200">|</span>
-                            <span>Left <strong className={left > 0 ? "text-amber-600" : "text-emerald-600"}>{Math.max(0, left)}</strong></span>
-                          </div>
-                          <div className="flex items-center gap-2 mt-auto">
-                            <input type="number" min={1} max={maxAssemble} value={assembleQtys[dos.id] ?? "1"}
-                              onChange={e => setAssembleQtys(prev => ({ ...prev, [dos.id]: e.target.value }))}
-                              className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-center outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-200" />
-                            <button onClick={() => {
-                              const qty = Number(assembleQtys[dos.id] ?? "1") || 0;
-                              if (qty <= 0) return;
-                              const uniqueProducts = [...new Set(matchingRecipes.map(p => p.productName))];
-                              const targets = uniqueProducts
-                                .map(name => matchingRecipes.find(p => p.productName === name && p.qty >= qty))
-                                .filter(Boolean) as FreezerItem[];
-                              if (targets.length === 0) { alert("No recipe stock left."); return; }
-                              if (targets.length !== uniqueProducts.length) { alert("Not all required recipes have enough stock."); return; }
-
-                              const today = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-                              const updatedFreezer = freezerItems.map(f =>
-                                targets.some(t => t.id === f.id) ? { ...f, qty: Math.max(0, f.qty - qty) } : f
-                              );
-                              onUpdateFreezer?.(updatedFreezer);
-                              db.upsertFreezerItems(updatedFreezer.filter(f => targets.some(t => t.id === f.id))).catch(console.error);
-
-                              const assembledItem: FreezerItem = {
-                                id: `FRZ-${Date.now()}`,
-                                productName: dos.product,
-                                qty,
-                                unit: "pcs",
-                                batchRef: `PASM-${Date.now()}`,
-                                producedBy: "pastry",
-                                dateProduced: today,
-                                status: "stored",
-                                notes: "Production Recipe (Assembled)",
-                              };
-                              onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, assembledItem]);
-                              db.upsertFreezerItems([assembledItem]).catch(console.error);
-
-                              const batchRefs = targets.map(t => t.batchRef).filter(Boolean).join(", ");
-                              const task: PastryAssemblyTask = {
-                                id: crypto.randomUUID?.() ?? `PASM-${Date.now()}`,
-                                dosId: dos.id,
-                                productName: dos.product,
-                                promoType: "normal",
-                                components: targets.map(t => ({ productName: t.productName, qty, sourceFreezerId: t.id })),
-                                targetQty: dos.qty,
-                                assembledQty: qty,
-                                status: "completed",
-                                assembledBy: "pastry",
-                                qcChecklist: {},
-                                notes: `Assembled from ${batchRefs}`,
-                                createdAt: new Date().toISOString(),
-                                updatedAt: new Date().toISOString(),
-                              };
-                              db.savePastryAssemblyTask(task).catch(console.error);
-                              setAssemblyTasks(prev => [task, ...prev]);
-                              setAssembleQtys(prev => ({ ...prev, [dos.id]: "" }));
-                            }}
-                              disabled={left <= 0 || !(Number(assembleQtys[dos.id] ?? "1") > 0) || matchingRecipes.every(p => p.qty <= 0)}
-                              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">Assemble</button>
-                          </div>
-                        </div>
-                      );
-                    })}
+      {/* Promo/Package Detail Modal — accessible from DOS cards */}
+      {viewingPromo && (() => {
+        const p = viewingPromo;
+        const isPromo = p.type === "promo";
+        const savings = p.originalPrice > 0 && p.promoPrice > 0 ? Math.round(((p.originalPrice - p.promoPrice) / p.originalPrice) * 100) : 0;
+        const fmtDateM = (d?: string) => { if (!d) return null; const [y, m, day] = d.split("-"); return `${day}/${m}/${y}`; };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setViewingPromo(null)}>
+            <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className={`relative px-8 pt-7 pb-6 ${isPromo ? "bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-50" : "bg-gradient-to-br from-blue-50 via-blue-50/80 to-indigo-50"}`}>
+                <div className={`absolute top-0 right-0 w-32 h-32 rounded-bl-[80px] opacity-[0.06] ${isPromo ? "bg-amber-600" : "bg-blue-600"}`} />
+                <button onClick={() => setViewingPromo(null)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${isPromo ? "bg-amber-200/70 text-amber-800" : "bg-blue-200/70 text-blue-800"}`}>
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                    {p.type}
+                  </span>
+                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${p.status === "active" ? "bg-emerald-100 text-emerald-700" : p.status === "inactive" ? "bg-zinc-100 text-zinc-500" : "bg-red-100 text-red-700"}`}>{p.status}</span>
                 </div>
+                <h2 className="text-2xl font-extrabold text-zinc-900 tracking-tight">{p.name}</h2>
+                {p.description && <p className="text-sm text-zinc-500 mt-2 leading-relaxed">{p.description}</p>}
               </div>
-            );
-          })()}
+              <div className="px-8 py-6 space-y-6">
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Included Items</span>
+                  </div>
+                  <div className="rounded-2xl bg-zinc-50 border border-zinc-100 divide-y divide-zinc-100">
+                    {p.items.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${isPromo ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>{i + 1}</div>
+                          <span className="text-sm font-medium text-zinc-800">{item.productName}</span>
+                        </div>
+                        <span className={`inline-flex items-center justify-center min-w-[40px] rounded-lg px-3 py-1.5 text-sm font-bold ${isPromo ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>x{item.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-zinc-50 border border-zinc-100 p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Pricing</span>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      {p.originalPrice > 0 && <p className="text-base text-zinc-400 line-through">{"\u20B1"}{p.originalPrice.toFixed(2)}</p>}
+                      {p.promoPrice > 0 && <p className="text-3xl font-extrabold text-zinc-900 tracking-tight">{"\u20B1"}{p.promoPrice.toFixed(2)}</p>}
+                    </div>
+                    {savings > 0 && (
+                      <div className="text-right">
+                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-700">Save {savings}%</span>
+                        <p className="text-xs text-emerald-600 mt-1 font-medium">{"\u20B1"}{(p.originalPrice - p.promoPrice).toFixed(2)} off</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {(p.startDate || p.endDate) && (
+                  <div className="rounded-2xl bg-zinc-50 border border-zinc-100 p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+                      <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Validity Period</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 rounded-xl bg-white border border-zinc-200 px-4 py-3 text-center">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Start</p>
+                        <p className="text-sm font-semibold text-zinc-800">{fmtDateM(p.startDate) || "\u2014"}</p>
+                      </div>
+                      <svg className="w-5 h-5 text-zinc-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
+                      <div className="flex-1 rounded-xl bg-white border border-zinc-200 px-4 py-3 text-center">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">End</p>
+                        <p className="text-sm font-semibold text-zinc-800">{fmtDateM(p.endDate) || "\u2014"}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="px-8 pb-6">
+                <button onClick={() => setViewingPromo(null)} className="w-full rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white py-3.5 text-sm font-semibold transition-colors">Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
-          {/* Normal Product Packaging */}
-          {normalProducts.length > 0 && (
-            <div>
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400 mb-3">Package Normal Products</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {normalProducts
-                  .filter(name => !assemblySearch || name.toLowerCase().includes(assemblySearch.toLowerCase()))
-                  .map(name => {
-                    const directAvail = freezerItems.filter(i => i.productName === name && i.status === "stored" && i.qty > 0).reduce((s, i) => s + i.qty, 0);
-                    const recipeForProduct = recipes.find(r => r.productName === name);
-                    const linkedNames = recipeForProduct?.linkedIngredients ?? [];
-                    const linkedAvail = linkedNames.length > 0 ? freezerItems.filter(i => linkedNames.includes(i.productName) && i.status === "stored" && i.qty > 0).reduce((s, i) => s + i.qty, 0) : 0;
-                    const avail = directAvail > 0 ? directAvail : linkedAvail;
-                    const pkgQty = Number(assembleQtys[`pkg-${name}`] ?? "1") || 0;
-                    return (
-                      <div key={name} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm flex flex-col">
-                        <div className="flex items-start justify-between mb-3">
-                          <h3 className="text-base font-bold text-zinc-900">{name}</h3>
-                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${avail > 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{avail} avail</span>
+      {/* Baker Freezer Modal */}
+      {showBakerFreezer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowBakerFreezer(false)}>
+          <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-8 pt-7 pb-5 bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-50 border-b border-amber-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-extrabold text-zinc-900 tracking-tight">Baker Freezer</h2>
+                  <p className="text-sm text-zinc-500 mt-1">Live baked products from the Baker account</p>
+                </div>
+                <button onClick={() => setShowBakerFreezer(false)} className="w-8 h-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-200/70 px-3 py-1 text-xs font-bold text-amber-800">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  {bakedProducts.length} products
+                </span>
+                <span className="text-xs text-zinc-400">Total: {bakedProducts.reduce((s, i) => s + i.qty, 0)} pcs</span>
+                {selectedDOS && (() => {
+                  const needMap = new Map<string, number>();
+                  if (promo) {
+                    promo.items.forEach(pi => needMap.set(pi.productName, (needMap.get(pi.productName) || 0) + pi.qty * (selectedDOS.qty ?? 1)));
+                  } else {
+                    needMap.set(selectedDOS.product, selectedDOS.qty ?? 1);
+                  }
+                  const neededCount = [...needMap.keys()].filter(n => bakedProducts.some(bp => bp.productName === n)).length;
+                  return neededCount > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">{neededCount} needed highlighted</span>
+                  ) : null;
+                })()}
+              </div>
+            </div>
+            <div className="px-6 pt-4 pb-2">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+                <input value={bakerFreezerSearch} onChange={e => setBakerFreezerSearch(e.target.value)} placeholder="Search baked products..." className="w-full rounded-xl border border-zinc-200 bg-white pl-10 pr-4 py-3 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 transition-all" />
+                {bakerFreezerSearch && <button onClick={() => setBakerFreezerSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>}
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {bakedProducts.length === 0 ? (
+                <div className="px-8 py-16 text-center">
+                  <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+                  </div>
+                  <p className="text-base font-medium text-zinc-500">No baked products in freezer</p>
+                  <p className="text-sm text-zinc-400 mt-1">Wait for Baker to produce items.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-zinc-100">
+                  {(() => {
+                    const grouped = new Map<string, { items: typeof bakedProducts; totalQty: number }>();
+                    bakedProducts.forEach(item => {
+                      if (!grouped.has(item.productName)) grouped.set(item.productName, { items: [], totalQty: 0 });
+                      const g = grouped.get(item.productName)!;
+                      g.items.push(item);
+                      g.totalQty += item.qty;
+                    });
+                    return [...grouped.entries()].filter(([name]) => !bakerFreezerSearch || name.toLowerCase().includes(bakerFreezerSearch.toLowerCase())).map(([name, group]) => {
+                      const needMap = new Map<string, number>();
+                      if (selectedDOS) {
+                        if (promo) {
+                          promo.items.forEach(pi => needMap.set(pi.productName, (needMap.get(pi.productName) || 0) + pi.qty * (selectedDOS.qty ?? 1)));
+                        } else {
+                          needMap.set(selectedDOS.product, selectedDOS.qty ?? 1);
+                        }
+                      }
+                      const needed = needMap.get(name) || 0;
+                      const isNeeded = needed > 0;
+                      const hasEnough = group.totalQty >= needed;
+                      return (
+                      <div key={name} className={`px-6 py-4 transition-all ${isNeeded ? "bg-amber-50/80 border-l-4 border-l-amber-400" : "hover:bg-zinc-50/50"}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isNeeded ? "bg-amber-400" : "bg-amber-100"}`}>
+                              <svg className={`w-5 h-5 ${isNeeded ? "text-white" : "text-amber-600"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <div className={`text-sm font-bold ${isNeeded ? "text-amber-900" : "text-zinc-900"}`}>{name}</div>
+                                {isNeeded && <span className="inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">NEEDED</span>}
+                              </div>
+                              <div className="text-xs text-zinc-400 mt-0.5">{group.items.length} batch{group.items.length > 1 ? "es" : ""}</div>
+                            </div>
+                          </div>
+                          <div className="text-right flex items-center gap-4">
+                            {isNeeded && (
+                              <div className="text-right">
+                                <div className={`text-sm font-bold font-mono ${hasEnough ? "text-emerald-600" : "text-red-500"}`}>Need: {needed}</div>
+                                <div className="text-[10px] text-zinc-400">required</div>
+                              </div>
+                            )}
+                            <div>
+                              <div className={`text-xl font-extrabold font-mono ${isNeeded ? "text-amber-900" : "text-zinc-900"}`}>{group.totalQty}</div>
+                              <div className="text-[10px] text-zinc-400 uppercase tracking-wider">pcs</div>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 mt-auto">
-                          <input type="number" min={1} max={avail} value={assembleQtys[`pkg-${name}`] ?? "1"}
-                            onChange={e => setAssembleQtys(prev => ({ ...prev, [`pkg-${name}`]: e.target.value }))}
-                            className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-center outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-200" />
-                          <button onClick={() => handlePackageProduct(name, pkgQty)}
-                            disabled={avail <= 0 || pkgQty <= 0}
-                            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors">Package</button>
                         </div>
+                      );
+                    });
+                  })()}
+                  {bakerFreezerSearch && (() => {
+                    const filtered = [...new Map(bakedProducts.map(item => [item.productName, item])).values()].filter(i => i.productName.toLowerCase().includes(bakerFreezerSearch.toLowerCase()));
+                    return filtered.length === 0 && (
+                      <div className="px-6 py-10 text-center">
+                        <p className="text-sm text-zinc-500">No products matching "{bakerFreezerSearch}"</p>
                       </div>
                     );
-                  })}
-              </div>
-            </div>
-          )}
-
-          {/* Deco Production Recipes */}
-          {(() => {
-            const decoRecipeItems = freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.qty > 0);
-            const pastryDOSProducts = [...new Set(pastryDOS.map(d => d.product))];
-            const recipeMatchesDOS = new Set<string>();
-            pastryDOSProducts.forEach(dosProd => {
-              const matchedRecipes = recipes.filter(r => r.productName === dosProd || r.linkedIngredients?.includes(dosProd));
-              const allRecipeNames = matchedRecipes.map(r => r.productName);
-              const allRecipeLinked = [...new Set(matchedRecipes.flatMap(r => r.linkedIngredients ?? []))];
-              decoRecipeItems.forEach(item => {
-                if (allRecipeNames.includes(item.productName) || allRecipeLinked.includes(item.productName) || item.productName === dosProd) {
-                  recipeMatchesDOS.add(item.productName);
-                }
-              });
-            });
-            if (decoRecipeItems.length === 0) return null;
-            return (
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-400 mb-3">Recipes from Deco</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {[...new Set(decoRecipeItems.map(p => p.productName))]
-                    .filter(n => !assemblySearch || n.toLowerCase().includes(assemblySearch.toLowerCase()))
-                    .map(name => {
-                      const items = decoRecipeItems.filter(p => p.productName === name);
-                      const total = items.reduce((s, p) => s + p.qty, 0);
-                      const isRelevant = recipeMatchesDOS.has(name);
-                      return (
-                        <div key={name} className={`rounded-2xl border shadow-sm flex flex-col overflow-hidden ${isRelevant ? "border-zinc-200 bg-white" : "border-dashed border-zinc-300 bg-zinc-50/30"}`}>
-                          <div className="px-4 pt-4 pb-3 border-b border-zinc-100">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-base font-semibold text-zinc-900 leading-tight">{name}</h3>
-                                {!isRelevant && (
-                                  <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[9px] font-medium text-zinc-500">No DOS match</span>
-                                )}
-                              </div>
-                              <span className="shrink-0 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">{total} batch{total !== 1 ? "es" : ""}</span>
-                            </div>
-                          </div>
-                          <div className="px-4 py-3 bg-zinc-50/50">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Total Qty</span>
-                              <span className="text-2xl font-bold text-zinc-800">{total}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  })()}
                 </div>
-              </div>
-            );
-          })()}
-
-          {/* Assembly History */}
-          {assemblyTasks.length > 0 && (
-            <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
-                <h2 className="text-lg font-semibold">Assembly History</h2>
-                <span className="text-sm text-zinc-400">{assemblyTasks.filter(t => t.status === "completed").length} completed</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-zinc-50 border-b border-zinc-100">
-                    <tr className="text-xs uppercase tracking-wider text-zinc-500">
-                      <th className="px-6 py-3">Product</th>
-                      <th className="px-6 py-3">Type</th>
-                      <th className="px-6 py-3 text-right">Qty</th>
-                      <th className="px-6 py-3">Status</th>
-                      <th className="px-6 py-3">Date</th>
-                      <th className="px-6 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-50">
-                    {assemblyTasks.map(t => (
-                      <tr key={t.id} className="hover:bg-zinc-50/50 transition-colors">
-                        <td className="px-6 py-4 text-sm font-medium text-zinc-900">{t.productName}</td>
-                        <td className="px-6 py-4"><span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-700 uppercase">{t.promoType}</span></td>
-                        <td className="px-6 py-4 text-sm text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{t.assembledQty}/{t.targetQty}</td>
-                        <td className="px-6 py-4"><span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${t.status === "completed" ? "bg-emerald-100 text-emerald-700" : t.status === "in_progress" ? "bg-amber-100 text-amber-700" : t.status === "accepted" ? "bg-blue-100 text-blue-700" : "bg-zinc-100 text-zinc-500"}`}>{t.status}</span></td>
-                        <td className="px-6 py-4 text-xs text-zinc-500">{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}</td>
-                        <td className="px-6 py-4 text-right">
-                          <button onClick={() => { if (confirm("Delete this assembly task?")) { db.deletePastryAssemblyTask(t.id).then(() => setAssemblyTasks(prev => prev.filter(x => x.id !== t.id))).catch(alert); } }} className="text-xs text-red-500 hover:text-red-700">Delete</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              )}
             </div>
-          )}
+            <div className="px-8 py-4 border-t border-zinc-100 bg-zinc-50/50">
+              <button onClick={() => setShowBakerFreezer(false)} className="w-full rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white py-3 text-sm font-semibold transition-colors">Close</button>
+            </div>
+          </div>
         </div>
-      </div>
-    );
+      )}
+    </>);
   }
+
 
   /* ── Freezer Tab ── */
   if (activeTab === "freezer") {
     const pastryItems = freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored");
     const assembledItems = pastryItems.filter(i => i.notes?.toLowerCase().includes("assembled") || i.notes?.toLowerCase().includes("packaged"));
-    const componentItems = [...freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.qty > 0), ...freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.qty > 0)];
-    const pastryAccessInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("pastry"));
-
-    const tabItems = freezerTab === "assembled" ? assembledItems : freezerTab === "components" ? componentItems : [];
+    const componentItems = freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored" && !i.notes?.toLowerCase().includes("assembled") && !i.notes?.toLowerCase().includes("packaged"));
+    const tabItems = freezerTab === "components" ? componentItems : assembledItems;
     const filtered = tabItems.filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()));
-
-    const handleAdd = () => {
-      if (!newProduct.trim() || !newQty) return;
-      const item: FreezerItem = {
-        id: `FRZ-${Date.now()}`,
-        productName: newProduct.trim(),
-        qty: Number(newQty),
-        unit: newUnit,
-        batchRef: newBatch.trim(),
-        producedBy: "pastry",
-        dateProduced: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0],
-        status: "stored",
-        notes: newNotes.trim(),
-      };
-      onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, item]);
-      db.upsertFreezerItems([item]).catch(console.error);
-      setShowAddFreezer(false);
-      setNewProduct(""); setNewQty(""); setNewBatch(""); setNewNotes("");
-    };
 
     return (
       <div className="min-h-screen bg-zinc-50/50">
@@ -1509,11 +1531,20 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
     const dateOutOfRange = promosPackages.filter(p => p.status === "active" && !isDateValid(p));
     const inactivePromos = promosPackages.filter(p => p.status !== "active");
 
+    const matchesSearch = (p: PromoPackage) => {
+      if (!promoSearch.trim()) return true;
+      const q = promoSearch.toLowerCase();
+      return p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.items.some(i => i.productName.toLowerCase().includes(q));
+    };
+    const filteredActive = activePromos.filter(matchesSearch);
+    const filteredOutOfRange = dateOutOfRange.filter(matchesSearch);
+    const filteredInactive = inactivePromos.filter(matchesSearch);
+
     const renderPromoCard = (promo: PromoPackage, displayStatus: string, opacityClass: string = "") => {
       const isPromo = promo.type === "promo";
       const savings = promo.originalPrice > 0 && promo.promoPrice > 0 ? Math.round(((promo.originalPrice - promo.promoPrice) / promo.originalPrice) * 100) : 0;
       return (
-        <div key={promo.id} className={`group rounded-2xl bg-white shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden border ${isPromo ? "border-amber-100" : "border-blue-100"} ${opacityClass}`}>
+        <div key={promo.id} onClick={() => setViewingPromo(promo)} className={`group rounded-2xl bg-white shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden border ${isPromo ? "border-amber-100" : "border-blue-100"} ${opacityClass} cursor-pointer`}>
           <div className={`relative px-6 pt-5 pb-4 ${isPromo ? "bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-50" : "bg-gradient-to-br from-blue-50 via-blue-50/80 to-indigo-50"}`}>
             <div className={`absolute top-0 right-0 w-24 h-24 rounded-bl-[60px] opacity-[0.07] ${isPromo ? "bg-amber-600" : "bg-blue-600"}`} />
             <div className="flex items-start justify-between mb-3">
@@ -1565,11 +1596,18 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
     };
 
     return (
+      <>
       <div className="min-h-screen bg-zinc-50/50">
         <div className="max-w-5xl mx-auto space-y-8 p-6">
           <div>
             <h1 className="text-3xl font-bold text-zinc-900 tracking-tight">Promos &amp; Packages</h1>
             <p className="mt-1.5 text-base text-zinc-500">View active promos and package deals for assembly.</p>
+          </div>
+
+          <div className="relative">
+            <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+            <input value={promoSearch} onChange={e => setPromoSearch(e.target.value)} placeholder="Search promos, packages, or items..." className="w-full rounded-2xl border border-zinc-200 bg-white pl-11 pr-4 py-3 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-100 transition-all" />
+            {promoSearch && <button onClick={() => setPromoSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>}
           </div>
 
           {promosPackages.length === 0 ? (
@@ -1582,20 +1620,20 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
             </div>
           ) : (
             <div className="space-y-10">
-              {activePromos.length > 0 && (
+              {filteredActive.length > 0 && (
                 <div>
                   <h2 className="text-lg font-semibold text-zinc-800 mb-5">Currently Active</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {activePromos.map(promo => renderPromoCard(promo, "active"))}
+                    {filteredActive.map(promo => renderPromoCard(promo, "active"))}
                   </div>
                 </div>
               )}
 
-              {dateOutOfRange.length > 0 && (
+              {filteredOutOfRange.length > 0 && (
                 <div>
                   <h2 className="text-lg font-semibold text-amber-700 mb-5">Upcoming / Expired Dates</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {dateOutOfRange.map(promo => {
+                    {filteredOutOfRange.map(promo => {
                       const isUpcoming = promo.startDate && today < promo.startDate;
                       return renderPromoCard(promo, isUpcoming ? "not started" : "expired", "opacity-75");
                     })}
@@ -1603,18 +1641,123 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
                 </div>
               )}
 
-              {inactivePromos.length > 0 && (
+              {filteredInactive.length > 0 && (
                 <div>
                   <h2 className="text-lg font-semibold text-zinc-800 mb-5">Inactive</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {inactivePromos.map(promo => renderPromoCard(promo, promo.status, "opacity-50"))}
+                    {filteredInactive.map(promo => renderPromoCard(promo, promo.status, "opacity-50"))}
                   </div>
+                </div>
+              )}
+
+              {promoSearch && filteredActive.length === 0 && filteredOutOfRange.length === 0 && filteredInactive.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-zinc-200 bg-white p-12 text-center">
+                  <p className="text-base font-medium text-zinc-500">No results for "{promoSearch}"</p>
+                  <p className="text-sm text-zinc-400 mt-1">Try a different search term.</p>
                 </div>
               )}
             </div>
           )}
         </div>
       </div>
+
+      {/* Promo/Package Detail Modal */}
+      {viewingPromo && (() => {
+        const p = viewingPromo;
+        const isPromo = p.type === "promo";
+        const savings = p.originalPrice > 0 && p.promoPrice > 0 ? Math.round(((p.originalPrice - p.promoPrice) / p.originalPrice) * 100) : 0;
+        const fmtDate = (d?: string) => { if (!d) return null; const [y, m, day] = d.split("-"); return `${day}/${m}/${y}`; };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setViewingPromo(null)}>
+            <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className={`relative px-8 pt-7 pb-6 ${isPromo ? "bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-50" : "bg-gradient-to-br from-blue-50 via-blue-50/80 to-indigo-50"}`}>
+                <div className={`absolute top-0 right-0 w-32 h-32 rounded-bl-[80px] opacity-[0.06] ${isPromo ? "bg-amber-600" : "bg-blue-600"}`} />
+                <button onClick={() => setViewingPromo(null)} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${isPromo ? "bg-amber-200/70 text-amber-800" : "bg-blue-200/70 text-blue-800"}`}>
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                    {p.type}
+                  </span>
+                  <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${p.status === "active" ? "bg-emerald-100 text-emerald-700" : p.status === "inactive" ? "bg-zinc-100 text-zinc-500" : "bg-red-100 text-red-700"}`}>{p.status}</span>
+                </div>
+                <h2 className="text-2xl font-extrabold text-zinc-900 tracking-tight">{p.name}</h2>
+                {p.description && <p className="text-sm text-zinc-500 mt-2 leading-relaxed">{p.description}</p>}
+              </div>
+
+              <div className="px-8 py-6 space-y-6">
+                {/* Items included */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Included Items</span>
+                  </div>
+                  <div className="rounded-2xl bg-zinc-50 border border-zinc-100 divide-y divide-zinc-100">
+                    {p.items.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${isPromo ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>{i + 1}</div>
+                          <span className="text-sm font-medium text-zinc-800">{item.productName}</span>
+                        </div>
+                        <span className={`inline-flex items-center justify-center min-w-[40px] rounded-lg px-3 py-1.5 text-sm font-bold ${isPromo ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>x{item.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pricing */}
+                <div className="rounded-2xl bg-zinc-50 border border-zinc-100 p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Pricing</span>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      {p.originalPrice > 0 && <p className="text-base text-zinc-400 line-through">{"\u20B1"}{p.originalPrice.toFixed(2)}</p>}
+                      {p.promoPrice > 0 && <p className="text-3xl font-extrabold text-zinc-900 tracking-tight">{"\u20B1"}{p.promoPrice.toFixed(2)}</p>}
+                    </div>
+                    {savings > 0 && (
+                      <div className="text-right">
+                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-700">Save {savings}%</span>
+                        <p className="text-xs text-emerald-600 mt-1 font-medium">{"\u20B1"}{(p.originalPrice - p.promoPrice).toFixed(2)} off</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Date validity */}
+                {(p.startDate || p.endDate) && (
+                  <div className="rounded-2xl bg-zinc-50 border border-zinc-100 p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                      <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+                      <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Validity Period</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 rounded-xl bg-white border border-zinc-200 px-4 py-3 text-center">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">Start</p>
+                        <p className="text-sm font-semibold text-zinc-800">{fmtDate(p.startDate) || "\u2014"}</p>
+                      </div>
+                      <svg className="w-5 h-5 text-zinc-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" /></svg>
+                      <div className="flex-1 rounded-xl bg-white border border-zinc-200 px-4 py-3 text-center">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1">End</p>
+                        <p className="text-sm font-semibold text-zinc-800">{fmtDate(p.endDate) || "\u2014"}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-8 pb-6">
+                <button onClick={() => setViewingPromo(null)} className="w-full rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white py-3.5 text-sm font-semibold transition-colors">Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      </>
     );
   }
 

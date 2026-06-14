@@ -30,6 +30,44 @@ type DecoTask = {
   createdAt?: string;
 };
 
+function SearchableDropdown({ items, onChange, placeholder, accentColor }: {
+  items: { id: string; label: string; sublabel: string }[];
+  onChange: (id: string) => void;
+  placeholder: string;
+  accentColor: "blue" | "purple" | "amber";
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [pos, setPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
+  const updatePos = () => { if (inputRef.current) { const r = inputRef.current.getBoundingClientRect(); setPos({ top: r.bottom + 4, left: r.left, width: r.width }); } };
+  useEffect(() => { if (open) updatePos(); }, [open]);
+  const filtered = items.filter(i => !search || i.label.toLowerCase().includes(search.toLowerCase()));
+  const colorMap = {
+    blue: { border: "border-blue-200", text: "text-blue-500", hover: "hover:bg-blue-50", ring: "focus:border-blue-400 focus:ring-2 focus:ring-blue-100" },
+    purple: { border: "border-purple-200", text: "text-purple-500", hover: "hover:bg-purple-50", ring: "focus:border-purple-400 focus:ring-2 focus:ring-purple-100" },
+    amber: { border: "border-amber-200", text: "text-amber-500", hover: "hover:bg-amber-50", ring: "focus:border-amber-400 focus:ring-2 focus:ring-amber-100" },
+  };
+  const colors = colorMap[accentColor];
+  return (
+    <div className="relative" onClick={e => e.stopPropagation()}>
+      <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+      <input ref={inputRef} type="text" value={search} onChange={e => { setSearch(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder={placeholder} className={`w-full rounded-xl border ${colors.border} bg-white pl-9 pr-3 py-3 text-[14px] outline-none ${colors.ring}`} />
+      {search && <button onClick={() => { setSearch(""); setOpen(false); }} className={`absolute right-3 top-1/2 -translate-y-1/2 ${colors.text} hover:opacity-70 text-[14px]`}>✕</button>}
+      {open && filtered.length > 0 && (
+        <div className="fixed z-[100] rounded-xl border border-zinc-200 bg-white shadow-2xl max-h-56 overflow-y-auto" style={{ top: pos.top, left: pos.left, width: pos.width }}>
+          {filtered.map(i => (
+            <button key={i.id} onClick={() => { onChange(i.id); setSearch(""); setOpen(false); }} className={`w-full text-left px-4 py-2.5 ${colors.hover} transition-colors flex items-center justify-between`}>
+              <span className="text-[13px] font-semibold text-zinc-800">{i.label}</span>
+              <span className={`text-[11px] ${colors.text}`}>{i.sublabel}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DOSRecipeDetailModal({ recipe, totalQty, onClose }: {
   recipe: ProductRecipe; totalQty: number; onClose: () => void;
 }) {
@@ -328,7 +366,12 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [selectedBaseCakes, setSelectedBaseCakes] = useState<{ inventoryId: string; name: string; qty: number; unit: string; source: string }[]>([]);
   const [extraPackaging, setExtraPackaging] = useState<{ name: string; qty: number; unit: string; inventoryId: string }[]>([]);
   const [extraDecoration, setExtraDecoration] = useState<{ name: string; qty: number; unit: string; inventoryId: string }[]>([]);
+  const [extraIngredients, setExtraIngredients] = useState<{ name: string; qty: number | string; unit: string; inventoryId: string }[]>([]);
   const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
+
+  const toggleProduct = (dosId: string, _linkedRecipes: any[]) => {
+    setSelectedProducts(prev => { const next = new Set(prev); if (next.has(dosId)) next.delete(dosId); else next.add(dosId); return next; });
+  };
   const [prepSearch, setPrepSearch] = useState("");
   const [prepSlide, setPrepSlide] = useState(0);
   const [showAllHistory, setShowAllHistory] = useState(false);
@@ -491,43 +534,6 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
           sourceBatchRef: task.sourceBatchRef, sourceProducedBy: task.sourceProducedBy ?? undefined, createdAt: task.createdAt,
           sourceSnapshot: task.sourceSnapshot,
         }).catch(console.error);
-
-        // On Start Decorating (pending → in-progress), deduct packaging + decoration supplies
-        if (status === "in-progress" && prevTask?.status === "pending") {
-          const productRecipes = getRecipesForProduct(task.product);
-          if (productRecipes.length > 0) {
-            const qtyMultiplier = task.sourceQty && task.sourceQty > 0 ? task.sourceQty : 1;
-            const newInv = [...inventory];
-            const deductions: string[] = [];
-            const skipped: string[] = [];
-            productRecipes.forEach(recipe => {
-              const consume = (name: string, inventoryId: string, perBatch: number, unit: string, kind: string) => {
-                if (!inventoryId) {
-                  const matchByName = newInv.find(i => i.name.toLowerCase() === name.toLowerCase());
-                  if (matchByName) inventoryId = matchByName.id;
-                }
-                if (!inventoryId) { skipped.push(`${name} (no inventory link)`); return; }
-                const idx = newInv.findIndex(i => i.id === inventoryId);
-                if (idx < 0) { skipped.push(`${name} (not in inventory)`); return; }
-                const needed = perBatch * qtyMultiplier;
-                const before = newInv[idx].onHand;
-                newInv[idx] = { ...newInv[idx], onHand: Math.max(0, before - needed) };
-                const actualDeducted = before - newInv[idx].onHand;
-                deductions.push(`${kind}: ${name} -${actualDeducted}${unit}`);
-              };
-              (recipe.packagingMaterials ?? []).forEach(p => consume(p.name, p.inventoryId, p.qtyPerBatch, p.unit, "Pack"));
-              (recipe.decorationSupplies ?? []).forEach(s => consume(s.name, s.inventoryId, s.qtyPerBatch, s.unit, "Deco"));
-            });
-            if (deductions.length > 0) {
-              defer(() => onUpdateInventory(newInv));
-              db.upsertInventory(newInv).catch(console.error);
-              defer(() => onAddAuditLog?.("DECO_TASK_STARTED", `${task.product} ×${qtyMultiplier} (${task.theme}): ${deductions.join(", ")}`));
-            }
-            if (skipped.length > 0) {
-              defer(() => onAddAuditLog?.("DECO_DEDUCTION_SKIPPED", `${task.product}: ${skipped.join(", ")}`));
-            }
-          }
-        }
 
         // On Put it on Display Cake (in-progress → completed), add to Freezer Display Cakes
         if (status === "completed" && prevTask?.status === "in-progress") {
@@ -2471,9 +2477,28 @@ return (
           }
         });
 
+        // Deduct extra ingredients
+        extraIngredients.forEach(ei => {
+          const inv = inventory.find(i => i.id === ei.inventoryId);
+          if (!inv) return;
+          const rem = inv.onHand - (Number(ei.qty) || 1);
+          if (rem <= 0) {
+            onUpdateInventory(prev => prev.filter(i => i.id !== inv.id));
+            db.deleteInventoryItem(inv.id, inv.group).catch(console.error);
+          } else {
+            const updated = { ...inv, onHand: rem };
+            onUpdateInventory(prev => prev.map(i => i.id === updated.id ? updated : i));
+            db.upsertInventoryItem(updated).catch(console.error);
+          }
+        });
+
         const summary = selectedBaseCakes.map(bc => `${bc.name} ×${bc.qty}`).join(", ");
         onAddAuditLog?.("DECO_TASK_CREATED", `Added to Decoration Queue: ${summary}`);
+        showToast(`${selectedBaseCakes.length} base cake${selectedBaseCakes.length > 1 ? 's' : ''} added to queue`, "success");
         setSelectedBaseCakes([]);
+        setExtraPackaging([]);
+        setExtraDecoration([]);
+        setExtraIngredients([]);
         setDesignModal(null);
         return;
       }
@@ -2502,7 +2527,11 @@ return (
       };
       setDecoQueue(prev => [newTask, ...prev]);
       setSelectedDesignId(designModal.inventoryId);
+      setExtraPackaging([]);
+      setExtraDecoration([]);
+      setExtraIngredients([]);
       setDesignModal(null);
+      showToast(`${designModal.product} ×${designQty} added to queue`, "success");
       db.upsertDecorationQueueTask({
         id: newTask.id, product: newTask.product, orderRef: newTask.orderRef,
         theme: newTask.theme, status: newTask.status, notes: newTask.notes,
@@ -2529,6 +2558,21 @@ return (
           console.error("Inventory update failed:", err);
         });
       }
+
+      // Deduct extra ingredients
+      extraIngredients.forEach(ei => {
+        const inv = inventory.find(i => i.id === ei.inventoryId);
+        if (!inv) return;
+        const rem = inv.onHand - (Number(ei.qty) || 1);
+        if (rem <= 0) {
+          onUpdateInventory(prev => prev.filter(i => i.id !== inv.id));
+          db.deleteInventoryItem(inv.id, inv.group).catch(console.error);
+        } else {
+          const updated = { ...inv, onHand: rem };
+          onUpdateInventory(prev => prev.map(i => i.id === updated.id ? updated : i));
+          db.upsertInventoryItem(updated).catch(console.error);
+        }
+      });
     };
 
     return (
@@ -2627,11 +2671,11 @@ return (
                                       <span className="text-[14px] font-semibold text-zinc-800">{dos.themeOccasion}</span>
                                     </div>
                                   )}
-                                  <div className="flex items-center gap-2.5">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
-                                    <span className="text-[13px] text-zinc-500">Layers:</span>
-                                    <span className="text-[14px] font-semibold text-zinc-800">{dos.layers ? `${dos.layers} Layer${dos.layers !== "1" ? "s" : ""}` : "—"}</span>
-                                  </div>
+                                   <div className="flex items-center gap-2.5">
+                                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
+                                      <span className="text-[13px] text-zinc-500">Layers:</span>
+                                      <span className="text-[14px] font-semibold text-zinc-800">{dos.layers || "—"}</span>
+                                    </div>
                                   {dos.colorScheme && (
                                     <div className="flex items-center gap-2.5">
                                       <span className="w-2.5 h-2.5 rounded-full bg-pink-400 shrink-0"></span>
@@ -2676,9 +2720,10 @@ return (
                           <button
                             onClick={() => openDesignFromDOS(dos)}
                             disabled={alreadyDesigned}
-                            className={`shrink-0 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition-all ${alreadyDesigned ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed' : 'bg-violet-600 text-white hover:bg-violet-700 shadow-md shadow-violet-200'}`}
+                            className={`shrink-0 flex flex-col items-center gap-1.5 rounded-2xl px-8 py-5 text-[14px] font-bold transition-all shadow-lg hover:shadow-xl ${alreadyDesigned ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed shadow-none' : 'bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white hover:from-violet-700 hover:to-fuchsia-700'}`}
                           >
-                            {alreadyDesigned ? "In Queue" : "Start Design →"}
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            {alreadyDesigned ? "In Queue" : "Start Design"}
                           </button>
                         </div>
                       </div>
@@ -3023,22 +3068,7 @@ return (
                             <p className="text-[13px] text-blue-400">No packaging materials linked yet</p>
                             <p className="text-[11px] text-zinc-400 mt-1">Select from dropdown below to add</p>
                           </div>
-                          <select
-                            onChange={e => {
-                              const inv = inventory.find(i => i.id === e.target.value);
-                              if (inv && !extraPackaging.some(p => p.inventoryId === inv.id)) {
-                                setExtraPackaging(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]);
-                              }
-                              e.target.value = "";
-                            }}
-                            defaultValue=""
-                            className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-[14px] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                          >
-                            <option value="">+ Add packaging item...</option>
-                            {inventory.filter(i => i.group === "packaging-materials" && i.onHand > 0 && !extraPackaging.some(p => p.inventoryId === i.id)).map(i => (
-                              <option key={i.id} value={i.id}>{i.name} ({i.onHand} {i.unit} available)</option>
-                            ))}
-                          </select>
+                          <SearchableDropdown items={inventory.filter(i => i.group === "packaging-materials" && i.onHand > 0 && !extraPackaging.some(p => p.inventoryId === i.id)).map(i => ({ id: i.id, label: i.name, sublabel: `${i.onHand} ${i.unit} available` }))} onChange={id => { const inv = inventory.find(i => i.id === id); if (inv) setExtraPackaging(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]); }} placeholder="Search packaging items..." accentColor="blue" />
                         </>
                       ) : (
                         <>
@@ -3075,22 +3105,7 @@ return (
                               </div>
                             ))}
                           </div>
-                          <select
-                            onChange={e => {
-                              const inv = inventory.find(i => i.id === e.target.value);
-                              if (inv && !extraPackaging.some(p => p.inventoryId === inv.id)) {
-                                setExtraPackaging(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]);
-                              }
-                              e.target.value = "";
-                            }}
-                            defaultValue=""
-                            className="w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-[14px] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                          >
-                            <option value="">+ Add more packaging...</option>
-                            {inventory.filter(i => i.group === "packaging-materials" && i.onHand > 0 && !extraPackaging.some(p => p.inventoryId === i.id)).map(i => (
-                              <option key={i.id} value={i.id}>{i.name} ({i.onHand} {i.unit} available)</option>
-                            ))}
-                          </select>
+                          <SearchableDropdown items={inventory.filter(i => i.group === "packaging-materials" && i.onHand > 0 && !extraPackaging.some(p => p.inventoryId === i.id)).map(i => ({ id: i.id, label: i.name, sublabel: `${i.onHand} ${i.unit} available` }))} onChange={id => { const inv = inventory.find(i => i.id === id); if (inv) setExtraPackaging(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]); }} placeholder="Search packaging items..." accentColor="blue" />
                         </>
                       )}
                     </div>
@@ -3114,22 +3129,7 @@ return (
                             <p className="text-[13px] text-purple-400">No decoration supplies linked yet</p>
                             <p className="text-[11px] text-zinc-400 mt-1">Select from dropdown below to add</p>
                           </div>
-                          <select
-                            onChange={e => {
-                              const inv = inventory.find(i => i.id === e.target.value);
-                              if (inv && !extraDecoration.some(d => d.inventoryId === inv.id)) {
-                                setExtraDecoration(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]);
-                              }
-                              e.target.value = "";
-                            }}
-                            defaultValue=""
-                            className="w-full rounded-xl border border-purple-200 bg-white px-4 py-3 text-[14px] outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                          >
-                            <option value="">+ Add decoration item...</option>
-                            {inventory.filter(i => i.group === "decoration-supplies" && i.onHand > 0 && !extraDecoration.some(d => d.inventoryId === i.id)).map(i => (
-                              <option key={i.id} value={i.id}>{i.name} ({i.onHand} {i.unit} available)</option>
-                            ))}
-                          </select>
+                          <SearchableDropdown items={inventory.filter(i => i.group === "decoration-supplies" && i.onHand > 0 && !extraDecoration.some(d => d.inventoryId === i.id)).map(i => ({ id: i.id, label: i.name, sublabel: `${i.onHand} ${i.unit} available` }))} onChange={id => { const inv = inventory.find(i => i.id === id); if (inv) setExtraDecoration(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]); }} placeholder="Search decoration supplies..." accentColor="purple" />
                         </>
                       ) : (
                         <>
@@ -3166,26 +3166,58 @@ return (
                               </div>
                             ))}
                           </div>
-                          <select
-                            onChange={e => {
-                              const inv = inventory.find(i => i.id === e.target.value);
-                              if (inv && !extraDecoration.some(d => d.inventoryId === inv.id)) {
-                                setExtraDecoration(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]);
-                              }
-                              e.target.value = "";
-                            }}
-                            defaultValue=""
-                            className="w-full rounded-xl border border-purple-200 bg-white px-4 py-3 text-[14px] outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                          >
-                            <option value="">+ Add more decoration...</option>
-                            {inventory.filter(i => i.group === "decoration-supplies" && i.onHand > 0 && !extraDecoration.some(d => d.inventoryId === i.id)).map(i => (
-                              <option key={i.id} value={i.id}>{i.name} ({i.onHand} {i.unit} available)</option>
-                            ))}
-                          </select>
+                          <SearchableDropdown items={inventory.filter(i => i.group === "decoration-supplies" && i.onHand > 0 && !extraDecoration.some(d => d.inventoryId === i.id)).map(i => ({ id: i.id, label: i.name, sublabel: `${i.onHand} ${i.unit} available` }))} onChange={id => { const inv = inventory.find(i => i.id === id); if (inv) setExtraDecoration(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]); }} placeholder="Search decoration supplies..." accentColor="purple" />
                         </>
                       )}
                     </div>
                   </div>
+
+                  {/* Extra Ingredients */}
+                  <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 overflow-hidden">
+                    <div className="px-6 py-4 bg-amber-100/60 border-b border-amber-200/60">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-[20px]">🥚</div>
+                        <div>
+                          <h3 className="text-[15px] font-bold text-amber-900">Extra Ingredients</h3>
+                          <p className="text-[12px] text-amber-600">Add ingredients from My Inventory if needed</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-5 space-y-3">
+                      {extraIngredients.length === 0 ? (
+                        <>
+                          <div className="rounded-xl border border-dashed border-amber-300 bg-white/60 px-4 py-4 text-center">
+                            <p className="text-[13px] text-amber-400">No extra ingredients added</p>
+                            <p className="text-[11px] text-zinc-400 mt-1">Select from below to add</p>
+                          </div>
+                          <SearchableDropdown items={inventory.filter(i => i.group === "ingredients" && i.onHand > 0 && !extraIngredients.some(e => e.inventoryId === i.id)).map(i => ({ id: i.id, label: i.name, sublabel: `${i.onHand} ${i.unit} available` }))} onChange={id => { const inv = inventory.find(i => i.id === id); if (inv) setExtraIngredients(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]); }} placeholder="Search ingredients..." accentColor="amber" />
+                        </>
+                      ) : (
+                        <>
+                          <div className="rounded-xl border border-amber-200 bg-white/80 divide-y divide-amber-100/60 overflow-hidden">
+                            {extraIngredients.map((item, i) => (
+                              <div key={`ing-${i}`} className="flex items-center justify-between px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center text-[14px]">🥚</div>
+                                  <div>
+                                    <div className="text-[14px] font-semibold text-zinc-800">{item.name}</div>
+                                    <div className="text-[11px] text-amber-500">manually added</div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <input type="number" min="1" value={item.qty} onFocus={e => e.target.select()} onChange={e => { const v = e.target.value; setExtraIngredients(prev => prev.map((it, idx) => idx === i ? { ...it, qty: v === "" ? "" : Math.max(1, Number(v) || 1) } : it)); }} onBlur={e => { if (e.target.value === "" || Number(e.target.value) < 1) setExtraIngredients(prev => prev.map((it, idx) => idx === i ? { ...it, qty: 1 } : it)); }} className="w-16 text-center rounded-lg border border-amber-200 px-2 py-1.5 text-[13px] font-mono outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100" />
+                                  <span className="text-[12px] text-zinc-500">{item.unit}</span>
+                                  <button onClick={() => setExtraIngredients(prev => prev.filter((_, idx) => idx !== i))} className="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-500 hover:text-red-700 transition-colors text-[12px]">✕</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <SearchableDropdown items={inventory.filter(i => i.group === "ingredients" && i.onHand > 0 && !extraIngredients.some(e => e.inventoryId === i.id)).map(i => ({ id: i.id, label: i.name, sublabel: `${i.onHand} ${i.unit} available` }))} onChange={id => { const inv = inventory.find(i => i.id === id); if (inv) setExtraIngredients(prev => [...prev, { name: inv.name, qty: 1, unit: inv.unit, inventoryId: inv.id }]); }} placeholder="Search ingredients..." accentColor="amber" />
+                        </>
+                      )}
+                    </div>
+                  </div>
+
                 </div>
 
                 {/* Footer */}
@@ -3203,11 +3235,6 @@ return (
         {/* Workflow Nav */}
         <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
           <div className="text-[12px] text-zinc-400">Step {currentStepIdx + 1} of {workflowSteps.length}</div>
-          {nextStep && (
-            <button onClick={() => setActiveTab(nextStep.id)} className="rounded-2xl bg-zinc-900 px-8 py-3.5 text-[15px] font-semibold text-white hover:bg-zinc-800 transition-all shadow-lg hover:shadow-xl">
-              Next: {nextStep.label} →
-            </button>
-          )}
         </div>
       </div>
     );

@@ -346,6 +346,7 @@ export async function upsertDecorationQueueTask(task: DecoQueueRow) {
     source_batch_ref: task.sourceBatchRef ?? null,
     source_produced_by: task.sourceProducedBy ?? null,
     source_snapshot: task.sourceSnapshot ?? null,
+    created_at: task.createdAt ?? null,
   };
   const { error } = await supabase.from("decoration_queue").upsert(row, { onConflict: "id" });
   if (error) throw error;
@@ -1220,6 +1221,11 @@ export async function upsertPromoPackage(item: PromoPackage) {
 export async function deletePromoPackage(id: string) {
   const { error } = await supabase.from("promos_packages").delete().eq("id", id);
   if (error) throw error;
+}
+
+export function subscribePromosPackages(onChange: () => void) {
+  const channel = supabase.channel("promos-realtime").on("postgres_changes", { event: "*", schema: "public", table: "promos_packages" }, () => { onChange(); }).subscribe();
+  return () => { supabase.removeChannel(channel); };
 }
 
 // ─── Production Plans ───

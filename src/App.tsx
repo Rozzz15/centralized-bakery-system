@@ -66,7 +66,6 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   ],
   pastry: [
     { id: "dashboard", label: "My Tasks", icon: "◼" },
-    { id: "assembly", label: "Assembly", icon: "●" },
     { id: "freezer", label: "Freezer", icon: "◇" },
     { id: "promos", label: "Promos", icon: "★" },
   ],
@@ -519,6 +518,14 @@ export default function App() {
     });
   }, [loggedIn]);
 
+  // Real-time promos/packages from Supabase
+  useEffect(() => {
+    if (!loggedIn) return;
+    return db.subscribePromosPackages(() => {
+      db.fetchPromosPackages().then(setPromosPackages).catch(console.error);
+    });
+  }, [loggedIn]);
+
   // Real-time production simulation
   useEffect(() => {
     if (!loggedIn) return;
@@ -603,7 +610,7 @@ export default function App() {
     if (!loggedIn) return;
     const sync = setInterval(async () => {
       try {
-        const [dos, prod, decoPrep, inv, freezer, fHistory] = await Promise.all([db.fetchDOS(), db.fetchProduction(), db.fetchDecoProductionPrep(), db.fetchAllInventory(), db.fetchFreezerItems(), db.fetchFreezerHistory()]);
+        const [dos, prod, decoPrep, inv, freezer, fHistory, promos] = await Promise.all([db.fetchDOS(), db.fetchProduction(), db.fetchDecoProductionPrep(), db.fetchAllInventory(), db.fetchFreezerItems(), db.fetchFreezerHistory(), db.fetchPromosPackages()]);
         if (inv.length > 0) setInventory(inv);
         if (dos.length > 0) {
           if (!syncReady.current) {
@@ -631,6 +638,7 @@ export default function App() {
         if (freezer.length > 0) setFreezerItems(freezer);
         else setFreezerItems(freezer);
         if (fHistory.length > 0) setFreezerHistory(fHistory);
+        setPromosPackages(promos);
       } catch {}
     }, 5000);
     return () => clearInterval(sync);
@@ -803,7 +811,8 @@ export default function App() {
         setProduction(prev => [...prev, ...newTasks]);
       }
     }
-    setDosItems(prev => prev.map(d => d.id === item.id ? item : d));
+    // Re-fetch all DOS items from the database for bulletproof sync
+    try { const refreshed = await db.fetchDOS(); setDosItems(refreshed); } catch { setDosItems(prev => prev.map(d => d.id === item.id ? item : d)); }
     logAudit("DOS_EDITED", `${item.product} — ${item.id} — Roles: ${item.roles?.join(', ') || 'None'}`);
   };
 
@@ -1080,7 +1089,7 @@ export default function App() {
                 onSubmitSales={handleSalesSubmit}
               />
             )}
-            {role === "pastry" && ["dashboard", "assembly", "freezer", "promos"].includes(activeTab) && (
+            {role === "pastry" && ["dashboard", "freezer", "promos"].includes(activeTab) && (
               <PastryDashboard dosItems={dosItems} activeTab={activeTab} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} promosPackages={promosPackages} recipes={recipes} productCatalog={productCatalog} />
             )}
           </div>

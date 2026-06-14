@@ -313,39 +313,39 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     return (
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <h1 className="text-[24px] font-semibold">Products</h1>
+          <h1 className="text-[26px] font-bold text-zinc-900">Products</h1>
           <div className="flex items-center gap-2">
-            {activeProductSubTab === "Products" && <button onClick={async () => { setNewCategoryName(""); setEditingCategory(null); setRenamingCategory(""); const cats = await db.fetchCategories().catch(() => []); setCategories(cats); const map = await db.fetchProductCategories().catch(() => ({})); setProductCategoryMap(map); setShowCategoryManager(true); }} className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 shadow-sm">Manage Category</button>}
+            {activeProductSubTab === "Products" && <button onClick={async () => { setNewCategoryName(""); setEditingCategory(null); setRenamingCategory(""); const cats = await db.fetchCategories().catch(() => []); setCategories(cats); const map = await db.fetchProductCategories().catch(() => ({})); setProductCategoryMap(map); setShowCategoryManager(true); }} className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-700 hover:bg-zinc-50 shadow-sm">Manage Category</button>}
             {activeProductSubTab === "Recipes" ? (
-              <button onClick={() => { setRecipeProduct(""); setShowRecipe(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Recipe</button>
+              <button onClick={() => { setRecipeProduct(""); setShowRecipe(true); }} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white shadow-sm hover:bg-zinc-800">+ Add Recipe</button>
             ) : activeProductSubTab === "Promo/Package" ? (
-              <button onClick={() => { setEditingPromo(null); setShowPromoModal(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Promo/Package</button>
+              <button onClick={() => { setEditingPromo(null); setShowPromoModal(true); }} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white shadow-sm hover:bg-zinc-800">+ Add Promo/Package</button>
             ) : (
-              <button onClick={() => setShowAddProduct(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ Add Product</button>
+              <button onClick={() => setShowAddProduct(true)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white shadow-sm hover:bg-zinc-800">+ Add Product</button>
             )}
           </div>
         </div>
 
         <div className="flex items-center gap-2 border-b border-zinc-200 pb-1">
           {["Products", "Recipes", "Promo/Package"].map(tab => (
-            <button key={tab} onClick={() => setActiveProductSubTab(tab)} className={`px-3 py-1.5 text-[13px] font-medium transition-colors ${activeProductSubTab === tab ? "text-zinc-900 border-b-2 border-zinc-900" : "text-zinc-500 hover:text-zinc-900"}`}>{tab}</button>
+            <button key={tab} onClick={() => setActiveProductSubTab(tab)} className={`px-4 py-2 text-[14px] font-semibold transition-colors ${activeProductSubTab === tab ? "text-zinc-900 border-b-2 border-zinc-900" : "text-zinc-500 hover:text-zinc-900"}`}>{tab}</button>
           ))}
         </div>
 
         <div className="flex items-center gap-3">
           <div className="relative max-w-xs flex-1">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
-            <input type="text" value={activeProductSubTab === "Recipes" ? recipeSearch : invSearch} onChange={e => activeProductSubTab === "Recipes" ? setRecipeSearch(e.target.value) : setInvSearch(e.target.value)} placeholder={`Search ${activeProductSubTab.toLowerCase()}...`} className="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-3 text-[13px] outline-none focus:border-zinc-400" />
+            <input type="text" value={activeProductSubTab === "Recipes" ? recipeSearch : invSearch} onChange={e => activeProductSubTab === "Recipes" ? setRecipeSearch(e.target.value) : setInvSearch(e.target.value)} placeholder={`Search ${activeProductSubTab.toLowerCase()}...`} className="w-full rounded-xl border border-zinc-200 bg-white py-2.5 pl-9 pr-3 text-[14px] outline-none focus:border-zinc-400" />
           </div>
           {activeProductSubTab === "Products" && (
             <>
-              <select value={productCategoryFilter} onChange={e => setProductCategoryFilter(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400">
+              <select value={productCategoryFilter} onChange={e => setProductCategoryFilter(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400">
                 <option value="all">All Categories</option>
                 {categories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
-              <select value={productSort} onChange={e => setProductSort(e.target.value as typeof productSort)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[12px] focus:outline-none focus:border-zinc-400">
+              <select value={productSort} onChange={e => setProductSort(e.target.value as typeof productSort)} className="rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400">
                 <option value="a-z">A-Z</option>
                 <option value="z-a">Z-A</option>
                 <option value="category">Category</option>
@@ -358,10 +358,10 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                <tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Linked Recipe</th><th className="px-4 py-3">Categories</th><th className="px-4 py-3">Route</th><th className="px-4 py-3">Pack</th><th className="px-4 py-3">Deco</th><th className="px-4 py-3 w-36" /></tr>
+              <thead className="bg-zinc-50 text-left text-[12px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                <tr><th className="px-5 py-3.5">Product</th><th className="px-5 py-3.5">Linked Recipe</th><th className="px-5 py-3.5">Categories</th><th className="px-5 py-3.5">Route</th><th className="px-5 py-3.5">Pack</th><th className="px-5 py-3.5">Deco</th><th className="px-5 py-3.5 w-36" /></tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 text-[13px]">
+              <tbody className="divide-y divide-zinc-100 text-[14px]">
                 {[...filteredProducts].sort((a, b) => {
                     if (productSort === "a-z") return a.localeCompare(b);
                     if (productSort === "z-a") return b.localeCompare(a);
@@ -372,27 +372,27 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   const recipe = recipes.find(r => r.productName === product);
                   return (
                     <tr key={product} className="hover:bg-zinc-50/60 cursor-pointer" onClick={() => setViewingProduct(product)}>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-zinc-900">{product}</div>
+                      <td className="px-5 py-4">
+                        <div className="font-semibold text-zinc-900 text-[15px]">{product}</div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         {recipe?.linkedIngredients && recipe.linkedIngredients.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
+                          <div className="mt-1 flex flex-wrap gap-1.5">
                             {recipe.linkedIngredients.map(lp => (
-                              <span key={lp} className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700">{lp}</span>
+                              <span key={lp} className="rounded-full bg-sky-100 px-2.5 py-1 text-[12px] font-medium text-sky-700">{lp}</span>
                             ))}
                           </div>
                         )}
-                        {!recipe?.linkedIngredients || recipe.linkedIngredients.length === 0 && <span className="text-[12px] text-zinc-400 italic">—</span>}
+                        {!recipe?.linkedIngredients || recipe.linkedIngredients.length === 0 && <span className="text-[13px] text-zinc-400 italic">—</span>}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         {productCategoryMap[product] ? (
-                          <span className="inline-block rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{productCategoryMap[product]}</span>
+                          <span className="inline-block rounded-full bg-zinc-100 px-2.5 py-1 text-[12px] font-medium text-zinc-600">{productCategoryMap[product]}</span>
                         ) : (
-                          <span className="text-[12px] text-zinc-400 italic">—</span>
+                          <span className="text-[13px] text-zinc-400 italic">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         <select
                           value={productRoutes[product] || ""}
                           onChange={e => {
@@ -407,7 +407,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                             db.saveProductRoute(product, val).catch(console.error);
                           }}
                           onClick={e => e.stopPropagation()}
-                          className={`rounded-lg border px-2 py-1 text-[11px] font-medium outline-none cursor-pointer ${
+                          className={`rounded-lg border px-2.5 py-1.5 text-[12px] font-medium outline-none cursor-pointer ${
                             productRoutes[product] === "baker" ? "border-stone-300 bg-stone-50 text-stone-700"
                             : productRoutes[product] === "deco" ? "border-rose-300 bg-rose-50 text-rose-700"
                             : productRoutes[product] === "pastry" ? "border-amber-300 bg-amber-50 text-amber-700"
@@ -420,24 +420,24 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                           <option value="pastry">Pastry</option>
                         </select>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         {recipe?.packagingMaterials && recipe.packagingMaterials.length > 0 ? (
-                          <span className="text-[12px] text-zinc-600">{recipe.packagingMaterials.length} pack.</span>
+                          <span className="text-[13px] text-zinc-600">{recipe.packagingMaterials.length} pack.</span>
                         ) : (
-                          <span className="text-[12px] text-zinc-400 italic">—</span>
+                          <span className="text-[13px] text-zinc-400 italic">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         {recipe?.decorationSupplies && recipe.decorationSupplies.length > 0 ? (
-                          <span className="text-[12px] text-zinc-600">{recipe.decorationSupplies.length} deco.</span>
+                          <span className="text-[13px] text-zinc-600">{recipe.decorationSupplies.length} deco.</span>
                         ) : (
-                          <span className="text-[12px] text-zinc-400 italic">—</span>
+                          <span className="text-[13px] text-zinc-400 italic">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center gap-1 justify-end">
-                          <button onClick={e => { e.stopPropagation(); setEditingProduct(product); setRenamingProduct(product); setCategories(prev => prev); }} className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
-                          <button onClick={e => { e.stopPropagation(); setDeletingProduct(product); }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <button onClick={e => { e.stopPropagation(); setEditingProduct(product); setRenamingProduct(product); setCategories(prev => prev); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
+                          <button onClick={e => { e.stopPropagation(); setDeletingProduct(product); }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
                         </div>
                       </td>
                     </tr>
@@ -459,7 +459,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
               {recipes.length === 0 ? (
                 <div className="px-5 pb-5">
                   <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center">
-                    <p className="text-[13px] text-zinc-500">No recipes yet. Select a product above to add ingredients.</p>
+                    <p className="text-[14px] text-zinc-500">No recipes yet. Select a product above to add ingredients.</p>
                   </div>
                 </div>
               ) : (() => {
@@ -468,37 +468,37 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 )).filter(r => r.ingredients.length > 0 || r.packagingMaterials.length > 0 || r.decorationSupplies.length > 0);
                 return (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-[13px]">
+                    <table className="w-full text-left text-[14px]">
                       <thead className="bg-zinc-50/50 text-zinc-500">
                         <tr>
-                          <th className="px-4 py-3">Recipe</th>
-                          <th className="px-4 py-3">Items</th>
-                          <th className="px-4 py-3">Group</th>
-                          <th className="px-4 py-3">Yield</th>
-                          <th className="px-4 py-3">Notes</th>
-                          <th className="px-4 py-3 text-right">Cost</th>
-                          <th className="px-4 py-3 w-32" />
+                          <th className="px-5 py-3.5 text-[12px] uppercase tracking-wider">Recipe</th>
+                          <th className="px-5 py-3.5 text-[12px] uppercase tracking-wider">Items</th>
+                          <th className="px-5 py-3.5 text-[12px] uppercase tracking-wider">Group</th>
+                          <th className="px-5 py-3.5 text-[12px] uppercase tracking-wider">Yield</th>
+                          <th className="px-5 py-3.5 text-[12px] uppercase tracking-wider">Notes</th>
+                          <th className="px-5 py-3.5 text-[12px] uppercase tracking-wider text-right">Cost</th>
+                          <th className="px-5 py-3.5 w-32" />
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-100">
                         {filteredRecipes.map(recipe => (
                           <tr key={recipe.productName} className="hover:bg-zinc-50/60 cursor-pointer" onClick={() => setViewingRecipe(recipe.productName)}>
-                            <td className="px-4 py-3 font-medium text-zinc-900">{recipe.productName}</td>
-                            <td className="px-4 py-3 text-zinc-600">{recipe.ingredients.length} items</td>
-                            <td className="px-4 py-3">
+                            <td className="px-5 py-4 font-semibold text-zinc-900 text-[15px]">{recipe.productName}</td>
+                            <td className="px-5 py-4 text-zinc-600">{recipe.ingredients.length} items</td>
+                            <td className="px-5 py-4">
                               {recipe.group === "filling" ? (
-                                <span className="inline-block rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">Filling</span>
+                                <span className="inline-block rounded-full bg-violet-100 px-2.5 py-1 text-[12px] font-medium text-violet-700">Filling</span>
                               ) : (
-                                <span className="text-[12px] text-zinc-400 italic">—</span>
+                                <span className="text-[13px] text-zinc-400 italic">—</span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-zinc-600">{recipe.yield ?? "—"}</td>
-                            <td className="px-4 py-3 text-zinc-600">{recipe.notes || "-"}</td>
-                            <td className="px-4 py-3 text-right font-medium text-zinc-900">₱{computeRecipeCost(recipe).toFixed(2)}</td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex items-center gap-1 justify-end">
-                                <button onClick={e => { e.stopPropagation(); setRecipeProduct(recipe.productName); setShowRecipe(true); }} className="text-zinc-500 hover:text-zinc-900">Edit</button>
-                                <button onClick={e => { e.stopPropagation(); setDeletingRecipe(recipe.productName); }} className="rounded-lg border border-red-200 bg-white px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                            <td className="px-5 py-4 text-zinc-600">{recipe.yield ?? "—"}</td>
+                            <td className="px-5 py-4 text-zinc-600">{recipe.notes || "-"}</td>
+                            <td className="px-5 py-4 text-right font-semibold text-zinc-900">₱{computeRecipeCost(recipe).toFixed(2)}</td>
+                            <td className="px-5 py-4 text-right">
+                              <div className="flex items-center gap-1.5 justify-end">
+                                <button onClick={e => { e.stopPropagation(); setRecipeProduct(recipe.productName); setShowRecipe(true); }} className="text-zinc-500 hover:text-zinc-900 text-[13px] font-medium">Edit</button>
+                                <button onClick={e => { e.stopPropagation(); setDeletingRecipe(recipe.productName); }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
                               </div>
                             </td>
                           </tr>
@@ -514,11 +514,11 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           {/* Promo/Package Tab */}
           {activeProductSubTab === "Promo/Package" && (
             <div className="space-y-4">
-              <p className="text-[13px] text-zinc-500">Create and manage promos and package deals.</p>
+              <p className="text-[14px] text-zinc-500">Create and manage promos and package deals.</p>
               {promosPackages.length === 0 ? (
                 <div className="rounded-[24px] border border-dashed border-zinc-200 bg-white p-12 text-center">
-                  <p className="text-[14px] text-zinc-400">No promos or packages yet.</p>
-                  <p className="text-[12px] text-zinc-500 mt-1">Click "Add Promo/Package" to create one.</p>
+                  <p className="text-[15px] text-zinc-400">No promos or packages yet.</p>
+                  <p className="text-[13px] text-zinc-500 mt-1">Click "Add Promo/Package" to create one.</p>
                 </div>
               ) : (
                 <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
@@ -534,26 +534,26 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                       <div className={`relative px-6 pt-5 pb-4 ${isPromo ? "bg-gradient-to-br from-amber-50 via-amber-50/80 to-orange-50" : "bg-gradient-to-br from-blue-50 via-blue-50/80 to-indigo-50"}`}>
                         <div className={`absolute top-0 right-0 w-24 h-24 rounded-bl-[60px] opacity-[0.07] ${isPromo ? "bg-amber-600" : "bg-blue-600"}`} />
                         <div className="flex items-start justify-between mb-3">
-                          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${isPromo ? "bg-amber-200/70 text-amber-800" : "bg-blue-200/70 text-blue-800"}`}>
-                            <span className="text-[13px]">{isPromo ? "%" : "◆"}</span>
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-bold uppercase tracking-wider ${isPromo ? "bg-amber-200/70 text-amber-800" : "bg-blue-200/70 text-blue-800"}`}>
+                            <span className="text-[14px]">{isPromo ? "%" : "◆"}</span>
                             {item.type}
                           </span>
-                          <span className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ${displayStatus === "active" ? "bg-emerald-100 text-emerald-700" : displayStatus === "not started" ? "bg-amber-100 text-amber-700" : displayStatus === "inactive" ? "bg-zinc-100 text-zinc-500" : "bg-red-100 text-red-700"}`}>{displayStatus}</span>
+                          <span className={`inline-flex items-center rounded-full px-3 py-1 text-[12px] font-semibold ${displayStatus === "active" ? "bg-emerald-100 text-emerald-700" : displayStatus === "not started" ? "bg-amber-100 text-amber-700" : displayStatus === "inactive" ? "bg-zinc-100 text-zinc-500" : "bg-red-100 text-red-700"}`}>{displayStatus}</span>
                         </div>
-                        <h3 className="text-[20px] font-bold text-zinc-900 tracking-tight">{item.name}</h3>
-                        {item.description && <p className="text-[13px] text-zinc-500 mt-1.5 line-clamp-2 leading-relaxed">{item.description}</p>}
+                        <h3 className="text-[22px] font-bold text-zinc-900 tracking-tight">{item.name}</h3>
+                        {item.description && <p className="text-[14px] text-zinc-500 mt-1.5 line-clamp-2 leading-relaxed">{item.description}</p>}
                       </div>
 
                       <div className="px-6 py-4">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Includes</span>
+                          <span className="text-[12px] font-semibold uppercase tracking-wider text-zinc-400">Includes</span>
                           <div className="flex-1 h-px bg-zinc-100" />
                         </div>
                         <div className="space-y-2.5 mb-4">
                           {item.items.map((it, i) => (
-                            <div key={i} className="flex items-center justify-between text-[13px]">
+                            <div key={i} className="flex items-center justify-between text-[14px]">
                               <span className="text-zinc-700 font-medium">{it.productName}</span>
-                              <span className="inline-flex items-center justify-center min-w-[32px] rounded-lg bg-zinc-100 px-2 py-0.5 text-[12px] font-bold text-zinc-600">x{it.qty}</span>
+                              <span className="inline-flex items-center justify-center min-w-[36px] rounded-lg bg-zinc-100 px-2.5 py-1 text-[13px] font-bold text-zinc-600">x{it.qty}</span>
                             </div>
                           ))}
                         </div>
@@ -562,23 +562,23 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                           <div className="flex items-end justify-between mb-3">
                             <div>
                               <div className="flex items-baseline gap-2">
-                                {item.originalPrice > 0 && <span className="text-[14px] text-zinc-400 line-through">{"\u20B1"}{item.originalPrice.toFixed(2)}</span>}
-                                <span className="text-[22px] font-extrabold text-zinc-900 tracking-tight">{"\u20B1"}{item.promoPrice.toFixed(2)}</span>
+                                {item.originalPrice > 0 && <span className="text-[15px] text-zinc-400 line-through">{"\u20B1"}{item.originalPrice.toFixed(2)}</span>}
+                                <span className="text-[24px] font-extrabold text-zinc-900 tracking-tight">{"\u20B1"}{item.promoPrice.toFixed(2)}</span>
                               </div>
-                              {savings > 0 && <span className="inline-flex items-center mt-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">Save {savings}%</span>}
+                              {savings > 0 && <span className="inline-flex items-center mt-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-bold text-emerald-600">Save {savings}%</span>}
                             </div>
                             {(item.startDate || item.endDate) && (
                               <div className="text-right">
-                                <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-0.5">Valid</div>
-                                <div className="text-[12px] text-zinc-600 font-medium">
+                                <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-0.5">Valid</div>
+                                <div className="text-[13px] text-zinc-600 font-medium">
                                   {item.startDate ? new Date(item.startDate + "T00:00:00").toLocaleDateString("en-GB") : "\u2014"} {"\u2013"} {item.endDate ? new Date(item.endDate + "T00:00:00").toLocaleDateString("en-GB") : "\u2014"}
                                 </div>
                               </div>
                             )}
                           </div>
                           <div className="flex items-center gap-2">
-                            <button onClick={() => { setEditingPromo(item); setShowPromoModal(true); }} className="flex-1 rounded-xl border border-zinc-200 bg-white py-2.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300 transition-all">Edit</button>
-                            <button onClick={() => { if (confirm("Delete \"" + item.name + "\"?")) { onUpdatePromosPackages(prev => prev.filter(p => p.id !== item.id)); db.deletePromoPackage(item.id).catch(console.error); } }} className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-[12px] font-semibold text-red-500 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
+                            <button onClick={() => { setEditingPromo(item); setShowPromoModal(true); }} className="flex-1 rounded-xl border border-zinc-200 bg-white py-2.5 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300 transition-all">Edit</button>
+                            <button onClick={() => { if (confirm("Delete \"" + item.name + "\"?")) { onUpdatePromosPackages(prev => prev.filter(p => p.id !== item.id)); db.deletePromoPackage(item.id).catch(console.error); } }} className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-red-500 hover:bg-red-50 hover:border-red-300 transition-all">Del</button>
                           </div>
                         </div>
                       </div>
@@ -1007,14 +1007,14 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
       <div className="flex gap-5">
         {/* Sidebar */}
         <div className="w-52 shrink-0 space-y-1">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400 mb-2 px-3">Stock Room</div>
+          <div className="text-[12px] font-semibold uppercase tracking-wider text-zinc-400 mb-2 px-3">Stock Room</div>
           {sidebarItems.map(item => (
             <button key={item.key} onClick={() => setWarehouseSection(item.key)}
-              className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] font-medium text-left transition-all ${warehouseSection === item.key ? "bg-zinc-900 text-white shadow-sm" : "text-zinc-600 hover:bg-zinc-100"}`}>
+              className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[14px] font-semibold text-left transition-all ${warehouseSection === item.key ? "bg-zinc-900 text-white shadow-sm" : "text-zinc-600 hover:bg-zinc-100"}`}>
               <span className="text-[15px]">{item.icon}</span>
               <span>{item.label}</span>
               {item.key !== "history" && (
-                <span className="ml-auto rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-mono font-medium text-zinc-600">{groupItems(item.key).length}</span>
+                <span className="ml-auto rounded-full bg-zinc-200 px-2 py-0.5 text-[11px] font-mono font-semibold text-zinc-600">{groupItems(item.key).length}</span>
               )}
             </button>
           ))}
@@ -1024,16 +1024,16 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         <div className="flex-1 min-w-0 space-y-5">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-[24px] font-semibold">
+              <h1 className="text-[26px] font-bold text-zinc-900">
                 {warehouseSection === "history" ? "Stock History" : sidebarItems.find(s => s.key === warehouseSection)?.label}
               </h1>
-              <p className="mt-1 text-[13px] text-zinc-600">Manage all material IN and OUT movements.</p>
+              <p className="mt-1 text-[14px] text-zinc-600">Manage all material IN and OUT movements.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {warehouseSection !== "history" && (
                 <>
-                  <button onClick={() => setShowReceive(true)} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Receive from Supplier</button>
-                  <button onClick={() => setEditingInvItem({ id: `INV-${Date.now()}`, name: "", sku: "", unit: "", onHand: 0, threshold: 10, cost: 0, supplier: "", lastIn: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0], category: warehouseSection === "packaging-materials" ? "packaging" : "dry", group: warehouseSection, accessRoles: [] })} className="rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-[13px] font-medium text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ New Item</button>
+                  <button onClick={() => setShowReceive(true)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Receive from Supplier</button>
+                  <button onClick={() => setEditingInvItem({ id: `INV-${Date.now()}`, name: "", sku: "", unit: "", onHand: 0, threshold: 10, cost: 0, supplier: "", lastIn: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0], category: warehouseSection === "packaging-materials" ? "packaging" : "dry", group: warehouseSection, accessRoles: [] })} className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ New Item</button>
                 </>
               )}
             </div>
@@ -1042,11 +1042,11 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           {/* Quick Stats (shown for group views, not history) */}
           {warehouseSection !== "history" && (
             <div className="grid grid-cols-5 gap-3">
-              <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Items</div><div className="text-[24px] font-semibold mt-1">{roleFiltered(groupItems(warehouseSection)).length}</div></div>
-              <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Low Stock</div><div className="text-[24px] font-semibold mt-1 text-red-600">{roleFiltered(lowStock.filter(i => i.group === warehouseSection)).length}</div></button>
-              <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">No Stock</div><div className="text-[24px] font-semibold mt-1 text-zinc-800">{roleFiltered(noStock.filter(i => i.group === warehouseSection)).length}</div></button>
-              <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-purple-300 hover:bg-purple-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expired</div><div className="text-[24px] font-semibold mt-1 text-purple-600">{roleFiltered(expired.filter(i => i.group === warehouseSection)).length}</div></button>
-              <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Expiring ≤30 Days</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{roleFiltered(expiring.filter(i => i.group === warehouseSection)).length}</div></button>
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Items</div><div className="text-[26px] font-bold mt-1">{roleFiltered(groupItems(warehouseSection)).length}</div></div>
+              <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Low Stock</div><div className="text-[26px] font-bold mt-1 text-red-600">{roleFiltered(lowStock.filter(i => i.group === warehouseSection)).length}</div></button>
+              <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">No Stock</div><div className="text-[26px] font-bold mt-1 text-zinc-800">{roleFiltered(noStock.filter(i => i.group === warehouseSection)).length}</div></button>
+              <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-purple-300 hover:bg-purple-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Expired</div><div className="text-[26px] font-bold mt-1 text-purple-600">{roleFiltered(expired.filter(i => i.group === warehouseSection)).length}</div></button>
+              <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Expiring ≤30 Days</div><div className="text-[26px] font-bold mt-1 text-amber-600">{roleFiltered(expiring.filter(i => i.group === warehouseSection)).length}</div></button>
             </div>
           )}
 
@@ -1073,30 +1073,30 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
               {transactions.length > 0 ? (
                 <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-[16px] font-semibold text-white">Transaction History</h2>
-                    <span className="rounded-full bg-zinc-700 px-2 py-0.5 text-[10px] font-medium text-zinc-200 font-mono">{transactions.length} entries</span>
+                    <h2 className="text-[18px] font-bold text-white">Transaction History</h2>
+                    <span className="rounded-full bg-zinc-700 px-3 py-1 text-[12px] font-semibold text-zinc-200">{transactions.length} entries</span>
                   </div>
                   
                   {/* Container with constrained height */}
                   <div className="max-h-[400px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
                     <div className="space-y-0">
                       {/* Compact Header Row */}
-                      <div className="grid grid-cols-[auto,1fr,auto] gap-2 px-3 py-1 text-[9px] font-bold text-zinc-500 uppercase tracking-wider sticky top-0 bg-zinc-900/95 backdrop-blur-sm z-10 border-b border-zinc-800">
+                      <div className="grid grid-cols-[auto,1fr,auto] gap-2 px-3 py-1.5 text-[11px] font-bold text-zinc-500 uppercase tracking-wider sticky top-0 bg-zinc-900/95 backdrop-blur-sm z-10 border-b border-zinc-800">
                         <span>Type</span>
                         <span>Item / Reference</span>
                         <span className="text-right">Qty / Time</span>
                       </div>
                       
                       {[...transactions].reverse().map(tx => (
-                        <div key={tx.id} className="grid grid-cols-[auto,1fr,auto] items-center gap-2 px-3 py-1 text-[11px] hover:bg-zinc-800/50 border-b border-zinc-800/50">
-                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${tx.type === "in" ? "bg-emerald-950 text-emerald-300" : "bg-amber-950 text-amber-300"}`}>{tx.type}</span>
+                        <div key={tx.id} className="grid grid-cols-[auto,1fr,auto] items-center gap-2 px-3 py-1.5 text-[13px] hover:bg-zinc-800/50 border-b border-zinc-800/50">
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase ${tx.type === "in" ? "bg-emerald-950 text-emerald-300" : "bg-amber-950 text-amber-300"}`}>{tx.type}</span>
                           <div className="flex flex-col truncate">
                             <span className="font-semibold text-zinc-100 truncate">{tx.itemName}</span>
-                            <span className="text-[9px] text-zinc-500 truncate">{tx.reference || "No Ref"} {tx.group && `· ${tx.group.replace(/-/g, " ")}`}</span>
+                            <span className="text-[11px] text-zinc-500 truncate">{tx.reference || "No Ref"} {tx.group && `· ${tx.group.replace(/-/g, " ")}`}</span>
                           </div>
                           <div className="flex flex-col items-end whitespace-nowrap">
-                            <span className="font-mono text-zinc-200 font-medium">{tx.type === "in" ? "+" : "-"}{tx.qty} {tx.unit}</span>
-                            <span className="text-[9px] text-zinc-600 font-mono">{tx.timestamp.split(' ')[1]}</span>
+                            <span className="text-[13px] text-zinc-200 font-semibold">{tx.type === "in" ? "+" : "-"}{tx.qty} {tx.unit}</span>
+                            <span className="text-[11px] text-zinc-500">{tx.timestamp.split(' ')[1]}</span>
                           </div>
                         </div>
                       ))}
@@ -1346,18 +1346,18 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
   if (activeTab === "audit") {
     return (
       <div className="space-y-5">
-        <h1 className="text-[24px] font-semibold">Audit Trail</h1>
+        <h1 className="text-[26px] font-bold text-zinc-900">Audit Trail</h1>
         <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
           <div className="space-y-3">
             {auditLogs.length === 0 ? (
-              <p className="text-[13px] text-zinc-500 text-center py-8">No audit logs yet. Activity will appear here as you use the system.</p>
+              <p className="text-[14px] text-zinc-500 text-center py-8">No audit logs yet. Activity will appear here as you use the system.</p>
             ) : auditLogs.map(log => (
               <div key={log.id} className="flex items-start gap-3 border-b border-zinc-700/60 pb-3 last:border-0 cursor-pointer hover:bg-zinc-800/40 rounded-lg px-2 -mx-2 transition-colors" onClick={() => setSelectedLog(log)}>
-                <div className="mt-0.5 text-[11px] text-zinc-400 font-mono whitespace-nowrap" style={{ fontFamily: "Fragment Mono, monospace" }}>{log.timestamp}</div>
-                <div className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${log.role === "admin" ? "bg-zinc-600 text-zinc-100" : "bg-zinc-700 text-zinc-300"}`}>{log.role}</div>
+                <div className="mt-0.5 text-[12px] text-zinc-400 font-mono whitespace-nowrap">{log.timestamp}</div>
+                <div className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${log.role === "admin" ? "bg-zinc-600 text-zinc-100" : "bg-zinc-700 text-zinc-300"}`}>{log.role}</div>
                 <div className="flex-1">
-                  <div className="text-[13px] font-medium text-zinc-100">{log.action.replace(/_/g, " ")}</div>
-                  <div className="text-[12px] text-zinc-400">{log.details} — {log.userName}</div>
+                  <div className="text-[14px] font-semibold text-zinc-100">{log.action.replace(/_/g, " ")}</div>
+                  <div className="text-[13px] text-zinc-400">{log.details} — {log.userName}</div>
                 </div>
               </div>
             ))}
@@ -1388,49 +1388,49 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     return (
       <div className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div><h1 className="text-[24px] font-semibold">DOS Builder</h1><p className="mt-1 text-[13px] text-zinc-600">Daily Order Sales management — create and track production tasks.</p></div>
-          <button onClick={onOpenDOSBuilder} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-zinc-800">+ New DOS</button>
+          <div><h1 className="text-[26px] font-bold text-zinc-900">DOS Builder</h1><p className="mt-1 text-[14px] text-zinc-600">Daily Order Sales management — create and track production tasks.</p></div>
+          <button onClick={onOpenDOSBuilder} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white shadow-sm hover:bg-zinc-800">+ New DOS</button>
         </div>
 
         {/* Today's DOS */}
-        <div className="rounded-[24px] border border-zinc-700 bg-zinc-900 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <span className="text-[16px] font-semibold text-white">Today's DOS</span>
-              <span className="rounded-full bg-zinc-700 px-2.5 py-0.5 text-[11px] font-medium text-zinc-300 font-mono">{new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</span>
+        <div className="rounded-[24px] border border-zinc-700 bg-zinc-900 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-3">
+              <span className="text-[22px] font-bold text-white">Today's DOS</span>
+              <span className="rounded-full bg-zinc-700 px-3 py-1 text-[13px] font-medium text-zinc-300 font-mono">{new Date().toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })}</span>
             </div>
             <div className="flex items-center gap-2">
               {(["all", "baker", "deco", "pastry"] as const).map(role => (
-                <button key={role} onClick={() => setDosRoleFilter(role)} className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-all ${dosRoleFilter === role ? "bg-white text-zinc-900 shadow-sm" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}>{role === "all" ? "All" : role.charAt(0).toUpperCase() + role.slice(1)}</button>
+                <button key={role} onClick={() => setDosRoleFilter(role)} className={`rounded-lg px-3 py-2 text-[13px] font-medium transition-all ${dosRoleFilter === role ? "bg-white text-zinc-900 shadow-sm" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"}`}>{role === "all" ? "All" : role.charAt(0).toUpperCase() + role.slice(1)}</button>
               ))}
-              <button onClick={() => setTodayAddOpen(true)} className="rounded-lg bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-900 shadow-sm hover:bg-zinc-100 transition-all">+ Add</button>
+              <button onClick={() => setTodayAddOpen(true)} className="rounded-lg bg-white px-4 py-2 text-[13px] font-medium text-zinc-900 shadow-sm hover:bg-zinc-100 transition-all">+ Add</button>
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-zinc-800 text-left text-[11px] uppercase tracking-wider text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3 text-right">Qty</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Assigned To</th><th className="px-4 py-3 text-right">Status</th><th className="px-4 py-3 w-10" /></tr></thead>
-              <tbody className="divide-y divide-zinc-700 text-[13px]">
+              <thead className="bg-zinc-800 text-left text-[12px] uppercase tracking-wider text-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }}><tr><th className="px-5 py-3.5">Product</th><th className="px-5 py-3.5 text-right">Qty</th><th className="px-5 py-3.5">Priority</th><th className="px-5 py-3.5">Assigned To</th><th className="px-5 py-3.5 text-right">Status</th><th className="px-5 py-3.5 w-10" /></tr></thead>
+              <tbody className="divide-y divide-zinc-700 text-[14px]">
                 {(() => {
                   const filtered = dosRoleFilter === "all" ? todayDOS : todayDOS.filter(item => {
                     const itemKey = item.id.replace("DOS-", "");
                     return production.some(t => t.id.includes(itemKey) && t.assignedTo === dosRoleFilter);
                   });
-                  if (filtered.length === 0) return <tr><td colSpan={6} className="text-center py-10 text-[13px] text-zinc-500">{dosRoleFilter === "all" ? "No DOS for today yet. Click \"+ New DOS\" to create one." : `No items assigned to ${dosRoleFilter} today.`}</td></tr>;
+                  if (filtered.length === 0) return <tr><td colSpan={6} className="text-center py-12 text-[14px] text-zinc-500">{dosRoleFilter === "all" ? "No DOS for today yet. Click \"+ New DOS\" to create one." : `No items assigned to ${dosRoleFilter} today.`}</td></tr>;
                   return filtered.map(item => {
                     const itemKey = item.id.replace("DOS-", "");
                     const relatedTasks = production.filter(t => t.id.includes(itemKey));
                     const roles = relatedTasks.length > 0 ? [...new Set(relatedTasks.map(t => t.assignedTo))] : (item.roles || []);
                     return (
                       <tr key={item.id} className="hover:bg-zinc-800/60">
-                        <td className="px-4 py-3"><div className="font-medium text-white">{item.product}</div>{(item.flavor || item.size || item.themeOccasion) ? <div className="flex flex-wrap items-center gap-1.5 mt-1">{item.flavor ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{item.flavor}</span> : null}{item.size ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{item.size}</span> : null}{item.themeOccasion ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">🎨 {item.themeOccasion}</span> : null}</div> : null}<div className="text-[11px] text-zinc-500 mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></td>
-                        <td className="px-4 py-3 text-right font-medium text-white" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty}</td>
+                        <td className="px-5 py-4"><div className="font-semibold text-white text-[15px]">{item.product}</div>{(item.flavor || item.size || item.themeOccasion) ? <div className="flex flex-wrap items-center gap-1.5 mt-1.5">{item.flavor ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2.5 py-1 text-[12px] font-medium text-zinc-200">{item.flavor}</span> : null}{item.size ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2.5 py-1 text-[12px] font-medium text-zinc-200">{item.size}</span> : null}{item.themeOccasion ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2.5 py-1 text-[12px] font-medium text-zinc-200">🎨 {item.themeOccasion}</span> : null}</div> : null}<div className="text-[12px] text-zinc-500 mt-1" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></td>
+                        <td className="px-5 py-4 text-right font-bold text-white text-[16px]" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty}</td>
                         
-                        <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-700"}`}>{item.priority}</span></td>
-                        <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{roles.length > 0 ? roles.map(role => (<span key={role} className={`rounded-full px-2 py-0.5 text-[10px] font-medium text-white ${roleColors[role] || "bg-zinc-500"}`}>{role}</span>)) : <span className="text-zinc-400 text-[11px]">—</span>}</div></td>
-                        <td className="px-4 py-3 text-right"><span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${item.status === "completed" ? "text-emerald-400" : item.status === "in-progress" ? "text-amber-400" : "text-zinc-400"}`}><span className={`h-1.5 w-1.5 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} />{item.status === "in-progress" ? "In Progress" : item.status === "completed" ? "Completed" : "Pending"}</span></td>
-                        <td className="px-4 py-3 text-right"><div className="flex items-center gap-1 justify-end">
-                          <button onClick={() => setEditingDOS(item)} className="rounded-lg border border-zinc-600 px-2 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all">Edit</button>
-                          <button onClick={async () => { if (confirm(`Delete "${item.product}" from today's DOS?`)) { onDeleteDOS(item.id); } }} className="rounded-lg border border-red-700 px-2 py-1 text-[11px] text-red-400 hover:bg-red-900/30 hover:border-red-500 transition-all">Del</button>
+                        <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[12px] font-medium ${item.priority === "HIGH" ? "bg-red-50 text-red-700 border border-red-200" : item.priority === "MEDIUM" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-zinc-100 text-zinc-700"}`}>{item.priority}</span></td>
+                        <td className="px-5 py-4"><div className="flex flex-wrap gap-1.5">{roles.length > 0 ? roles.map(role => (<span key={role} className={`rounded-full px-2.5 py-1 text-[11px] font-medium text-white ${roleColors[role] || "bg-zinc-500"}`}>{role}</span>)) : <span className="text-zinc-400 text-[12px]">—</span>}</div></td>
+                        <td className="px-5 py-4 text-right"><span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${item.status === "completed" ? "text-emerald-400" : item.status === "in-progress" ? "text-amber-400" : "text-zinc-400"}`}><span className={`h-2 w-2 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-300"}`} />{item.status === "in-progress" ? "In Progress" : item.status === "completed" ? "Completed" : "Pending"}</span></td>
+                        <td className="px-5 py-4 text-right"><div className="flex items-center gap-1.5 justify-end">
+                          <button onClick={() => setEditingDOS(item)} className="rounded-lg border border-zinc-600 px-2.5 py-1.5 text-[12px] text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all">Edit</button>
+                          <button onClick={async () => { if (confirm(`Delete "${item.product}" from today's DOS?`)) { onDeleteDOS(item.id); } }} className="rounded-lg border border-red-700 px-2.5 py-1.5 text-[12px] text-red-400 hover:bg-red-900/30 hover:border-red-500 transition-all">Del</button>
                         </div></td>
                       </tr>
                     );
@@ -1631,9 +1631,9 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     const pastryTasks = todayTasks.filter(t => t.assignedTo === "pastry");
     const decoTasks = todayTasks.filter(t => t.assignedTo === "deco");
 
-    const bakerFreezer = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.qty > 0);
-    const pastryFreezer = freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored" && i.qty > 0);
-    const decoFreezer = freezerItems.filter(i => i.producedBy === "deco" && i.status === "stored" && i.qty > 0);
+    const bakerFreezer = freezerItems.filter(i => i.producedBy === "baker" && i.status === "stored" && i.qty > 0 && i.notes !== "Production Recipe (Assembled)");
+    const pastryFreezer = freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored" && i.qty > 0 && (i.notes?.toLowerCase().includes("assembled") || i.notes?.toLowerCase().includes("packaged")));
+    const decoFreezer = freezerItems.filter(i => i.producedBy === "deco");
 
     // ── Freezer Detail Drill-Down ──
     if (freezerDetailView) {
@@ -1676,72 +1676,72 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         return (
           <div className="space-y-5">
             <div className="flex items-center gap-2">
-              <button onClick={() => setFreezerDetailView(null)} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">← Back to Overview</button>
+              <button onClick={() => setFreezerDetailView(null)} className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-[13px] font-semibold text-zinc-600 hover:bg-zinc-50 transition-all">← Back to Overview</button>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-[20px]">🎂</span>
+              <span className="text-[24px]">🎂</span>
               <div>
-                <h1 className="text-[22px] font-semibold text-zinc-900">Deco Freezer</h1>
-                <p className="text-[13px] text-zinc-500 mt-0.5">{tabItemsDeco.length} items</p>
+                <h1 className="text-[24px] font-bold text-zinc-900">Deco Freezer</h1>
+                <p className="text-[14px] text-zinc-500 mt-0.5">{tabItemsDeco.length} items</p>
               </div>
             </div>
             <div className="flex gap-1.5 rounded-xl bg-zinc-100 p-1">
               {(["display-cakes", "production-recipe", "advanced-premix", "my-inventory"] as const).map(t => (
-                <button key={t} onClick={() => setFreezerDetailTab(t)} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${decoTab === t ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
+                <button key={t} onClick={() => setFreezerDetailTab(t)} className={`flex-1 rounded-lg py-2.5 text-[13px] font-semibold transition-all ${decoTab === t ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
                   {t === "display-cakes" ? "Display Cakes" : t === "production-recipe" ? "Production Recipe" : t === "advanced-premix" ? "Advanced Premix" : "My Inventory"}
                 </button>
               ))}
             </div>
             <div className="relative max-w-[280px]">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
-              <input value={freezerDetailSearch} onChange={e => setFreezerDetailSearch(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[14px]">⌕</span>
+              <input value={freezerDetailSearch} onChange={e => setFreezerDetailSearch(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[14px] focus:outline-none focus:border-zinc-400" />
             </div>
             <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
                   <thead className="bg-zinc-50 border-b border-zinc-100">
-                    <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                    <tr className="text-[12px] uppercase tracking-wider text-zinc-500">
                       {decoTab === "my-inventory" ? (
-                        <><th className="px-5 py-3">Name</th><th className="px-5 py-3">SKU</th><th className="px-5 py-3 text-right">On Hand</th><th className="px-5 py-3 text-right">Threshold</th><th className="px-5 py-3">Unit</th><th className="px-5 py-3">Section</th><th className="px-5 py-3">Group</th><th className="px-5 py-3 text-right">Actions</th></>
+                        <><th className="px-5 py-3.5">Name</th><th className="px-5 py-3.5">SKU</th><th className="px-5 py-3.5 text-right">On Hand</th><th className="px-5 py-3.5 text-right">Threshold</th><th className="px-5 py-3.5">Unit</th><th className="px-5 py-3.5">Section</th><th className="px-5 py-3.5">Group</th><th className="px-5 py-3.5 text-right">Actions</th></>
                       ) : decoTab === "advanced-premix" ? (
-                        <><th className="px-5 py-3">Recipe</th><th className="px-5 py-3 text-right">Qty</th><th className="px-5 py-3">Batch</th><th className="px-5 py-3">Date</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Actions</th></>
+                        <><th className="px-5 py-3.5">Recipe</th><th className="px-5 py-3.5 text-right">Qty</th><th className="px-5 py-3.5">Batch</th><th className="px-5 py-3.5">Date</th><th className="px-5 py-3.5">Status</th><th className="px-5 py-3.5 text-right">Actions</th></>
                       ) : (
-                        <><th className="px-5 py-3">Product</th><th className="px-5 py-3 text-right">Qty</th><th className="px-5 py-3">Unit</th><th className="px-5 py-3">Date Added</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Actions</th></>
+                        <><th className="px-5 py-3.5">Product</th><th className="px-5 py-3.5 text-right">Qty</th><th className="px-5 py-3.5">Unit</th><th className="px-5 py-3.5">Date Added</th><th className="px-5 py-3.5">Status</th><th className="px-5 py-3.5 text-right">Actions</th></>
                       )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-50">
                     {filtered.length === 0 ? (
-                      <tr><td colSpan={8} className="px-5 py-12 text-center text-[13px] text-zinc-400">No items in this section.</td></tr>
+                      <tr><td colSpan={8} className="px-5 py-12 text-center text-[14px] text-zinc-400">No items in this section.</td></tr>
                     ) : decoTab === "my-inventory" ? (filtered as unknown as InventoryItem[]).map(inv => (
                       <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
-                        <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{inv.name}</div></td>
-                        <td className="px-5 py-3.5 text-[12px] font-mono text-zinc-600">{inv.sku}</td>
-                        <td className={`px-5 py-3.5 text-[13px] text-right font-mono ${inv.onHand <= inv.threshold ? "text-red-600" : "text-zinc-900"}`}>{inv.onHand}</td>
-                        <td className="px-5 py-3.5 text-[13px] text-right font-mono text-zinc-500">{inv.threshold}</td>
-                        <td className="px-5 py-3.5 text-[12px] text-zinc-600">{inv.unit}</td>
-                        <td className="px-5 py-3.5 text-[12px] text-zinc-600">{inv.category === "Filling" ? "Filling" : inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
-                        <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category === "Filling" ? "Filling" : inv.group}</span></td>
-                        <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                        <td className="px-5 py-4"><div className="text-[14px] font-semibold text-zinc-900">{inv.name}</div></td>
+                        <td className="px-5 py-4 text-[13px] font-mono text-zinc-600">{inv.sku}</td>
+                        <td className={`px-5 py-4 text-[14px] text-right font-mono ${inv.onHand <= inv.threshold ? "text-red-600" : "text-zinc-900"}`}>{inv.onHand}</td>
+                        <td className="px-5 py-4 text-[14px] text-right font-mono text-zinc-500">{inv.threshold}</td>
+                        <td className="px-5 py-4 text-[13px] text-zinc-600">{inv.unit}</td>
+                        <td className="px-5 py-4 text-[13px] text-zinc-600">{inv.category === "Filling" ? "Filling" : inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
+                        <td className="px-5 py-4"><span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-600">{inv.category === "Filling" ? "Filling" : inv.group}</span></td>
+                        <td className="px-5 py-4 text-right"><span className="text-[12px] text-zinc-400">View only</span></td>
                       </tr>
                     )) : decoTab === "advanced-premix" ? [...groupedAdv.entries()].map(([productName, g]) => (
                       <tr key={productName} className="hover:bg-zinc-50/50 transition-colors">
-                        <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{productName}</div></td>
-                        <td className="px-5 py-3.5 text-[13px] text-right font-mono">{g.totalQty} batch</td>
-                        <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{g.items.length} batch{g.items.length > 1 ? "es" : ""}</td>
-                        <td className="px-5 py-3.5 text-[12px] text-zinc-500">{g.items.map(f => f.dateProduced).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</td>
-                        <td className="px-5 py-3.5"><span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">✓ In Stock</span></td>
-                        <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                        <td className="px-5 py-4"><div className="text-[14px] font-semibold text-zinc-900">{productName}</div></td>
+                        <td className="px-5 py-4 text-[14px] text-right font-mono">{g.totalQty} batch</td>
+                        <td className="px-5 py-4 text-[13px] text-zinc-600 font-mono">{g.items.length} batch{g.items.length > 1 ? "es" : ""}</td>
+                        <td className="px-5 py-4 text-[13px] text-zinc-500">{g.items.map(f => f.dateProduced).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</td>
+                        <td className="px-5 py-4"><span className="rounded-full bg-green-100 px-2.5 py-1 text-[12px] font-semibold text-green-700">✓ In Stock</span></td>
+                        <td className="px-5 py-4 text-right"><span className="text-[12px] text-zinc-400">View only</span></td>
                       </tr>
                     )) : (filtered as FreezerItem[]).map(f => (
                       <tr key={f.id} className="hover:bg-zinc-50/50 transition-colors">
-                        <td className="px-5 py-3.5">
-                          <div className="text-[13px] font-medium text-zinc-900">{f.productName}</div>
-                          {f.notes && <div className="text-[11px] text-zinc-400 mt-0.5">{f.notes}</div>}
+                        <td className="px-5 py-4">
+                          <div className="text-[14px] font-semibold text-zinc-900">{f.productName}</div>
+                          {f.notes && <div className="text-[12px] text-zinc-400 mt-0.5">{f.notes}</div>}
                         </td>
-                        <td className="px-5 py-3.5 text-[13px] text-right font-mono">{f.qty}</td>
-                        <td className="px-5 py-3.5 text-[12px] text-zinc-600">{f.unit}</td>
-                        <td className="px-5 py-3.5 text-[12px] text-zinc-500">{f.dateProduced}</td>
+                        <td className="px-5 py-4 text-[14px] text-right font-mono">{f.qty}</td>
+                        <td className="px-5 py-4 text-[13px] text-zinc-600">{f.unit}</td>
+                        <td className="px-5 py-4 text-[13px] text-zinc-500">{f.dateProduced}</td>
                         <td className="px-5 py-3.5"><span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">✓ In Stock</span></td>
                         <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
                       </tr>
@@ -1783,57 +1783,57 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
       return (
         <div className="space-y-5">
           <div className="flex items-center gap-2">
-            <button onClick={() => setFreezerDetailView(null)} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">← Back to Overview</button>
+            <button onClick={() => setFreezerDetailView(null)} className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-[13px] font-semibold text-zinc-600 hover:bg-zinc-50 transition-all">← Back to Overview</button>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[20px]">{role === "baker" ? "🍞" : "🧁"}</span>
+            <span className="text-[24px]">{role === "baker" ? "🍞" : "🧁"}</span>
             <div>
-              <h1 className="text-[22px] font-semibold text-zinc-900">{roleLabel} Freezer</h1>
-              <p className="text-[13px] text-zinc-500 mt-0.5">{tabItems.length} items</p>
+              <h1 className="text-[24px] font-bold text-zinc-900">{roleLabel} Freezer</h1>
+              <p className="text-[14px] text-zinc-500 mt-0.5">{tabItems.length} items</p>
             </div>
           </div>
 
           <div className="flex gap-1.5 rounded-xl bg-zinc-100 p-1">
             {(role === "baker" ? bakerTabs : pastryTabs).map(t => (
-              <button key={t.key} onClick={() => setFreezerDetailTab(t.key)} className={`flex-1 rounded-lg py-2 text-[13px] font-medium transition-all ${freezerDetailTab === t.key ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>{t.label}</button>
+              <button key={t.key} onClick={() => setFreezerDetailTab(t.key)} className={`flex-1 rounded-lg py-2.5 text-[13px] font-semibold transition-all ${freezerDetailTab === t.key ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>{t.label}</button>
             ))}
           </div>
 
           <div className="relative max-w-[280px]">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
-            <input value={freezerDetailSearch} onChange={e => setFreezerDetailSearch(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[14px]">⌕</span>
+            <input value={freezerDetailSearch} onChange={e => setFreezerDetailSearch(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[14px] focus:outline-none focus:border-zinc-400" />
           </div>
 
           <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="bg-zinc-50 border-b border-zinc-100">
-                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                    <th className="px-5 py-3">Product</th>
-                    <th className="px-5 py-3 text-right">Qty</th>
-                    {freezerDetailTab !== "my-inventory" && <th className="px-5 py-3">Batch</th>}
-                    <th className="px-5 py-3">{freezerDetailTab === "my-inventory" ? "Category" : "Date"}</th>
-                    <th className="px-5 py-3">Section</th>
-                    <th className="px-5 py-3 text-right">Actions</th>
+                  <tr className="text-[12px] uppercase tracking-wider text-zinc-500">
+                    <th className="px-5 py-3.5">Product</th>
+                    <th className="px-5 py-3.5 text-right">Qty</th>
+                    {freezerDetailTab !== "my-inventory" && <th className="px-5 py-3.5">Batch</th>}
+                    <th className="px-5 py-3.5">{freezerDetailTab === "my-inventory" ? "Category" : "Date"}</th>
+                    <th className="px-5 py-3.5">Section</th>
+                    <th className="px-5 py-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-50">
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={freezerDetailTab === "my-inventory" ? 5 : 6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No items in this section.</td></tr>
+                    <tr><td colSpan={freezerDetailTab === "my-inventory" ? 5 : 6} className="px-5 py-12 text-center text-[14px] text-zinc-400">No items in this section.</td></tr>
                   ) : freezerDetailTab === "baked-products" ? [...grouped.entries()].map(([productName, g]) => (
                     <tr key={productName} className="hover:bg-zinc-50/50 transition-colors">
-                      <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{productName}</div></td>
-                      <td className="px-5 py-3.5 text-[13px] text-right font-mono">{g.totalQty} pcs</td>
-                      <td className="px-5 py-3.5 text-[12px] text-zinc-600">{g.items.length} batch{g.items.length > 1 ? "es" : ""}</td>
-                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{g.items[0]?.dateProduced || "—"}</td>
-                      <td className="px-5 py-3.5"><span className="rounded-full bg-stone-100 text-stone-700 px-2 py-0.5 text-[10px] font-medium">{roleLabel}</span></td>
-                      <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                      <td className="px-5 py-4"><div className="text-[14px] font-semibold text-zinc-900">{productName}</div></td>
+                      <td className="px-5 py-4 text-[14px] text-right font-mono">{g.totalQty} pcs</td>
+                      <td className="px-5 py-4 text-[13px] text-zinc-600">{g.items.length} batch{g.items.length > 1 ? "es" : ""}</td>
+                      <td className="px-5 py-4 text-[13px] text-zinc-500">{g.items[0]?.dateProduced || "—"}</td>
+                      <td className="px-5 py-4"><span className="rounded-full bg-stone-100 text-stone-700 px-2.5 py-1 text-[12px] font-semibold">{roleLabel}</span></td>
+                      <td className="px-5 py-4 text-right"><span className="text-[12px] text-zinc-400">View only</span></td>
                     </tr>
                   )) : freezerDetailTab === "deco-production-recipe" ? [...grouped.entries()].map(([productName, g]) => (
                     <tr key={productName} className="hover:bg-zinc-50/50 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="text-[13px] font-medium text-zinc-900">{productName}</div>
-                        <div className="text-[11px] text-zinc-400 mt-0.5 flex flex-wrap gap-1.5">
+                      <td className="px-5 py-4">
+                        <div className="text-[14px] font-semibold text-zinc-900">{productName}</div>
+                        <div className="text-[12px] text-zinc-400 mt-0.5 flex flex-wrap gap-1.5">
                           {(() => {
                             const bySource = new Map<string, { label: string; total: number }>();
                             g.items.forEach(f => {
@@ -1842,27 +1842,27 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                               bySource.get(key)!.total += f.qty;
                             });
                             return [...bySource.entries()].map(([key, s]) => (
-                              <span key={key} className="inline-flex items-center gap-1">
-                                <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${key === "assembled" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>{s.label}</span>
-                                <span className="font-mono text-zinc-500">{s.total} pcs</span>
+                              <span key={key} className="inline-flex items-center gap-1.5">
+                                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${key === "assembled" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>{s.label}</span>
+                                <span className="font-mono text-[13px] text-zinc-500">{s.total} pcs</span>
                               </span>
                             ));
                           })()}
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-[13px] text-right font-mono">{g.totalQty} pcs</td>
-                      <td className="px-5 py-3.5 text-[12px] text-zinc-600 font-mono">{g.items.map(f => f.batchRef).filter(Boolean).join(", ")}</td>
-                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{g.items.map(f => f.dateProduced).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</td>
-                      <td className="px-5 py-3.5"><span className="rounded-full bg-rose-100 text-rose-700 px-2 py-0.5 text-[10px] font-medium">Deco</span></td>
-                      <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                      <td className="px-5 py-4 text-[14px] text-right font-mono">{g.totalQty} pcs</td>
+                      <td className="px-5 py-4 text-[13px] text-zinc-600 font-mono">{g.items.map(f => f.batchRef).filter(Boolean).join(", ")}</td>
+                      <td className="px-5 py-4 text-[13px] text-zinc-500">{g.items.map(f => f.dateProduced).filter((v, i, a) => a.indexOf(v) === i).join(", ")}</td>
+                      <td className="px-5 py-4"><span className="rounded-full bg-rose-100 text-rose-700 px-2.5 py-1 text-[12px] font-semibold">Deco</span></td>
+                      <td className="px-5 py-4 text-right"><span className="text-[12px] text-zinc-400">View only</span></td>
                     </tr>
                   )) : (filtered as unknown as InventoryItem[]).map(inv => (
                     <tr key={inv.id} className="hover:bg-zinc-50/50 transition-colors">
-                      <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{inv.name}</div></td>
-                      <td className="px-5 py-3.5 text-[13px] text-right font-mono">{inv.onHand} {inv.unit}</td>
-                      <td className="px-5 py-3.5 text-[12px] text-zinc-500">{inv.category === "Filling" ? "Filling" : inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
-                      <td className="px-5 py-3.5"><span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{inv.category === "Filling" ? "Filling" : inv.group}</span></td>
-                      <td className="px-5 py-3.5 text-right"><span className="text-[11px] text-zinc-400">View only</span></td>
+                      <td className="px-5 py-4"><div className="text-[14px] font-semibold text-zinc-900">{inv.name}</div></td>
+                      <td className="px-5 py-4 text-[14px] text-right font-mono">{inv.onHand} {inv.unit}</td>
+                      <td className="px-5 py-4 text-[13px] text-zinc-500">{inv.category === "Filling" ? "Filling" : inv.group === "ingredients" ? "Ingredient" : inv.group === "packaging-materials" ? "Packaging" : inv.group === "decoration-supplies" ? "Decoration" : "Operational"}</td>
+                      <td className="px-5 py-4"><span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[12px] font-semibold text-zinc-600">{inv.category === "Filling" ? "Filling" : inv.group}</span></td>
+                      <td className="px-5 py-4 text-right"><span className="text-[12px] text-zinc-400">View only</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -1878,12 +1878,12 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         {/* Header */}
         <div className="flex items-center gap-3">
           <div>
-            <h1 className="text-[24px] font-semibold">Production Monitoring</h1>
-            <p className="mt-1 text-[13px] text-zinc-600">Track freezers, tasks, and additional ingredients across all departments.</p>
+            <h1 className="text-[26px] font-bold text-zinc-900">Production Monitoring</h1>
+            <p className="mt-1 text-[14px] text-zinc-600">Track freezers, tasks, and additional ingredients across all departments.</p>
           </div>
           <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1.5">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[11px] font-medium text-emerald-700">Live</span>
+            <span className="text-[12px] font-semibold text-emerald-700">Live</span>
           </div>
         </div>
 
@@ -1909,7 +1909,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
 
         {/* Today's Production Tasks */}
         <div>
-          <h2 className="text-[16px] font-semibold text-zinc-900 mb-3">Today's Production Tasks</h2>
+          <h2 className="text-[18px] font-bold text-zinc-900 mb-3">Today's Production Tasks</h2>
           <div className="grid gap-4 lg:grid-cols-3">
             {[
               { tasks: bakerTasks, label: "Baker", accent: "bg-stone-600", dot: "bg-stone-500", tag: "bg-stone-100 text-stone-700", bar: "bg-stone-500", icon: "🍞" },
@@ -1924,29 +1924,29 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   <div className="px-4 pt-3 pb-2">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-[14px]">{icon}</span>
-                        <h3 className="text-[14px] font-semibold text-zinc-900">{label}</h3>
+                        <span className="text-[16px]">{icon}</span>
+                        <h3 className="text-[15px] font-bold text-zinc-900">{label}</h3>
                       </div>
-                      <span className={`rounded-lg ${tag} px-2 py-0.5 text-[11px] font-bold font-mono`}>{done}/{tasks.length}</span>
+                      <span className={`rounded-lg ${tag} px-2.5 py-1 text-[12px] font-bold font-mono`}>{done}/{tasks.length}</span>
                     </div>
                     <div className="h-1.5 rounded-full bg-zinc-100 mt-2">
                       <div className={`h-full rounded-full ${totalPct === 100 ? "bg-emerald-500" : bar}`} style={{ width: `${totalPct}%` }} />
                     </div>
                   </div>
                   {tasks.length === 0 ? (
-                    <p className="text-[12px] text-zinc-400 text-center py-6 px-4">No tasks yet</p>
+                    <p className="text-[13px] text-zinc-400 text-center py-6 px-4">No tasks yet</p>
                   ) : (
                     <div className="divide-y divide-zinc-100 border-t border-zinc-100">
                       {tasks.map(task => {
                         const decoPrep = label === "Deco / Pre-Mix" ? decoProductionPrep.find(p => p.productName === task.product) : null;
                         return (
-                          <div key={task.id} className="px-4 py-2.5 hover:bg-zinc-50 transition-colors">
+                          <div key={task.id} className="px-4 py-3 hover:bg-zinc-50 transition-colors">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-[12px] font-medium text-zinc-900 truncate">{task.product}</span>
-                                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${task.status === "completed" ? "bg-emerald-100 text-emerald-700" : task.status === "in-progress" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-500"}`}>{task.status === "in-progress" ? "active" : task.status}</span>
+                                <span className="text-[13px] font-semibold text-zinc-900 truncate">{task.product}</span>
+                                <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${task.status === "completed" ? "bg-emerald-100 text-emerald-700" : task.status === "in-progress" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-500"}`}>{task.status === "in-progress" ? "active" : task.status}</span>
                               </div>
-                              <span className={`text-[11px] font-mono ${task.status === "completed" ? "text-emerald-600" : task.status === "in-progress" ? "text-amber-600" : "text-zinc-400"}`}>{task.completed}/{task.target}</span>
+                              <span className={`text-[12px] font-mono ${task.status === "completed" ? "text-emerald-600" : task.status === "in-progress" ? "text-amber-600" : "text-zinc-400"}`}>{task.completed}/{task.target}</span>
                             </div>
                             {decoPrep && decoPrep.additionalIngredients && decoPrep.additionalIngredients.length > 0 && (
                               <div className="mt-2 rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1.5">
@@ -1972,40 +1972,31 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
 
         {/* Freezer Status */}
         <div>
-          <h2 className="text-[16px] font-semibold text-zinc-900 mb-3">Freezer Status</h2>
+          <h2 className="text-[18px] font-bold text-zinc-900 mb-3">Freezer Status</h2>
           <div className="grid gap-4 lg:grid-cols-3">
             {[
-              { items: bakerFreezer, label: "Baker Freezer", role: "baker" as const, accent: "bg-stone-500", icon: "🍞", emptyMsg: "No items in baker freezer" },
-              { items: pastryFreezer, label: "Pastry Freezer", role: "pastry" as const, accent: "bg-amber-500", icon: "🧁", emptyMsg: "No items in pastry freezer" },
-              { items: decoFreezer, label: "Deco Freezer", role: "deco" as const, accent: "bg-rose-500", icon: "🎂", emptyMsg: "No items in deco freezer" },
-            ].map(({ items, label, role, accent, icon, emptyMsg }) => (
-              <button key={label} type="button" onClick={() => { setFreezerDetailView(role); setFreezerDetailTab("baked-products"); setFreezerDetailSearch(""); }} className="w-full text-left rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden hover:shadow-md hover:border-zinc-300 transition-all cursor-pointer">
-                <div className={`h-1 ${accent}`} />
-                <div className="px-4 pt-3 pb-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[16px]">{icon}</span>
-                      <h3 className="text-[14px] font-semibold text-zinc-900">{label}</h3>
+              { items: bakerFreezer, label: "Baker Freezer", role: "baker" as const, accent: "from-stone-500 to-stone-600", icon: "🍞", desc: "View baked products inventory" },
+              { items: pastryFreezer, label: "Pastry Freezer", role: "pastry" as const, accent: "from-amber-500 to-amber-600", icon: "🧁", desc: "View pastry products inventory" },
+              { items: decoFreezer, label: "Deco Freezer", role: "deco" as const, accent: "from-rose-500 to-rose-600", icon: "🎂", desc: "View decorated cakes inventory" },
+            ].map(({ items, label, role, accent, icon, desc }) => (
+              <button key={label} type="button" onClick={() => { setFreezerDetailView(role); setFreezerDetailTab("baked-products"); setFreezerDetailSearch(""); }} className="group w-full text-left rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden hover:shadow-lg hover:border-zinc-300 transition-all cursor-pointer">
+                <div className={`h-1.5 bg-gradient-to-r ${accent}`} />
+                <div className="px-5 py-5">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${accent} flex items-center justify-center text-[28px] shadow-md group-hover:scale-105 transition-transform`}>
+                      {icon}
                     </div>
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-mono text-zinc-600">{items.length} items</span>
+                    <div className="flex-1">
+                      <h3 className="text-[17px] font-bold text-zinc-900 group-hover:text-zinc-700 transition-colors">{label}</h3>
+                      <p className="text-[13px] text-zinc-500 mt-0.5">{desc}</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[26px] font-bold text-zinc-900">{items.length}</div>
+                      <div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">items</div>
+                    </div>
                   </div>
                 </div>
-                {items.length === 0 ? (
-                  <p className="text-[12px] text-zinc-400 text-center py-6 px-4">{emptyMsg}</p>
-                ) : (
-                  <div className="divide-y divide-zinc-100 border-t border-zinc-100 max-h-[200px] overflow-y-auto">
-                    {items.slice(0, 5).map(item => (
-                      <div key={item.id} className="flex items-center justify-between px-4 py-2">
-                        <div className="min-w-0">
-                          <div className="text-[12px] font-medium text-zinc-900 truncate">{item.productName}</div>
-                          <div className="text-[10px] text-zinc-500">{item.batchRef}</div>
-                        </div>
-                        <span className="text-[12px] font-mono text-zinc-700 shrink-0 ml-2">{item.qty} {item.unit}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="border-t border-zinc-100 px-4 py-2 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 text-center">Click to view full details →</div>
+                <div className="border-t border-zinc-100 px-5 py-2.5 bg-zinc-50/50 text-[13px] font-semibold text-zinc-500 group-hover:text-zinc-800 text-center transition-colors">Click to view full details →</div>
               </button>
             ))}
           </div>
@@ -2029,27 +2020,27 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
               <div className="px-5 pt-4 pb-3">
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-[16px]">➕</span>
-                    <h2 className="text-[16px] font-semibold text-zinc-900">Additional Ingredients Used</h2>
+                    <span className="text-[18px]">➕</span>
+                    <h2 className="text-[18px] font-bold text-zinc-900">Additional Ingredients Used</h2>
                   </div>
-                  <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-bold font-mono text-rose-700">{allAdditional.length} items</span>
+                  <span className="rounded-full bg-rose-100 px-3 py-1 text-[12px] font-bold font-mono text-rose-700">{allAdditional.length} items</span>
                 </div>
-                <p className="text-[11px] text-zinc-500 mt-0.5">Extra ingredients added during preparation with reasons</p>
+                <p className="text-[12px] text-zinc-500 mt-0.5">Extra ingredients added during preparation with reasons</p>
               </div>
               <div className="overflow-x-auto border-t border-zinc-100">
                 {allAdditional.length === 0 ? (
-                  <p className="text-[12px] text-zinc-400 text-center py-8">No additional ingredients used today.</p>
+                  <p className="text-[14px] text-zinc-400 text-center py-8">No additional ingredients used today.</p>
                 ) : (
                   <>
-                  <table className="w-full text-[12px]">
-                    <thead className="bg-zinc-50 text-left text-[10px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                  <table className="w-full text-[13px]">
+                    <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wider text-zinc-500">
                       <tr>
-                        <th className="px-5 py-2.5">Product</th>
-                        <th className="px-5 py-2.5">Ingredient</th>
-                        <th className="px-5 py-2.5 text-right">Quantity</th>
-                        <th className="px-5 py-2.5">Reason</th>
-                        <th className="px-5 py-2.5">Role</th>
-                        <th className="px-5 py-2.5">Date & Time</th>
+                        <th className="px-5 py-3">Product</th>
+                        <th className="px-5 py-3">Ingredient</th>
+                        <th className="px-5 py-3 text-right">Quantity</th>
+                        <th className="px-5 py-3">Reason</th>
+                        <th className="px-5 py-3">Role</th>
+                        <th className="px-5 py-3">Date & Time</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
@@ -2060,16 +2051,16 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                         const roleColor = item.source === "Baker" ? "bg-stone-100 text-stone-700" : item.source === "Deco" ? "bg-rose-100 text-rose-700" : item.source === "Pastry" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600";
                         return (
                           <tr key={idx} className="hover:bg-zinc-50 transition-colors">
-                            <td className="px-5 py-2.5 font-medium text-zinc-900">{item.product}</td>
-                            <td className="px-5 py-2.5 text-zinc-700">{item.name}</td>
-                            <td className="px-5 py-2.5 text-right font-mono text-zinc-700">{item.qty} {item.unit}</td>
-                            <td className="px-5 py-2.5">
-                              <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[10px] font-medium">{item.reason || "—"}</span>
+                            <td className="px-5 py-3 font-semibold text-zinc-900">{item.product}</td>
+                            <td className="px-5 py-3 text-zinc-700 font-medium">{item.name}</td>
+                            <td className="px-5 py-3 text-right font-mono text-zinc-700">{item.qty} {item.unit}</td>
+                            <td className="px-5 py-3">
+                              <span className="rounded-full bg-amber-100 text-amber-700 px-2.5 py-1 text-[12px] font-semibold">{item.reason || "—"}</span>
                             </td>
-                            <td className="px-5 py-2.5">
-                              <span className={`rounded-full ${roleColor} px-2 py-0.5 text-[10px] font-semibold`}>{item.source || "—"}</span>
+                            <td className="px-5 py-3">
+                              <span className={`rounded-full ${roleColor} px-2.5 py-1 text-[12px] font-semibold`}>{item.source || "—"}</span>
                             </td>
-                            <td className="px-5 py-2.5 text-zinc-500">
+                            <td className="px-5 py-3 text-zinc-500">
                               <div>{dateStr}</div>
                               {timeStr && <div className="text-[10px] text-zinc-400">{timeStr}</div>}
                             </td>
@@ -2353,16 +2344,16 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     return (
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <div><h1 className="text-[24px] font-semibold">Delivery Control</h1><p className="mt-1 text-[13px] text-zinc-600">Validate Kitchen reports and post inventory to branches.</p></div>
-          <button onClick={() => { setNewDeliveryBranch("Cakes N Styles Gensan"); setNewDeliveryCustom(""); setNewDeliveryItems([]); setNewDeliveryEta(""); setNewDeliveryAddress(""); setNewDeliveryContact(""); setNewDeliveryRider(""); setNewDeliveryPayment("unpaid"); setNewDeliveryMode("cash"); setNewDeliveryAmount(""); setNewDeliveryNotes(""); setShowAddDelivery(true); db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Delivery</button>
+          <div><h1 className="text-[26px] font-bold text-zinc-900">Delivery Control</h1><p className="mt-1 text-[14px] text-zinc-600">Validate Kitchen reports and post inventory to branches.</p></div>
+          <button onClick={() => { setNewDeliveryBranch("Cakes N Styles Gensan"); setNewDeliveryCustom(""); setNewDeliveryItems([]); setNewDeliveryEta(""); setNewDeliveryAddress(""); setNewDeliveryContact(""); setNewDeliveryRider(""); setNewDeliveryPayment("unpaid"); setNewDeliveryMode("cash"); setNewDeliveryAmount(""); setNewDeliveryNotes(""); setShowAddDelivery(true); db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error); }} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Add Delivery</button>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Dispatches</div><div className="text-[24px] font-semibold mt-1">{deliveries.length}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">In Transit</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{deliveries.filter(d => d.status === "in-transit").length}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Pending Validation</div><div className="text-[24px] font-semibold mt-1 text-blue-600">{pendingValidation.length}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Branch Posted</div><div className="text-[24px] font-semibold mt-1 text-emerald-600">{validations.filter(v => v.status === "posted").length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Dispatches</div><div className="text-[26px] font-bold mt-1">{deliveries.length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">In Transit</div><div className="text-[26px] font-bold mt-1 text-amber-600">{deliveries.filter(d => d.status === "in-transit").length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Pending Validation</div><div className="text-[26px] font-bold mt-1 text-blue-600">{pendingValidation.length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Branch Posted</div><div className="text-[26px] font-bold mt-1 text-emerald-600">{validations.filter(v => v.status === "posted").length}</div></div>
         </div>
 
 {/* Delivery Cards */}
@@ -2406,41 +2397,41 @@ return (
                   {/* Header */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="text-[16px] font-semibold text-white truncate">{d.branch}</h3>
+                      <h3 className="text-[17px] font-bold text-white truncate">{d.branch}</h3>
                       <div className="mt-1 flex items-center gap-2">
-                        <p className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.id}</p>
+                        <p className="text-[12px] text-zinc-500">{d.id}</p>
                         {d.items.length > 0 && (
-                          <span className="rounded-full border border-zinc-800 bg-zinc-800/40 px-2 py-0.5 text-[10px] font-medium text-zinc-300">
+                          <span className="rounded-full border border-zinc-800 bg-zinc-800/40 px-2.5 py-1 text-[12px] font-semibold text-zinc-300">
                             {d.items.reduce((s, i) => s + i.qty, 0)} pcs
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <span className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-medium ${statusPill}`}>{d.status}</span>
+                    <span className={`shrink-0 rounded-full border px-3 py-1 text-[12px] font-semibold ${statusPill}`}>{d.status}</span>
                   </div>
 
                   {/* Body: Items */}
                   <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950/30 p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="text-[12px] font-medium text-zinc-400">Items</div>
-                      <div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{d.items.length} line{d.items.length !== 1 ? "s" : ""}</div>
+                      <div className="text-[13px] font-semibold text-zinc-400">Items</div>
+                      <div className="text-[12px] text-zinc-500">{d.items.length} line{d.items.length !== 1 ? "s" : ""}</div>
                     </div>
 
                     <div className="space-y-2">
                       {d.items.map((item, i) => (
-                        <div key={i} className="flex items-center justify-between gap-3 text-[12px]">
+                        <div key={i} className="flex items-center justify-between gap-3 text-[13px]">
                           <div className="min-w-0 flex items-center gap-2">
-                            <span className="truncate text-zinc-200">{item.product}</span>
+                            <span className="truncate text-zinc-200 font-medium">{item.product}</span>
                             {item.source && (
                               <span
-                                className={`rounded-full px-2 py-0.5 text-[9px] font-medium text-white ${item.source === "baker" ? "bg-stone-700" : item.source === "deco" ? "bg-rose-800" : "bg-zinc-700"}`}
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold text-white ${item.source === "baker" ? "bg-stone-700" : item.source === "deco" ? "bg-rose-800" : "bg-zinc-700"}`}
                               >
                                 {item.source}
                               </span>
                             )}
                           </div>
-                          <span className="shrink-0 text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.qty} pcs</span>
+                          <span className="shrink-0 text-zinc-500">{item.qty} pcs</span>
                         </div>
                       ))}
                     </div>
@@ -2449,7 +2440,7 @@ return (
                   {/* Footer: Date/ETA + actions */}
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-[11px] text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                      <div className="text-[12px] text-zinc-500">
                         {dateLine ? `${dateLine}  •  ` : ""}ETA: {d.eta}
                       </div>
                     </div>
@@ -2985,27 +2976,27 @@ return (
     return (
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <div><h1 className="text-[24px] font-semibold">Product Pricing</h1><p className="mt-1 text-[13px] text-zinc-600">Set selling prices, wholesale rates, and manage product variants.</p></div>
-          <button onClick={() => { setEditingPricing({ id: `PRC-${Date.now()}`, productName: "", category: "", estimatedCost: 0, sellingPrice: 0, wholesalePrice: 0, profitMargin: 0, status: "draft", variants: [] }); setShowPricingModal(true); }} className="rounded-xl bg-zinc-900 px-3.5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800">+ Add Product</button>
+          <div><h1 className="text-[26px] font-bold text-zinc-900">Product Pricing</h1><p className="mt-1 text-[14px] text-zinc-600">Set selling prices, wholesale rates, and manage product variants.</p></div>
+          <button onClick={() => { setEditingPricing({ id: `PRC-${Date.now()}`, productName: "", category: "", estimatedCost: 0, sellingPrice: 0, wholesalePrice: 0, profitMargin: 0, status: "draft", variants: [] }); setShowPricingModal(true); }} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Add Product</button>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Total Products</div><div className="text-[24px] font-semibold mt-1">{totalProducts}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Active</div><div className="text-[24px] font-semibold mt-1 text-emerald-600">{activeProducts}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Drafts</div><div className="text-[24px] font-semibold mt-1 text-amber-600">{allPricing.filter(p => p.status === "draft").length}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">Avg Margin</div><div className="text-[24px] font-semibold mt-1 text-blue-600">{avgMargin.toFixed(1)}%</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Products</div><div className="text-[26px] font-bold mt-1">{totalProducts}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Active</div><div className="text-[26px] font-bold mt-1 text-emerald-600">{activeProducts}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Drafts</div><div className="text-[26px] font-bold mt-1 text-amber-600">{allPricing.filter(p => p.status === "draft").length}</div></div>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Avg Margin</div><div className="text-[26px] font-bold mt-1 text-blue-600">{avgMargin.toFixed(1)}%</div></div>
         </div>
 
         {/* Search & Filter */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
-            <input value={pricingSearch} onChange={e => setPricingSearch(e.target.value)} placeholder="Search products..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[14px]">⌕</span>
+            <input value={pricingSearch} onChange={e => setPricingSearch(e.target.value)} placeholder="Search products..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[14px] focus:outline-none focus:border-zinc-400" />
           </div>
           <div className="flex gap-1.5">
             {(["all", "active", "draft", "archived"] as const).map(f => (
-              <button key={f} onClick={() => setPricingFilter(f)} className={`rounded-lg px-3 py-2 text-[12px] font-medium transition-all ${pricingFilter === f ? "bg-zinc-900 text-white" : "border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"}`}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
+              <button key={f} onClick={() => setPricingFilter(f)} className={`rounded-lg px-3 py-2.5 text-[13px] font-semibold transition-all ${pricingFilter === f ? "bg-zinc-900 text-white" : "border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"}`}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
             ))}
           </div>
         </div>
@@ -3015,42 +3006,42 @@ return (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-zinc-50 border-b border-zinc-100">
-                <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                  <th className="px-5 py-3">Product</th>
-                  <th className="px-5 py-3">Category</th>
-                  <th className="px-5 py-3 text-right">Est. Cost</th>
-                  <th className="px-5 py-3 text-right">Selling Price</th>
-                  <th className="px-5 py-3 text-right">Wholesale</th>
-                  <th className="px-5 py-3 text-right">Margin</th>
-                  <th className="px-5 py-3 text-center">Status</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
+                <tr className="text-[12px] uppercase tracking-wider text-zinc-500">
+                  <th className="px-5 py-3.5">Product</th>
+                  <th className="px-5 py-3.5">Category</th>
+                  <th className="px-5 py-3.5 text-right">Est. Cost</th>
+                  <th className="px-5 py-3.5 text-right">Selling Price</th>
+                  <th className="px-5 py-3.5 text-right">Wholesale</th>
+                  <th className="px-5 py-3.5 text-right">Margin</th>
+                  <th className="px-5 py-3.5 text-center">Status</th>
+                  <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-50">
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={6} className="px-5 py-12 text-center text-[13px] text-zinc-400">No products found.</td></tr>
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-[14px] text-zinc-400">No products found.</td></tr>
                 ) : filtered.map(p => {
                   const margin = p.sellingPrice > 0 ? ((p.sellingPrice - p.estimatedCost) / p.sellingPrice * 100) : 0;
                   return (
                     <tr key={p.id} className="hover:bg-zinc-50/50 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="text-[13px] font-medium text-zinc-900">{p.productName}</div>
-                        {p.variants.length > 0 && <div className="text-[11px] text-zinc-400 mt-0.5">{p.variants.length} variant{p.variants.length > 1 ? "s" : ""}</div>}
+                      <td className="px-5 py-4">
+                        <div className="text-[14px] font-semibold text-zinc-900">{p.productName}</div>
+                        {p.variants.length > 0 && <div className="text-[12px] text-zinc-400 mt-0.5">{p.variants.length} variant{p.variants.length > 1 ? "s" : ""}</div>}
                       </td>
-                      <td className="px-5 py-3.5 text-[12px] text-zinc-600">{p.category || "—"}</td>
-                      <td className="px-5 py-3.5 text-[13px] text-zinc-700 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{p.estimatedCost.toFixed(2)}</td>
-                      <td className="px-5 py-3.5 text-[13px] font-medium text-zinc-900 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{p.sellingPrice > 0 ? `₱${p.sellingPrice.toFixed(2)}` : "—"}</td>
-                      <td className="px-5 py-3.5 text-[13px] text-zinc-700 text-right" style={{ fontFamily: "Fragment Mono, monospace" }}>{p.wholesalePrice > 0 ? `₱${p.wholesalePrice.toFixed(2)}` : "—"}</td>
-                      <td className="px-5 py-3.5 text-right">
+                      <td className="px-5 py-4 text-[13px] text-zinc-600">{p.category || "—"}</td>
+                      <td className="px-5 py-4 text-[14px] text-zinc-700 text-right">₱{p.estimatedCost.toFixed(2)}</td>
+                      <td className="px-5 py-4 text-[14px] font-semibold text-zinc-900 text-right">{p.sellingPrice > 0 ? `₱${p.sellingPrice.toFixed(2)}` : "—"}</td>
+                      <td className="px-5 py-4 text-[14px] text-zinc-700 text-right">{p.wholesalePrice > 0 ? `₱${p.wholesalePrice.toFixed(2)}` : "—"}</td>
+                      <td className="px-5 py-4 text-right">
                         {p.sellingPrice > 0 ? (
-                          <span className={`text-[12px] font-medium ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`}>{margin.toFixed(1)}%</span>
-                        ) : <span className="text-[12px] text-zinc-400">—</span>}
+                          <span className={`text-[13px] font-semibold ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`}>{margin.toFixed(1)}%</span>
+                        ) : <span className="text-[13px] text-zinc-400">—</span>}
                       </td>
-                      <td className="px-5 py-3.5 text-center">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-medium uppercase border ${p.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : p.status === "draft" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-zinc-100 text-zinc-500 border-zinc-200"}`}>{p.status}</span>
+                      <td className="px-5 py-4 text-center">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[12px] font-semibold uppercase border ${p.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : p.status === "draft" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-zinc-100 text-zinc-500 border-zinc-200"}`}>{p.status}</span>
                       </td>
-                      <td className="px-5 py-3.5 text-right">
-                        <button onClick={() => { setEditingPricing(p); setShowPricingModal(true); }} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50 transition-all">Edit</button>
+                      <td className="px-5 py-4 text-right">
+                        <button onClick={() => { setEditingPricing(p); setShowPricingModal(true); }} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-all">Edit</button>
                       </td>
                     </tr>
                   );
@@ -3133,9 +3124,9 @@ return (
     return (
       <div className="space-y-5">
         <div className="flex items-center justify-between">
-          <div><h1 className="text-[24px] font-semibold">Finance</h1><p className="mt-1 text-[13px] text-zinc-600">Track purchases, bills, revenue, and waste across all operations.</p></div>
+          <div><h1 className="text-[26px] font-bold text-zinc-900">Finance</h1><p className="mt-1 text-[14px] text-zinc-600">Track purchases, bills, revenue, and waste across all operations.</p></div>
           <div className="relative">
-            <input type="text" placeholder="Search..." value={financeSearch} onChange={e => setFinanceSearch(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2 pl-9 text-[13px] outline-none focus:border-zinc-400 w-64" />
+            <input type="text" placeholder="Search..." value={financeSearch} onChange={e => setFinanceSearch(e.target.value)} className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 pl-9 text-[14px] outline-none focus:border-zinc-400 w-64" />
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
         </div>
@@ -3143,37 +3134,37 @@ return (
         {/* Period Filter */}
         <div className="flex flex-wrap items-center gap-2">
           {(["today", "week", "month", "year", "custom"] as const).map(p => (
-            <button key={p} onClick={() => setFinancePeriod(p)} className={`rounded-xl px-3.5 py-2 text-[12px] font-medium transition-all ${financePeriod === p ? "bg-zinc-900 text-white shadow-sm" : "border border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
+            <button key={p} onClick={() => setFinancePeriod(p)} className={`rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-all ${financePeriod === p ? "bg-zinc-900 text-white shadow-sm" : "border border-zinc-200 text-zinc-600 hover:bg-zinc-50"}`}>
               {p === "today" ? "Today" : p === "week" ? "This Week" : p === "month" ? "This Month" : p === "year" ? "This Year" : "Custom"}
             </button>
           ))}
           {financePeriod === "custom" && (
-            <input type="month" value={financeCustomMonth} onChange={e => setFinanceCustomMonth(e.target.value)} className="rounded-xl border border-zinc-200 px-3 py-2 text-[12px] outline-none focus:border-zinc-400" />
+            <input type="month" value={financeCustomMonth} onChange={e => setFinanceCustomMonth(e.target.value)} className="rounded-xl border border-zinc-200 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
           )}
-          <span className="text-[11px] text-zinc-400 ml-1 font-mono">{periodLabel}</span>
+          <span className="text-[12px] text-zinc-400 ml-1">{periodLabel}</span>
         </div>
 
         {/* Key Metrics */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Purchases</div>
-            <div className="text-[24px] font-semibold mt-1">₱{totalPurchases.toLocaleString()}</div>
-            <div className="text-[11px] text-zinc-400 mt-1">{unpaidPurchases.length} unpaid/overdue</div>
+            <div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Purchases</div>
+            <div className="text-[26px] font-bold mt-1">₱{totalPurchases.toLocaleString()}</div>
+            <div className="text-[12px] text-zinc-400 mt-1">{unpaidPurchases.length} unpaid/overdue</div>
           </div>
           <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Bills &amp; Dues</div>
-            <div className="text-[24px] font-semibold mt-1">₱{totalBills.toLocaleString()}</div>
-            <div className="text-[11px] text-zinc-400 mt-1">{pendingBills.length} pending/overdue</div>
+            <div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Bills &amp; Dues</div>
+            <div className="text-[26px] font-bold mt-1">₱{totalBills.toLocaleString()}</div>
+            <div className="text-[12px] text-zinc-400 mt-1">{pendingBills.length} pending/overdue</div>
           </div>
           <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Revenue</div>
-            <div className="text-[24px] font-semibold mt-1 text-emerald-600">₱{totalRevenue.toLocaleString()}</div>
-            <div className="text-[11px] text-zinc-400 mt-1">{periodRevenue.length} entries</div>
+            <div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Revenue</div>
+            <div className="text-[26px] font-bold mt-1 text-emerald-600">₱{totalRevenue.toLocaleString()}</div>
+            <div className="text-[12px] text-zinc-400 mt-1">{periodRevenue.length} entries</div>
           </div>
           <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Waste Cost</div>
-            <div className="text-[24px] font-semibold mt-1 text-red-600">₱{totalWaste.toLocaleString()}</div>
-            <div className="text-[11px] text-zinc-400 mt-1">{periodWaste.length} entries</div>
+            <div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Waste Cost</div>
+            <div className="text-[26px] font-bold mt-1 text-red-600">₱{totalWaste.toLocaleString()}</div>
+            <div className="text-[12px] text-zinc-400 mt-1">{periodWaste.length} entries</div>
           </div>
         </div>
 
@@ -3187,7 +3178,7 @@ return (
             { id: "waste", label: "Waste Log", count: wasteLog.length },
           ].map(tab => (
             <button key={tab.id} onClick={() => { setFinanceTab(tab.id as any); setFinanceSearch(""); }} className={
-              "px-4 py-2.5 text-[13px] font-medium border-b-2 transition-all " +
+              "px-4 py-2.5 text-[14px] font-semibold border-b-2 transition-all " +
               (financeTab === tab.id ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-500 hover:text-zinc-700")
             }>{tab.label} {tab.count !== null ? <span className="text-[11px] text-zinc-400">({tab.count})</span> : ""}</button>
           ))}
@@ -3843,18 +3834,18 @@ return (
       </div>
 
       {/* Today's DOS */}
-      <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
+      <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
         <div className="flex items-center justify-between">
-          <div><h2 className="text-[16px] font-semibold text-white" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2><p className="text-[12px] text-zinc-400">Daily Order Sales — auto-generates production tasks</p></div>
+          <div><h2 className="text-[22px] font-bold text-white" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2><p className="text-[14px] text-zinc-400 mt-1">Daily Order Sales — auto-generates production tasks</p></div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-amber-500 border border-amber-900/50">LOCKED</span>
-            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-900">{todayDOS.length} items</span>
+            <span className="rounded-full bg-zinc-800 px-3 py-1.5 text-[13px] font-medium text-amber-500 border border-amber-900/50">LOCKED</span>
+            <span className="rounded-full bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-900">{todayDOS.length} items</span>
           </div>
         </div>
-        <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800">
+        <div className="mt-5 overflow-hidden rounded-2xl border border-zinc-800">
           <div className="overflow-x-auto">
             <div className="min-w-[500px]">
-              <div className="grid grid-cols-12 gap-2 border-b border-zinc-800 bg-zinc-950/50 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+              <div className="grid grid-cols-12 gap-2 border-b border-zinc-800 bg-zinc-950/50 px-4 py-3 text-[12px] font-medium uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
                 <div className="col-span-4">Product</div><div className="col-span-2 text-right">Qty</div><div className="col-span-2 text-center">Assigned</div><div className="col-span-2 text-right">Pri</div><div className="col-span-2 text-right">Status</div>
               </div>
               <div className="divide-y divide-zinc-800">
@@ -3868,13 +3859,13 @@ return (
                   );
                   const roles = relatedTasks.length > 0 ? [...new Set(relatedTasks.map(t => t.assignedTo))] : (item.roles || []);
                   return (
-                    <div key={item.id} className="grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-zinc-800/40 transition-colors">
-                      <div className="col-span-4"><div className="text-[13px] font-medium text-white truncate">{item.product}</div>{(item.flavor || item.size || item.themeOccasion) ? <div className="flex flex-wrap items-center gap-1.5 mt-1">{item.flavor ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{item.flavor}</span> : null}{item.size ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{item.size}</span> : null}{item.themeOccasion ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">🎨 {item.themeOccasion}</span> : null}</div> : null}<div className="text-[11px] text-zinc-500 mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></div>
-                      <div className="col-span-2 text-right text-[13px] font-medium text-white font-mono">{item.qty}</div>
+                    <div key={item.id} className="grid grid-cols-12 items-center gap-2 px-4 py-4 hover:bg-zinc-800/40 transition-colors">
+                      <div className="col-span-4"><div className="text-[15px] font-semibold text-white truncate">{item.product}</div>{(item.flavor || item.size || item.themeOccasion) ? <div className="flex flex-wrap items-center gap-1.5 mt-1.5">{item.flavor ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2.5 py-1 text-[12px] font-medium text-zinc-200">{item.flavor}</span> : null}{item.size ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2.5 py-1 text-[12px] font-medium text-zinc-200">{item.size}</span> : null}{item.themeOccasion ? <span className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2.5 py-1 text-[12px] font-medium text-zinc-200">🎨 {item.themeOccasion}</span> : null}</div> : null}<div className="text-[12px] text-zinc-500 mt-1" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.id}</div></div>
+                      <div className="col-span-2 text-right text-[16px] font-bold text-white font-mono">{item.qty}</div>
                       
-                      <div className="col-span-2 flex justify-center gap-1 flex-wrap">{roles.map(r => <span key={r} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${r === "baker" ? "bg-stone-800 text-stone-300" : r === "deco" ? "bg-rose-900/40 text-rose-300" : r === "pastry" ? "bg-amber-900/40 text-amber-300" : "bg-sky-900/40 text-sky-300"}`}>{r === "baker" ? "Baker" : r === "deco" ? "Deco" : r === "pastry" ? "Pastry" : "Kitchen"}</span>)}{roles.length === 0 && <span className="text-[11px] text-zinc-600">—</span>}</div>
-                      <div className="col-span-2 text-right"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${item.priority === "HIGH" ? "bg-red-950 text-red-400 border border-red-900/50" : item.priority === "MEDIUM" ? "bg-amber-950 text-amber-400 border border-amber-900/50" : "bg-zinc-800 text-zinc-400"}`}>{item.priority === "HIGH" ? "H" : item.priority === "MEDIUM" ? "M" : "L"}</span></div>
-                      <div className="col-span-2 flex justify-end"><span className={`h-2 w-2 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-700"}`} /></div>
+                      <div className="col-span-2 flex justify-center gap-1.5 flex-wrap">{roles.map(r => <span key={r} className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${r === "baker" ? "bg-stone-800 text-stone-300" : r === "deco" ? "bg-rose-900/40 text-rose-300" : r === "pastry" ? "bg-amber-900/40 text-amber-300" : "bg-sky-900/40 text-sky-300"}`}>{r === "baker" ? "Baker" : r === "deco" ? "Deco" : r === "pastry" ? "Pastry" : "Kitchen"}</span>)}{roles.length === 0 && <span className="text-[12px] text-zinc-600">—</span>}</div>
+                      <div className="col-span-2 text-right"><span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${item.priority === "HIGH" ? "bg-red-950 text-red-400 border border-red-900/50" : item.priority === "MEDIUM" ? "bg-amber-950 text-amber-400 border border-amber-900/50" : "bg-zinc-800 text-zinc-400"}`}>{item.priority === "HIGH" ? "H" : item.priority === "MEDIUM" ? "M" : "L"}</span></div>
+                      <div className="col-span-2 flex justify-end"><span className={`h-2.5 w-2.5 rounded-full ${item.status === "completed" ? "bg-emerald-500" : item.status === "in-progress" ? "bg-amber-500 animate-pulse" : "bg-zinc-700"}`} /></div>
                     </div>
                   );
                 })}
@@ -3882,9 +3873,9 @@ return (
             </div>
           </div>
         </div>
-        <div className="mt-4 flex items-center justify-between rounded-xl bg-zinc-950/40 px-3 py-2.5">
-          <div className="text-[12px] text-zinc-500">Baker: {production.filter(t => t.assignedTo === "baker").length} tasks • Deco: {production.filter(t => t.assignedTo === "deco").length} tasks • Kitchen: {production.filter(t => t.assignedTo === "kitchen").length}</div>
-          <button onClick={() => setActiveTab("dos")} className="text-[12px] font-medium text-white underline underline-offset-4 hover:text-zinc-300 transition-colors">Manage DOS</button>
+        <div className="mt-4 flex items-center justify-between rounded-xl bg-zinc-950/40 px-4 py-3">
+          <div className="text-[13px] text-zinc-500">Baker: {production.filter(t => t.assignedTo === "baker").length} tasks • Deco: {production.filter(t => t.assignedTo === "deco").length} tasks • Kitchen: {production.filter(t => t.assignedTo === "kitchen").length}</div>
+          <button onClick={() => setActiveTab("dos")} className="text-[13px] font-medium text-white underline underline-offset-4 hover:text-zinc-300 transition-colors">Manage DOS</button>
         </div>
       </div>
 
@@ -4106,6 +4097,13 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
     return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
   }, 0);
 
+  const totalGrams = ingredients.reduce((sum, ing) => {
+    if (ing.unit === "g" || ing.unit === "kg") {
+      return sum + (ing.unit === "kg" ? ing.qtyPerBatch * 1000 : ing.qtyPerBatch);
+    }
+    return sum;
+  }, 0);
+
   const available = inventory.filter(i => !ingredients.some(ing => ing.inventoryId === i.id));
 
   return (
@@ -4183,6 +4181,15 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
           })}
         </div>
 
+        {totalGrams > 0 && (
+          <div className="mb-4 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 flex items-center justify-between">
+            <span className="text-[12px] text-zinc-500 font-medium">Total Weight</span>
+            <span className="text-[14px] font-bold text-zinc-800" style={{ fontFamily: "Fragment Mono, monospace" }}>
+              {totalGrams.toLocaleString()} g
+            </span>
+          </div>
+        )}
+
         <div className="mb-4">
           <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Notes</label>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400 resize-none" rows={3} placeholder="Optional notes about this recipe..." />
@@ -4201,6 +4208,19 @@ function RecipeModal({ product, recipes, inventory, onSave, onClose }: {
               )}
             </div>
           </div>
+          {totalGrams > 0 && (
+            <div className="mt-3 pt-3 border-t border-emerald-200 flex items-center justify-between">
+              <div className="text-[11px] uppercase tracking-wider text-emerald-600 font-semibold">Total Weight</div>
+              <div className="text-[14px] font-bold text-emerald-800" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                {totalGrams.toLocaleString()} g
+                {yieldQty && yieldQty > 0 && (
+                  <span className="text-[11px] font-normal text-emerald-600 ml-2">
+                    ({(totalGrams / yieldQty).toLocaleString(undefined, { maximumFractionDigits: 0 })} g per yield)
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">

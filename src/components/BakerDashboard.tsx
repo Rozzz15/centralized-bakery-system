@@ -79,6 +79,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   const [showConvertIngredientPicker, setShowConvertIngredientPicker] = useState(false);
   const [convertIngredientSearch, setConvertIngredientSearch] = useState("");
   const [convertPickQuantities, setConvertPickQuantities] = useState<Record<string, number>>({});
+  const [convertMode, setConvertMode] = useState<"product" | "deco">("product");
 
   // Bake selection flow state
   const [bakerBakeQty, setBakerBakeQty] = useState<Record<string, number>>({});
@@ -330,6 +331,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         const updatedDecoItems: FreezerItem[] = [];
         const newHistory: FreezerHistory[] = [];
 
+        const refLabel = convertMode === "deco" ? "Sent to Deco" : "baking";
         for (const item of sortedItems) {
           if (toDeduct <= 0) break;
           const deduct = Math.min(toDeduct, item.qty);
@@ -341,7 +343,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
             producedBy: "baker",
             qtyChanged: -deduct,
             action: "deducted",
-            reference: `Used ${deduct} pcs from ${convertProduct} premix for baking`,
+            reference: `Used ${deduct} pcs from ${convertProduct} premix for ${refLabel}`,
             timestamp: new Date().toISOString(),
           });
         }
@@ -370,44 +372,91 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
           }
         }
 
-        // Add finished product to freezer
-        const newItem: FreezerItem = {
-          id: `FRZ-${Date.now()}-CNV-${convertTargetProduct.replace(/[^a-zA-Z0-9]/g, "")}`,
-          productName: convertTargetProduct,
-          qty: convertQty,
-          unit: "pcs",
-          batchRef: `BAKE-${Date.now()}`,
-          producedBy: "baker",
-          dateProduced: today,
-          status: "stored",
-          notes: `Baked — Converted from ${convertProduct} premix${convertSelectedFilling ? ` + ${convertSelectedFilling} filling` : ""}`,
-          size: convertSize || undefined,
-        };
+        if (convertMode === "deco") {
+          // Send to Deco — add to inventory with source "came-from-baker"
+          const newItemId = `INV-${Date.now()}-DECO-${convertTargetProduct.replace(/[^a-zA-Z0-9]/g, "")}`;
+          const newInvItem: InventoryItem = {
+            id: newItemId,
+            name: convertTargetProduct,
+            sku: "",
+            onHand: convertQty,
+            unit: "pcs",
+            threshold: 0,
+            cost: 0,
+            supplier: "",
+            lastIn: new Date().toISOString(),
+            category: "dry",
+            group: "ingredients",
+            source: "came-from-baker",
+            accessRoles: ["deco"],
+            size: convertSize || undefined,
+          };
+          onUpdateInventory?.((prev: InventoryItem[]) => [...prev, newInvItem]);
+          db.upsertInventoryItem(newInvItem).catch(console.error);
 
-        newHistory.push({
-          id: `FH-${Date.now()}-CNV-${Math.random().toString(36).slice(2, 6)}`,
-          productName: convertTargetProduct,
-          producedBy: "baker",
-          qtyChanged: convertQty,
-          action: "added",
-          reference: `Baked ${convertQty} pcs from ${convertProduct} premix${convertSelectedFilling ? ` + ${convertSelectedFilling} filling` : ""}`,
-          timestamp: new Date().toISOString(),
-        });
+          newHistory.push({
+            id: `FH-${Date.now()}-SND-${Math.random().toString(36).slice(2, 6)}`,
+            productName: convertTargetProduct,
+            producedBy: "baker",
+            qtyChanged: convertQty,
+            action: "added",
+            reference: `Sent ${convertQty} pcs of ${convertTargetProduct} to Deco Inventory`,
+            timestamp: new Date().toISOString(),
+          });
 
-        onUpdateFreezer?.((prev: FreezerItem[]) => {
-          const updated = new Map(prev.map(i => [i.id, i]));
-          updatedDecoItems.forEach(i => updated.set(i.id, i));
-          updated.set(newItem.id, newItem);
-          return [...updated.values()];
-        });
+          onUpdateFreezer?.((prev: FreezerItem[]) => {
+            const updated = new Map(prev.map(i => [i.id, i]));
+            updatedDecoItems.forEach(i => updated.set(i.id, i));
+            return [...updated.values()];
+          });
 
-        await db.upsertFreezerItems([...updatedDecoItems, newItem]).catch(console.error);
-        newHistory.forEach(h => db.insertFreezerHistory(h).catch(console.error));
+          await db.upsertFreezerItems(updatedDecoItems).catch(console.error);
+          newHistory.forEach(h => db.insertFreezerHistory(h).catch(console.error));
 
-        const ingredientMsg = convertAddedIngredients.length > 0 ? ` + ${convertAddedIngredients.length} ingredient(s)` : "";
-        const fillingMsg = convertSelectedFilling ? ` + ${convertFillingQty} ${convertSelectedFilling} filling` : "";
-        const sizeMsg = convertSize ? ` (${convertSize})` : "";
-        showToast(`Converted ${convertQty} pcs of ${convertTargetProduct}${sizeMsg} from ${convertProduct} premix${ingredientMsg}${fillingMsg}. Saved to Baked Products.`, "success");
+          const ingredientMsg = convertAddedIngredients.length > 0 ? ` + ${convertAddedIngredients.length} ingredient(s)` : "";
+          const fillingMsg = convertSelectedFilling ? ` + ${convertFillingQty} ${convertSelectedFilling} filling` : "";
+          const sizeMsg = convertSize ? ` (${convertSize})` : "";
+          showToast(`Sent ${convertQty} pcs of ${convertTargetProduct}${sizeMsg} from ${convertProduct} premix${ingredientMsg}${fillingMsg} to Deco Inventory.`, "success");
+        } else {
+          // Convert to Product — add to baker freezer as baked product
+          const newItem: FreezerItem = {
+            id: `FRZ-${Date.now()}-CNV-${convertTargetProduct.replace(/[^a-zA-Z0-9]/g, "")}`,
+            productName: convertTargetProduct,
+            qty: convertQty,
+            unit: "pcs",
+            batchRef: `BAKE-${Date.now()}`,
+            producedBy: "baker",
+            dateProduced: today,
+            status: "stored",
+            notes: `Baked — Converted from ${convertProduct} premix${convertSelectedFilling ? ` + ${convertSelectedFilling} filling` : ""}`,
+            size: convertSize || undefined,
+          };
+
+          newHistory.push({
+            id: `FH-${Date.now()}-CNV-${Math.random().toString(36).slice(2, 6)}`,
+            productName: convertTargetProduct,
+            producedBy: "baker",
+            qtyChanged: convertQty,
+            action: "added",
+            reference: `Baked ${convertQty} pcs from ${convertProduct} premix${convertSelectedFilling ? ` + ${convertSelectedFilling} filling` : ""}`,
+            timestamp: new Date().toISOString(),
+          });
+
+          onUpdateFreezer?.((prev: FreezerItem[]) => {
+            const updated = new Map(prev.map(i => [i.id, i]));
+            updatedDecoItems.forEach(i => updated.set(i.id, i));
+            updated.set(newItem.id, newItem);
+            return [...updated.values()];
+          });
+
+          await db.upsertFreezerItems([...updatedDecoItems, newItem]).catch(console.error);
+          newHistory.forEach(h => db.insertFreezerHistory(h).catch(console.error));
+
+          const ingredientMsg = convertAddedIngredients.length > 0 ? ` + ${convertAddedIngredients.length} ingredient(s)` : "";
+          const fillingMsg = convertSelectedFilling ? ` + ${convertFillingQty} ${convertSelectedFilling} filling` : "";
+          const sizeMsg = convertSize ? ` (${convertSize})` : "";
+          showToast(`Converted ${convertQty} pcs of ${convertTargetProduct}${sizeMsg} from ${convertProduct} premix${ingredientMsg}${fillingMsg}. Saved to Baked Products.`, "success");
+        }
 
         setShowConvertModal(false);
         setConvertQty(0);
@@ -415,6 +464,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         setConvertSelectedFilling("");
         setConvertFillingQty(0);
         setConvertSize("");
+        setConvertMode("product");
       } catch (err) {
         console.error("Conversion failed:", err);
         showToast("Failed to convert. Please try again.", "error");
@@ -427,7 +477,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       <div className="space-y-5">
         <div>
           <h1 className="text-[24px] font-semibold">Conversion</h1>
-          <p className="mt-1 text-[13px] text-zinc-600">Deco Production Recipe items available for baking. Use as Product to convert premix into finished baked goods.</p>
+          <p className="mt-1 text-[13px] text-zinc-600">Deco Production Recipe items available for baking. Convert to Product or Send to Deco Inventory.</p>
         </div>
 
         {decoProductionItems.length === 0 ? (
@@ -466,12 +516,18 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                         )}
                       </div>
                     </div>
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
                       <button
-                        onClick={() => { const r = findRecipe(productName); setConvertProduct(productName); setConvertTargetProduct(r?.productName || productName); setConvertQty(g.totalQty); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setShowConvertModal(true); }}
+                        onClick={() => { setConvertMode("deco"); const r = findRecipe(productName); setConvertProduct(productName); setConvertTargetProduct(r?.productName || productName); setConvertQty(g.totalQty); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setShowConvertModal(true); }}
+                        className="rounded-xl border border-zinc-300 bg-white px-5 py-2.5 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors shadow-sm"
+                      >
+                        Send to Deco
+                      </button>
+                      <button
+                        onClick={() => { setConvertMode("product"); const r = findRecipe(productName); setConvertProduct(productName); setConvertTargetProduct(r?.productName || productName); setConvertQty(g.totalQty); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setShowConvertModal(true); }}
                         className="rounded-xl bg-zinc-900 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-zinc-800 transition-colors shadow-sm"
                       >
-                        Use as Product
+                        Convert to Product
                       </button>
                     </div>
                   </div>
@@ -497,13 +553,13 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
 
         {/* Conversion Modal */}
         {showConvertModal && convertProduct && createPortal((
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowConvertModal(false); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setConvertSize(""); }}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowConvertModal(false); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setConvertSize(""); setConvertMode("product"); }}>
             <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-1">
-                <h2 className="text-[18px] font-semibold">Use as Product</h2>
+                <h2 className="text-[18px] font-semibold">{convertMode === "deco" ? "Send to Deco" : "Use as Product"}</h2>
                 <span className="text-[12px] text-zinc-400 font-mono bg-zinc-50 rounded-lg px-2 py-1">{convertProduct} premix</span>
               </div>
-              <p className="text-[13px] text-zinc-500 mb-4">Convert premix into a finished baked product.</p>
+              <p className="text-[13px] text-zinc-500 mb-4">{convertMode === "deco" ? "Send premix to Deco Inventory for decoration use." : "Convert premix into a finished baked product."}</p>
 
               <div className="space-y-4">
                 {/* Product Dropdown + Sizing */}
@@ -661,11 +717,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 </div>
 
                 <div className="flex gap-2 pt-1">
-                  <button onClick={() => { setShowConvertModal(false); setConvertQty(0); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setConvertSize(""); }} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">
+                  <button onClick={() => { setShowConvertModal(false); setConvertQty(0); setConvertAddedIngredients([]); setConvertSelectedFilling(""); setConvertFillingQty(0); setConvertSize(""); setConvertMode("product"); }} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">
                     Cancel
                   </button>
                   <button onClick={handleConvert} disabled={converting || convertQty <= 0 || !convertTargetProduct} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 disabled:opacity-40">
-                    {converting ? "Converting..." : "Convert to Product"}
+                    {converting ? (convertMode === "deco" ? "Sending..." : "Converting...") : (convertMode === "deco" ? "Send to Deco" : "Convert to Product")}
                   </button>
                 </div>
               </div>
