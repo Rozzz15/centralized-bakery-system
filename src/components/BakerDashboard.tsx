@@ -811,7 +811,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
 
   /* ── Filling Tab ── */
   if (activeTab === "filling") {
-    const fillings = freezerItems.filter(i => i.notes === "Filling" && i.status === "stored");
+    const fillings = freezerItems.filter(i => i.notes === "Filling" && i.status === "stored").sort((a, b) => b.id.localeCompare(a.id));
     const filtered = fillingSearch ? fillings.filter(i => i.productName.toLowerCase().includes(fillingSearch.toLowerCase())) : fillings;
 
     const handleAddFilling = () => {
@@ -844,28 +844,21 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         db.upsertInventory(changedItems).catch(err => console.error("Failed to deduct ingredients:", err));
       }
 
-      // Save filling to freezer — merge with existing today's batch if same productName
+      // Save filling to freezer — always create a new entry
       const today = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
-      const existing = freezerItems.find(f => f.productName === fillingName.trim() && f.dateProduced === today && f.notes === "Filling");
-      if (existing) {
-        const updated = freezerItems.map(f => f.id === existing.id ? { ...f, qty: f.qty + batchQty } : f);
-        onUpdateFreezer?.(updated);
-        db.upsertFreezerItems(updated.filter(f => f.id === existing.id)).catch(console.error);
-      } else {
-        const item: FreezerItem = {
-          id: `FRZ-${Date.now()}`,
-          productName: fillingName.trim(),
-          qty: batchQty,
-          unit: "batches",
-          batchRef: `BATCH-${Date.now()}`,
-          producedBy: "baker",
-          dateProduced: today,
-          status: "stored",
-          notes: "Filling",
-        };
-        onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, item]);
-        db.upsertFreezerItems([item]).catch(console.error);
-      }
+      const item: FreezerItem = {
+        id: `FRZ-${Date.now()}`,
+        productName: fillingName.trim(),
+        qty: batchQty,
+        unit: "batches",
+        batchRef: `BATCH-${Date.now()}`,
+        producedBy: "baker",
+        dateProduced: today,
+        status: "stored",
+        notes: "Filling",
+      };
+      onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, item]);
+      db.upsertFreezerItems([item]).catch(console.error);
 
       // Add to My Inventory (or increment existing)
       const existingInv = inventory.find(i => i.name === fillingName.trim() && i.group === "ingredients");
@@ -895,61 +888,75 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     };
 
     return (
-      <div className="space-y-5">
-        <div><h1 className="text-[24px] font-semibold">Filling</h1><p className="mt-1 text-[13px] text-zinc-600">Record filling batches produced.</p></div>
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div className="rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 p-8 shadow-lg">
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <h1 className="text-[36px] font-bold tracking-tight text-white">Filling History</h1>
+              <p className="mt-2 text-[15px] text-zinc-400">All filling batches produced, sorted by newest first.</p>
+            </div>
+            {fillings.length > 0 && (
+              <div className="shrink-0 rounded-2xl bg-white/10 px-6 py-4 text-center border border-white/10">
+                <div className="text-[12px] text-zinc-400 uppercase font-semibold tracking-wider">Total Batches</div>
+                <div className="text-[32px] font-bold text-white mt-1" style={{ fontFamily: "Fragment Mono, monospace" }}>{fillings.reduce((s, f) => s + f.qty, 0)}</div>
+                <div className="text-[12px] text-zinc-500 mt-1">{fillings.length} filling{fillings.length > 1 ? "s" : ""}</div>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Add Filling Form */}
-        <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-sm">
-          <h2 className="text-[15px] font-semibold mb-4">New Filling Batch</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 p-8 shadow-lg">
+          <h2 className="text-[20px] font-bold text-white mb-5">New Filling Batch</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Filling Name</label>
-              <input value={fillingName} onChange={e => setFillingName(e.target.value)} placeholder="e.g. Vanilla Custard" list="filling-list" className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+              <label className="text-[13px] font-semibold uppercase tracking-wider text-zinc-400 mb-2 block">Filling Name</label>
+              <input value={fillingName} onChange={e => setFillingName(e.target.value)} placeholder="e.g. Vanilla Custard" list="filling-list" className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 text-[15px] text-white placeholder:text-zinc-500 outline-none focus:border-amber-500 transition-colors" />
               <datalist id="filling-list">
                 {recipes.filter(r => r.group === "filling").map(r => <option key={r.productName} value={r.productName} />)}
               </datalist>
             </div>
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Qty Produced</label>
-              <input type="number" min={1} value={fillingQty} onChange={e => setFillingQty(e.target.value)} placeholder="0" className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+              <label className="text-[13px] font-semibold uppercase tracking-wider text-zinc-400 mb-2 block">Qty Produced</label>
+              <input type="number" min={1} value={fillingQty} onChange={e => setFillingQty(e.target.value)} placeholder="0" className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 text-[15px] text-white placeholder:text-zinc-500 outline-none focus:border-amber-500 transition-colors" />
             </div>
             <div className="flex items-end">
-              <button onClick={handleAddFilling} disabled={!fillingName.trim() || !fillingQty} className="w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 disabled:opacity-40">Create Filling</button>
+              <button onClick={handleAddFilling} disabled={!fillingName.trim() || !fillingQty} className="w-full rounded-2xl bg-white px-6 py-3.5 text-[15px] font-bold text-zinc-900 hover:bg-zinc-100 hover:shadow-xl disabled:opacity-40 transition-all active:scale-[0.98]">Create Filling</button>
             </div>
           </div>
         </div>
 
         {/* Fillings List */}
-        <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-100">
-            <h2 className="text-[15px] font-semibold">Filling Batches</h2>
-            <div className="relative max-w-[200px]">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[13px]">⌕</span>
-              <input value={fillingSearch} onChange={e => setFillingSearch(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-1.5 text-[13px] focus:outline-none focus:border-zinc-400" />
+        <div className="rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 shadow-lg overflow-hidden">
+          <div className="flex items-center justify-between px-8 py-5 border-b border-zinc-700">
+            <h2 className="text-[20px] font-bold text-white">Filling Batches History</h2>
+            <div className="relative max-w-[240px]">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[15px]">⌕</span>
+              <input value={fillingSearch} onChange={e => setFillingSearch(e.target.value)} placeholder="Search..." className="w-full rounded-xl border border-zinc-700 bg-zinc-800 pl-9 pr-4 py-2.5 text-[14px] text-white placeholder:text-zinc-500 focus:outline-none focus:border-amber-500 transition-colors" />
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
-              <thead className="bg-zinc-50 border-b border-zinc-100">
-                <tr className="text-[11px] uppercase tracking-wider text-zinc-500">
-                  <th className="px-5 py-3">Filling</th>
-                  <th className="px-5 py-3 text-right">Qty</th>
-                  <th className="px-5 py-3">Date</th>
-                  <th className="px-5 py-3">Batch</th>
-                  <th className="px-5 py-3 text-right">Actions</th>
+              <thead className="bg-zinc-800 border-b border-zinc-700">
+                <tr className="text-[13px] uppercase tracking-wider text-zinc-300 font-semibold">
+                  <th className="px-8 py-4">Filling</th>
+                  <th className="px-8 py-4 text-right">Qty</th>
+                  <th className="px-8 py-4">Date</th>
+                  <th className="px-8 py-4">Batch</th>
+                  <th className="px-8 py-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-50">
+              <tbody className="divide-y divide-zinc-800">
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={5} className="px-5 py-12 text-center text-[13px] text-zinc-400">No fillings recorded yet.</td></tr>
+                  <tr><td colSpan={5} className="px-8 py-16 text-center text-[15px] text-zinc-500">No filling history yet.</td></tr>
                 ) : filtered.map(f => (
-                  <tr key={f.id} className="hover:bg-zinc-50/50 transition-colors">
-                    <td className="px-5 py-3.5"><div className="text-[13px] font-medium text-zinc-900">{f.productName}</div></td>
-                    <td className="px-5 py-3.5 text-[13px] text-right font-mono">{f.qty}</td>
-                    <td className="px-5 py-3.5 text-[12px] text-zinc-500">{f.dateProduced}</td>
-                    <td className="px-5 py-3.5 text-[12px] text-zinc-500 font-mono">{f.batchRef || "—"}</td>
-                    <td className="px-5 py-3.5 text-right">
-                      <button onClick={() => { if (confirm(`Delete ${f.productName} batch?`)) { const updated = freezerItems.filter(x => x.id !== f.id); onUpdateFreezer?.(updated); db.deleteFreezerItem(f.id).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">Delete</button>
+                  <tr key={f.id} className="hover:bg-zinc-800/50 transition-colors">
+                    <td className="px-8 py-4"><div className="text-[15px] font-semibold text-zinc-100">{f.productName}</div></td>
+                    <td className="px-8 py-4 text-[15px] text-right font-mono font-bold text-zinc-200">{f.qty}</td>
+                    <td className="px-8 py-4 text-[13px] text-zinc-400">{f.dateProduced ? new Date(f.dateProduced + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}</td>
+                    <td className="px-8 py-4 text-[13px] text-zinc-400 font-mono">{f.batchRef || "—"}</td>
+                    <td className="px-8 py-4 text-right">
+                      <button onClick={() => { if (confirm(`Delete ${f.productName} batch?`)) { const updated = freezerItems.filter(x => x.id !== f.id); onUpdateFreezer?.(updated); db.deleteFreezerItem(f.id).catch(console.error); } }} className="rounded-xl border border-red-800 bg-red-950/30 px-4 py-2 text-[13px] font-medium text-red-400 hover:bg-red-900/40 transition-all">Delete</button>
                     </td>
                   </tr>
                 ))}
@@ -1248,10 +1255,21 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
   if (activeTab !== "dashboard") return null;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-[28px] font-semibold tracking-tight">Baker Workstation</h1>
-        <p className="mt-1 text-[13px] text-zinc-500">Today's baking orders grouped by recipe.</p>
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 p-8 shadow-lg">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <h1 className="text-[36px] font-bold tracking-tight text-white">Baker Workstation</h1>
+            <p className="mt-2 text-[15px] text-zinc-400">Today's baking orders grouped by recipe.</p>
+          </div>
+          {bakerDOS.length > 0 && (
+            <div className="shrink-0 rounded-2xl bg-white/10 px-6 py-4 text-center border border-white/10">
+              <div className="text-[12px] text-zinc-400 uppercase font-semibold tracking-wider">Baker Total</div>
+              <div className="text-[32px] font-bold text-white mt-1" style={{ fontFamily: "Fragment Mono, monospace" }}>{bakerDOS.reduce((s, d) => s + d.qty, 0)}</div>
+              <div className="text-[12px] text-zinc-500 mt-1">{bakerDOS.length} item{bakerDOS.length > 1 ? "s" : ""}</div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Step Navigation */}
@@ -1270,7 +1288,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               <div key={s.id} className="flex flex-col items-center">
                 <button
                   onClick={() => setStep(i)}
-                  className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold transition-all duration-300 ${
+                  className={`flex items-center justify-center w-9 h-9 rounded-full text-[12px] font-bold transition-all duration-300 ${
                     isActive
                       ? 'bg-white text-zinc-900 shadow-[0_0_0_3px_rgba(255,255,255,0.15)] scale-110'
                       : isPast
@@ -1280,7 +1298,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 >
                   {isPast ? '✓' : i + 1}
                 </button>
-                <span className={`mt-2 text-[10px] font-medium tracking-wide text-center transition-colors duration-300 ${
+                <span className={`mt-2 text-[11px] font-medium tracking-wide text-center transition-colors duration-300 ${
                   isActive ? 'text-white' : isPast ? 'text-zinc-400' : 'text-zinc-600'
                 }`}>
                   {s.label.replace(/^[^\s]+\s/, '')}
@@ -1292,44 +1310,52 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       </div>
 
       {step === 0 && (
-      <div className="space-y-4">
+      <div className="space-y-6">
         {/* Summary stats */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {(() => {
             const all = bakerDOS.length;
             const pending = bakerDOS.filter(d => d.status === "pending").length;
             const inProgress = bakerDOS.filter(d => d.status === "in-progress").length;
             const completed = bakerDOS.filter(d => d.status === "completed").length;
             return [
-              { label: "Total Items", value: all, color: "text-white" },
-              { label: "Pending", value: pending, color: "text-zinc-400" },
-              { label: "In Progress", value: inProgress, color: "text-amber-400" },
-              { label: "Completed", value: completed, color: "text-emerald-400" },
+              { label: "Total Items", value: all, color: "text-white", bg: "bg-zinc-800/80 border-zinc-700" },
+              { label: "Pending", value: pending, color: "text-zinc-300", bg: "bg-zinc-800/80 border-zinc-700" },
+              { label: "In Progress", value: inProgress, color: "text-amber-300", bg: "bg-amber-950/50 border-amber-800" },
+              { label: "Completed", value: completed, color: "text-emerald-300", bg: "bg-emerald-950/50 border-emerald-800" },
             ].map((stat, i) => (
-              <div key={i} className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-center">
-                <div className={`text-[22px] font-bold font-mono ${stat.color}`}>{stat.value}</div>
-                <div className="text-[10px] text-zinc-500 uppercase tracking-wider mt-1">{stat.label}</div>
+              <div key={i} className={`rounded-2xl border ${stat.bg} p-5 text-left`}>
+                <div className="text-[13px] text-zinc-400 uppercase tracking-wider font-semibold">{stat.label}</div>
+                <div className={`text-[32px] font-bold mt-2 ${stat.color}`}>{stat.value}</div>
               </div>
             ));
           })()}
         </div>
 
         {bakerDOS.length === 0 ? (
-          <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-6 text-center">
-            <p className="text-[14px] text-zinc-500">No baking orders yet.</p>
-            <p className="text-[12px] text-zinc-500 mt-1">Wait for Admin to create a DOS.</p>
-          </div>
+          <div className="rounded-2xl border border-zinc-700 bg-zinc-900 p-10 text-center"><p className="text-[14px] text-zinc-400">No baking orders yet.</p><p className="text-[12px] text-zinc-500 mt-1">Wait for Admin to create a DOS.</p></div>
         ) : (
-          <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="text-[16px] font-semibold text-white" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2>
-                <p className="text-[12px] text-zinc-400 mt-0.5">Daily Order Sales — auto-generates production tasks</p>
+          <div className="overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900">
+            <div className="px-6 py-5 border-b border-zinc-700 bg-zinc-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-[18px] font-bold text-white" style={{ fontFamily: "Instrument Sans, system-ui" }}>Today's DOS • {new Date().toLocaleString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric" })}</h2>
+                  <p className="text-[13px] text-zinc-400 mt-1">Daily Order Sales — auto-generates production tasks</p>
+                </div>
               </div>
-            
             </div>
-            <div className="space-y-3">
-              {(() => {
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-zinc-700 bg-zinc-800 text-left text-[13px] font-semibold text-zinc-300 uppercase tracking-wider">
+                  <th className="px-6 py-4">Product</th>
+                  <th className="px-6 py-4 text-right">Demand</th>
+                  <th className="px-6 py-4 text-right">Batches</th>
+                  <th className="px-6 py-4 text-right">Yield</th>
+                  <th className="px-6 py-4 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
                 const grouped = new Map<string, { dos: DOSItem[]; totalQty: number }>();
                 bakerDOS.forEach(d => {
                   if (!grouped.has(d.product)) grouped.set(d.product, { dos: [], totalQty: 0 });
@@ -1338,10 +1364,8 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   g.totalQty += d.qty;
                 });
                 const productRecipeLookup = (name: string) => recipes.find(r => r.productName.toLowerCase() === name.toLowerCase());
-            return [...grouped.entries()].map(([productName, group]) => {
+                return [...grouped.entries()].map(([productName, group]) => {
                   const recipe = findRecipe(productName);
-                  // If the recipe has linkedIngredients, show the linked recipe (e.g. "Streusel Toppings")
-                  // rather than the product name ("Choco Moist Cake").
                   const linkedName = recipe?.linkedIngredients?.find(l => l.toLowerCase() !== productName.toLowerCase());
                   const linkedRecipe = linkedName ? productRecipeLookup(linkedName) : undefined;
                   const displayRecipe = linkedRecipe || recipe;
@@ -1353,67 +1377,30 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   const actualExcess = actualDecoOutput > 0 ? Math.max(0, actualDecoOutput - group.totalQty) : 0;
                   const itemStatus = group.dos.every(d => d.status === "completed") ? "completed" : group.dos.some(d => d.status === "in-progress") ? "in-progress" : actualDecoOutput > 0 ? "ready" : "pending";
                   return (
-                    <div key={productName} className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 hover:border-zinc-700 transition-colors">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[15px] font-bold text-white truncate">{recipeDisplayName}</span>
-                            {recipeDisplayName !== productName && (
-                              <span className="text-[10px] text-zinc-500 truncate shrink-0">→ {productName}{group.dos.some(d => d.size) ? ` (${[...new Set(group.dos.map(d => d.size).filter(Boolean))].join(", ")})` : ""}</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 mt-2">
-                            {hasYield ? (
-                              <>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Demand</span>
-                                  <span className="text-[15px] font-bold text-white font-mono">{group.totalQty}<span className="text-[10px] font-medium text-zinc-500 ml-0.5">pcs</span></span>
-                                </div>
-                                <div className="w-px h-4 bg-zinc-800" />
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Batches</span>
-                                  <span className="text-[15px] font-bold text-white font-mono">{requiredBatches}</span>
-                                </div>
-                                <div className="w-px h-4 bg-zinc-800" />
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Yield</span>
-                                  <span className="text-[15px] font-bold text-amber-400 font-mono">{yieldPerBatch}<span className="text-[10px] font-medium text-amber-600 ml-0.5">pcs</span></span>
-                                </div>
-                                {actualDecoOutput > 0 && (
-                                  <>
-                                    <div className="w-px h-4 bg-zinc-800" />
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Deco Output</span>
-                                      <span className="text-[15px] font-bold text-emerald-400 font-mono">{actualDecoOutput}<span className="text-[10px] font-medium text-emerald-600 ml-0.5">pcs</span></span>
-                                    </div>
-                                    {actualExcess > 0 && (
-                                      <>
-                                        <div className="w-px h-4 bg-zinc-800" />
-                                        <span className="text-[10px] text-amber-400/70">+{actualExcess} excess</span>
-                                      </>
-                                    )}
-                                  </>
-                                )}
-                                {actualDecoOutput === 0 && (
-                                  <span className="text-[10px] text-zinc-500 italic">Awaiting Deco production</span>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-[10px] text-amber-400/70 italic">Set recipe yield in Admin &gt; Recipes</span>
-                            )}
-                          </div>
-                          {(group.dos.some(d => d.flavor || d.size)) && (
-                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                              {[...new Set(group.dos.map(d => d.flavor).filter(Boolean))].map(f => (
-                                <span key={f} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-200">{f}</span>
-                              ))}
-                              {[...new Set(group.dos.map(d => d.size).filter(Boolean))].map(s => (
-                                <span key={s} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-200">{s}</span>
-                              ))}
-                            </div>
+                    <tr key={productName} className="border-b border-zinc-800 hover:bg-zinc-800/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[15px] font-semibold text-zinc-100">{recipeDisplayName}</span>
+                          {recipeDisplayName !== productName && (
+                            <span className="text-[11px] text-zinc-500 shrink-0">→ {productName}{group.dos.some(d => d.size) ? ` (${[...new Set(group.dos.map(d => d.size).filter(Boolean))].join(", ")})` : ""}</span>
                           )}
                         </div>
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold shrink-0 ${
+                        {(group.dos.some(d => d.flavor || d.size)) && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                            {[...new Set(group.dos.map(d => d.flavor).filter(Boolean))].map(f => (
+                              <span key={f} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{f}</span>
+                            ))}
+                            {[...new Set(group.dos.map(d => d.size).filter(Boolean))].map(s => (
+                              <span key={s} className="rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[11px] font-medium text-zinc-200">{s}</span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right font-mono font-bold text-[17px] text-zinc-200">{group.totalQty}</td>
+                      <td className="px-6 py-4 text-right font-mono font-bold text-[17px] text-zinc-200">{hasYield ? requiredBatches : "—"}</td>
+                      <td className="px-6 py-4 text-right font-mono font-bold text-[17px] text-amber-300">{hasYield ? yieldPerBatch : "—"}</td>
+                      <td className="px-6 py-4 text-right">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold ${
                           itemStatus === "completed" ? "bg-emerald-900/40 text-emerald-300" :
                           itemStatus === "in-progress" ? "bg-amber-900/40 text-amber-300" :
                           itemStatus === "ready" ? "bg-blue-900/40 text-blue-300" :
@@ -1427,16 +1414,17 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                           }`} />
                           {itemStatus === "completed" ? "Completed" : itemStatus === "in-progress" ? "In Progress" : itemStatus === "ready" ? "Ready" : "Pending"}
                         </span>
-                      </div>
-                    </div>
+                      </td>
+                    </tr>
                   );
                 });
               })()}
-            </div>
+              </tbody>
+            </table>
           </div>
         )}
-        <div className="text-center space-y-3">
-          <div className="text-[12px] text-zinc-500">Baker: {bakerDOS.length} items</div>
+        <div className="text-center space-y-3 mt-4">
+          <div className="text-[13px] text-zinc-500">Baker: {bakerDOS.length} items</div>
           <button onClick={() => setStep(1)} className="w-full rounded-2xl border border-zinc-700 bg-white px-8 py-3.5 text-[15px] font-bold text-zinc-900 hover:bg-zinc-100 hover:shadow-xl transition-all active:scale-[0.98]">
             Next →
           </button>
@@ -1445,12 +1433,12 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       )}
 
       {step === 1 && (
-        <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
+        <div className="rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 p-8 shadow-lg">
           <div className="flex items-center gap-4 mb-6">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-900/40 text-amber-300 text-[18px] font-bold">1</span>
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-amber-900/40 text-amber-300 text-[20px] font-bold">1</span>
             <div>
-              <h2 className="text-[20px] font-bold text-white tracking-tight">STEP 1 — ACKNOWLEDGE TASK</h2>
-              <p className="text-[12px] text-zinc-400 mt-0.5">Click a recipe to view details and start task</p>
+              <h2 className="text-[28px] font-bold text-white tracking-tight">STEP 1 — ACKNOWLEDGE TASK</h2>
+              <p className="text-[14px] text-zinc-400 mt-1">Click a recipe to view details and start task</p>
             </div>
           </div>
 
@@ -1464,7 +1452,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
             });
             return (
               <>
-                <div className="rounded-xl border border-zinc-800 overflow-hidden mb-4">
+                <div className="rounded-2xl border border-zinc-700 overflow-hidden mb-5">
                     {[...grouped.entries()].map(([productName, group], idx) => {
                     const recipe = findRecipe(productName);
                     const linkedName = recipe?.linkedIngredients?.find(l => l.toLowerCase() !== productName.toLowerCase());
@@ -1482,46 +1470,46 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                       <div
                         key={productName}
                         onClick={() => setSelectedRecipe(productName)}
-                        className={`grid grid-cols-12 items-center gap-2 px-3 py-3 hover:bg-zinc-800/40 cursor-pointer transition-colors ${idx > 0 ? 'border-t border-zinc-800' : ''}`}
+                        className={`grid grid-cols-12 items-center gap-3 px-5 py-4 hover:bg-zinc-800/40 cursor-pointer transition-colors ${idx > 0 ? 'border-t border-zinc-700' : ''}`}
                       >
                         <div className="col-span-8">
                           <div className="flex items-center gap-2">
-                            <span className={`text-[14px] font-semibold truncate ${isStarted ? 'text-emerald-300' : 'text-white'}`}>Recipe: {recipeDisplayName}</span>
-                            {recipeDisplayName !== productName && <span className="text-[10px] text-zinc-600">→ {productName}{sizeLabel}</span>}
+                            <span className={`text-[16px] font-bold truncate ${isStarted ? 'text-emerald-300' : 'text-zinc-100'}`}>Recipe: {recipeDisplayName}</span>
+                            {recipeDisplayName !== productName && <span className="text-[12px] text-zinc-500">→ {productName}{sizeLabel}</span>}
                           </div>
-                          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2">
+                          <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 mt-2.5">
                             <div className="flex items-center gap-1.5">
-                              <span className="text-[11px] text-zinc-500">Demand:</span>
-                              <span className="text-[14px] font-bold text-white font-mono">{group.totalQty} <span className="text-[11px] font-medium text-zinc-500">pcs</span></span>
+                              <span className="text-[12px] text-zinc-400 uppercase tracking-wider font-semibold">Demand</span>
+                              <span className="text-[17px] font-bold text-zinc-100 font-mono">{group.totalQty}<span className="text-[12px] font-medium text-zinc-500 ml-0.5">pcs</span></span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <span className="text-[11px] text-zinc-500">Required Batches:</span>
-                              <span className="text-[14px] font-bold text-white font-mono">{requiredBatches}</span>
+                              <span className="text-[12px] text-zinc-400 uppercase tracking-wider font-semibold">Batches</span>
+                              <span className="text-[17px] font-bold text-zinc-100 font-mono">{requiredBatches}</span>
                             </div>
                             {hasYield && (
                               <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] text-zinc-500">Yield per Batch:</span>
-                                <span className="text-[14px] font-bold text-amber-400 font-mono">{yieldPerBatch} <span className="text-[11px] font-medium text-amber-600">pcs</span></span>
+                                <span className="text-[12px] text-zinc-400 uppercase tracking-wider font-semibold">Yield</span>
+                                <span className="text-[17px] font-bold text-amber-300 font-mono">{yieldPerBatch}<span className="text-[12px] font-medium text-amber-600 ml-0.5">pcs</span></span>
                               </div>
                             )}
                             {hasYield && actualDecoOutput > 0 && (
                               <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] text-zinc-500">Deco Output:</span>
-                                <span className="text-[14px] font-bold text-emerald-400 font-mono">{actualDecoOutput} <span className="text-[11px] font-medium text-emerald-600">pcs</span></span>
-                                {actualExcess > 0 && <span className="text-[10px] text-amber-400/70 ml-1">(Excess: {actualExcess} pcs)</span>}
+                                <span className="text-[12px] text-zinc-400 uppercase tracking-wider font-semibold">Deco Output</span>
+                                <span className="text-[17px] font-bold text-emerald-300 font-mono">{actualDecoOutput}<span className="text-[12px] font-medium text-emerald-600 ml-0.5">pcs</span></span>
+                                {actualExcess > 0 && <span className="text-[11px] text-amber-400/70 ml-1">+{actualExcess} excess</span>}
                               </div>
                             )}
                           </div>
                         </div>
                         <div className="col-span-4 flex items-center justify-end">
                           {isStarted ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold bg-emerald-900/40 text-emerald-300">
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                            <span className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold bg-emerald-900/40 text-emerald-300">
+                              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
                               In Progress
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold bg-blue-900/40 text-blue-300">
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                            <span className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold bg-blue-900/40 text-blue-300">
+                              <span className="inline-block h-2 w-2 rounded-full bg-blue-500"></span>
                               Ready
                             </span>
                           )}
@@ -1531,20 +1519,20 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   })}
                 </div>
 
-                <div className="flex items-center justify-between rounded-xl bg-zinc-950/40 px-4 py-2.5 mt-4 mb-5">
-                  <span className="text-[12px] text-zinc-500">{grouped.size} recipe{grouped.size !== 1 ? 's' : ''} · {bakerDOS.reduce((s, d) => s + d.qty, 0)} pcs total</span>
-                  <span className="text-[12px] text-emerald-400">{startedRecipes.size}/{grouped.size} started</span>
+                <div className="flex items-center justify-between rounded-xl bg-zinc-800/50 px-5 py-3 mb-5">
+                  <span className="text-[13px] text-zinc-400">{grouped.size} recipe{grouped.size !== 1 ? 's' : ''} · {bakerDOS.reduce((s, d) => s + d.qty, 0)} pcs total</span>
+                  <span className="text-[13px] text-emerald-400 font-semibold">{startedRecipes.size}/{grouped.size} started</span>
                 </div>
 
                 <button
                   onClick={() => setStep(2)}
-                  className="w-full rounded-xl bg-white px-4 py-3.5 text-[15px] font-bold text-zinc-900 hover:bg-zinc-100 transition-all active:scale-[0.98]"
+                  className="w-full rounded-2xl bg-white px-6 py-4 text-[16px] font-bold text-zinc-900 hover:bg-zinc-100 hover:shadow-xl transition-all active:scale-[0.98]"
                 >
                   Next → Record Production
                 </button>
 
                 <div className="mt-4 text-center">
-                  <button onClick={() => setStep(0)} className="text-[12px] text-zinc-500 hover:text-zinc-300 transition-colors">
+                  <button onClick={() => setStep(0)} className="text-[13px] text-zinc-500 hover:text-zinc-300 transition-colors">
                     ← Back to DOS Review
                   </button>
                 </div>
@@ -1555,12 +1543,12 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       )}
 
       {step === 2 && (
-        <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
+        <div className="rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 p-8 shadow-lg">
           <div className="flex items-center gap-4 mb-6">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-900/40 text-amber-300 text-[18px] font-bold">2</span>
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-amber-900/40 text-amber-300 text-[20px] font-bold">2</span>
             <div>
-              <h2 className="text-[20px] font-bold text-white tracking-tight">STEP 2 — RECORD ACTUAL PRODUCTION</h2>
-              <p className="text-[12px] text-zinc-400 mt-0.5">Enter how many pieces were actually produced for each recipe</p>
+              <h2 className="text-[28px] font-bold text-white tracking-tight">STEP 2 — RECORD ACTUAL PRODUCTION</h2>
+              <p className="text-[14px] text-zinc-400 mt-1">Enter how many pieces were actually produced for each recipe</p>
             </div>
           </div>
 
@@ -1581,41 +1569,40 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               const recipeDisplayName = recipe?.productName || productName;
               const hasActual = actualProduction[productName] !== undefined;
               const actual = hasActual ? actualProduction[productName]! : 0;
-              // Deco stock from Production Recipe — check product name, linked recipe names, and display name
               const linkedNames = recipe?.linkedIngredients ?? [];
               const decoStock = freezerItems.filter(i =>
                 i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && i.qty > 0 &&
                 (i.productName === productName || i.productName === recipeDisplayName || linkedNames.some(l => l.toLowerCase() === i.productName.toLowerCase()))
               );
               const decoAvailable = decoStock.reduce((sum, i) => sum + i.qty, 0);
-              const maxBakerInput = decoAvailable; // Baker can only produce up to what Deco has available
+              const maxBakerInput = decoAvailable;
               return (
-                <div key={productName} className="rounded-xl border border-zinc-800 bg-zinc-800/30 p-4 mb-3 last:mb-0">
-                  <div className="flex items-center justify-between mb-3">
+                <div key={productName} className="rounded-2xl border border-zinc-700 bg-zinc-800/30 p-5 mb-4 last:mb-0">
+                  <div className="flex items-center justify-between mb-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-[14px] font-semibold text-white truncate">{recipeDisplayName}</span>
-                        {recipe && <span className="text-[10px] text-zinc-600">→ {productName}</span>}
+                        <span className="text-[16px] font-bold text-zinc-100 truncate">{recipeDisplayName}</span>
+                        {recipe && <span className="text-[12px] text-zinc-500">→ {productName}</span>}
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[11px]">
-                        <span className="text-zinc-400">DOS Demand: <span className="font-mono font-semibold text-white">{group.totalQty}</span> pcs</span>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[13px]">
+                        <span className="text-zinc-400">DOS Demand: <span className="font-mono font-semibold text-zinc-100">{group.totalQty}</span> pcs</span>
                         {hasYield && expectedOutput <= maxBakerInput && (
                           <>
                             <span className="text-zinc-600">·</span>
-                            <span className="text-amber-400/80">Expected: {expectedOutput} pcs</span>
+                            <span className="text-amber-300">Expected: {expectedOutput} pcs</span>
                           </>
                         )}
                       </div>
                     </div>
                     {group.dos.some(d => d.size) && (
-                      <span className="rounded-lg bg-amber-500/20 border border-amber-500/40 px-3 py-1 text-[13px] font-bold text-amber-300 shrink-0 ml-3">
+                      <span className="rounded-xl bg-amber-500/20 border border-amber-500/40 px-4 py-1.5 text-[14px] font-bold text-amber-300 shrink-0 ml-3">
                         {[...new Set(group.dos.map(d => d.size).filter(Boolean))].join(", ")}
                       </span>
                     )}
                   </div>
 
-                  <div className="rounded-lg bg-zinc-950/40 p-3 mb-3">
-                    <label className="text-[11px] text-zinc-400 block mb-1.5">
+                  <div className="rounded-xl bg-zinc-900/50 p-4 mb-4">
+                    <label className="text-[13px] text-zinc-400 block mb-2">
                       How many pieces will you produce?
                       {decoAvailable > 0 && (
                         <span className="text-zinc-500 ml-1">(Deco has {decoAvailable} — max {maxBakerInput})</span>
@@ -1637,30 +1624,30 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                             setActualProduction(prev => ({ ...prev, [productName]: Math.min(val, maxBakerInput) }));
                           }
                         }}
-                        className="w-28 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-[15px] font-mono font-bold text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 transition-colors"
+                        className="w-32 rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-[17px] font-mono font-bold text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 transition-colors"
                       />
-                      <span className="text-[12px] text-zinc-500">pcs</span>
+                      <span className="text-[14px] text-zinc-500">pcs</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-4 gap-2 text-[11px]">
-                    <div className="rounded-lg bg-zinc-950/40 p-2 text-center">
-                      <div className="text-zinc-500 mb-0.5">Orders</div>
-                      <div className="font-mono font-bold text-white text-[13px]">{group.totalQty}</div>
+                  <div className="grid grid-cols-4 gap-3 text-[13px]">
+                    <div className="rounded-xl bg-zinc-900/50 p-3 text-center">
+                      <div className="text-zinc-400 uppercase tracking-wider font-semibold mb-1">Orders</div>
+                      <div className="font-mono font-bold text-zinc-100 text-[17px]">{group.totalQty}</div>
                     </div>
-                    <div className="rounded-lg bg-zinc-950/40 p-2 text-center">
-                      <div className="text-zinc-500 mb-0.5">Deco Has</div>
-                      <div className={`font-mono font-bold text-[13px] ${decoAvailable > 0 ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                    <div className="rounded-xl bg-zinc-900/50 p-3 text-center">
+                      <div className="text-zinc-400 uppercase tracking-wider font-semibold mb-1">Deco Has</div>
+                      <div className={`font-mono font-bold text-[17px] ${decoAvailable > 0 ? 'text-emerald-300' : 'text-zinc-600'}`}>
                         {decoAvailable > 0 ? decoAvailable : '—'}
                       </div>
                     </div>
-                    <div className="rounded-lg bg-zinc-950/40 p-2 text-center">
-                      <div className="text-zinc-500 mb-0.5">I Make</div>
-                      <div className="font-mono font-bold text-amber-300 text-[13px]">{hasActual ? actual : '—'}</div>
+                    <div className="rounded-xl bg-zinc-900/50 p-3 text-center">
+                      <div className="text-zinc-400 uppercase tracking-wider font-semibold mb-1">I Make</div>
+                      <div className="font-mono font-bold text-amber-300 text-[17px]">{hasActual ? actual : '—'}</div>
                     </div>
-                    <div className="rounded-lg bg-zinc-950/40 p-2 text-center">
-                      <div className="text-zinc-500 mb-0.5">Deco Left</div>
-                      <div className={`font-mono font-bold text-[13px] ${hasActual ? (decoAvailable - actual > 0 ? 'text-emerald-400' : decoAvailable - actual === 0 ? 'text-zinc-500' : 'text-red-400') : 'text-zinc-600'}`}>
+                    <div className="rounded-xl bg-zinc-900/50 p-3 text-center">
+                      <div className="text-zinc-400 uppercase tracking-wider font-semibold mb-1">Deco Left</div>
+                      <div className={`font-mono font-bold text-[17px] ${hasActual ? (decoAvailable - actual > 0 ? 'text-emerald-300' : decoAvailable - actual === 0 ? 'text-zinc-500' : 'text-red-400') : 'text-zinc-600'}`}>
                         {hasActual ? decoAvailable - actual : decoAvailable}
                       </div>
                     </div>
@@ -1670,14 +1657,14 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
             });
           })()}
 
-          <div className="mt-5 text-center">
-            <button onClick={() => setStep(3)} className="w-full rounded-xl bg-white px-4 py-3.5 text-[15px] font-bold text-zinc-900 hover:bg-zinc-100 transition-all active:scale-[0.98]">
+          <div className="mt-6 text-center">
+            <button onClick={() => setStep(3)} className="w-full rounded-2xl bg-white px-6 py-4 text-[16px] font-bold text-zinc-900 hover:bg-zinc-100 hover:shadow-xl transition-all active:scale-[0.98]">
               Next → Complete Production
             </button>
           </div>
 
           <div className="mt-4 text-center">
-            <button onClick={() => setStep(1)} className="text-[12px] text-zinc-500 hover:text-zinc-300 transition-colors">
+            <button onClick={() => setStep(1)} className="text-[13px] text-zinc-500 hover:text-zinc-300 transition-colors">
               ← Back to Acknowledge
             </button>
           </div>
@@ -1685,12 +1672,12 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
       )}
 
       {step === 3 && (
-        <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-6 shadow-sm">
+        <div className="rounded-3xl bg-gradient-to-br from-zinc-800 to-zinc-900 p-8 shadow-lg">
           <div className="flex items-center gap-4 mb-6">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-900/40 text-emerald-300 text-[18px] font-bold">3</span>
+            <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/40 text-emerald-300 text-[20px] font-bold">3</span>
             <div>
-              <h2 className="text-[20px] font-bold text-white tracking-tight">STEP 3 — COMPLETE PRODUCTION</h2>
-              <p className="text-[12px] text-zinc-400 mt-0.5">Review allocation and save to freezer stock</p>
+              <h2 className="text-[28px] font-bold text-white tracking-tight">STEP 3 — COMPLETE PRODUCTION</h2>
+              <p className="text-[14px] text-zinc-400 mt-1">Review allocation and save to freezer stock</p>
             </div>
           </div>
 
@@ -1711,54 +1698,54 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               const bakerRemaining = bakerProduced - bakerUsed;
               const notMade = Math.max(0, demand - bakerProduced);
               return (
-                <div key={productName} className="rounded-xl border border-zinc-800 bg-zinc-800/30 p-4 mb-3 last:mb-0">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[14px] font-semibold text-white truncate">{recipeDisplayName}</span>
-                    {recipe && <span className="text-[10px] text-zinc-600">→ {productName}</span>}
+                <div key={productName} className="rounded-2xl border border-zinc-700 bg-zinc-800/30 p-5 mb-4 last:mb-0">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-[16px] font-bold text-zinc-100 truncate">{recipeDisplayName}</span>
+                    {recipe && <span className="text-[12px] text-zinc-500">→ {productName}</span>}
                   </div>
 
-                  <div className="rounded-lg bg-zinc-950/40 p-3 mb-3">
-                    <div className="text-[11px] text-zinc-500 mb-2">Orders Allocation</div>
+                  <div className="rounded-xl bg-zinc-900/50 p-4 mb-4">
+                    <div className="text-[13px] text-zinc-400 uppercase tracking-wider font-semibold mb-3">Orders Allocation</div>
                     {bakerUsed > 0 && (
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[12px] text-zinc-400">I Made</span>
-                        <span className="font-mono font-bold text-amber-400 text-[14px]">{bakerUsed} pcs</span>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[14px] text-zinc-400">I Made</span>
+                        <span className="font-mono font-bold text-amber-300 text-[17px]">{bakerUsed} pcs</span>
                       </div>
                     )}
                     {notMade > 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-[12px] text-zinc-400">Not Made</span>
-                        <span className="font-mono font-bold text-zinc-500 text-[14px]">{notMade} pcs</span>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[14px] text-zinc-400">Not Made</span>
+                        <span className="font-mono font-bold text-zinc-500 text-[17px]">{notMade} pcs</span>
                       </div>
                     )}
                     {bakerUsed === 0 && notMade === 0 && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-[12px] text-red-400/70">Nothing produced</span>
-                        <span className="font-mono font-bold text-red-400 text-[14px]">0 pcs</span>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[14px] text-red-400/70">Nothing produced</span>
+                        <span className="font-mono font-bold text-red-400 text-[17px]">0 pcs</span>
                       </div>
                     )}
-                    <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-zinc-800">
-                      <span className="text-[12px] text-zinc-400 font-medium">Orders</span>
-                      <span className="font-mono font-bold text-white text-[14px]">{demand} pcs</span>
+                    <div className="flex items-center justify-between pt-2.5 border-t border-zinc-700">
+                      <span className="text-[14px] text-zinc-400 font-medium">Orders</span>
+                      <span className="font-mono font-bold text-zinc-100 text-[17px]">{demand} pcs</span>
                     </div>
                   </div>
 
                   {bakerRemaining > 0 && (
-                    <div className="rounded-lg bg-zinc-950/40 p-3">
-                      <div className="text-[11px] text-zinc-500 mb-2">My Extra</div>
+                    <div className="rounded-xl bg-zinc-900/50 p-4 mb-3">
+                      <div className="text-[13px] text-zinc-400 uppercase tracking-wider font-semibold mb-2">My Extra</div>
                       <div className="flex items-center justify-between">
-                        <span className="text-[12px] text-zinc-400">{recipeDisplayName}</span>
-                        <span className="font-mono font-bold text-amber-400 text-[14px]">{bakerRemaining} pcs</span>
+                        <span className="text-[14px] text-zinc-400">{recipeDisplayName}</span>
+                        <span className="font-mono font-bold text-amber-300 text-[17px]">{bakerRemaining} pcs</span>
                       </div>
                     </div>
                   )}
 
                   {bakerProduced < demand && (
-                    <div className="rounded-lg bg-red-950/30 border border-red-900/30 p-3">
-                      <div className="text-[11px] text-red-400/70 mb-1">Short on Orders</div>
+                    <div className="rounded-xl bg-red-950/30 border border-red-900/30 p-4">
+                      <div className="text-[13px] text-red-400/70 uppercase tracking-wider font-semibold mb-2">Short on Orders</div>
                       <div className="flex items-center justify-between">
-                        <span className="text-[12px] text-red-300/80">I made {bakerUsed} of {demand} — short {demand - bakerProduced}</span>
-                        <span className="font-mono font-bold text-red-400 text-[14px]">-{demand - bakerProduced} pcs</span>
+                        <span className="text-[14px] text-red-300/80">I made {bakerUsed} of {demand} — short {demand - bakerProduced}</span>
+                        <span className="font-mono font-bold text-red-400 text-[17px]">-{demand - bakerProduced} pcs</span>
                       </div>
                     </div>
                   )}
@@ -1766,6 +1753,23 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               );
             });
           })()}
+
+          {/* Destination Picker */}
+          <div className="mb-5 mt-6">
+            <div className="text-[13px] text-zinc-400 uppercase tracking-wider font-semibold mb-3">Save Destination</div>
+            <div className="flex gap-3">
+              <button onClick={() => setSaveDestination("baker-freezer")}
+                className={`flex-1 rounded-xl border px-5 py-4 text-[14px] font-medium transition-all ${saveDestination === "baker-freezer" ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600"}`}>
+                <div className="font-bold mb-1">Baker Freezer</div>
+                <div className="text-[11px] opacity-70">Baked Products</div>
+              </button>
+              <button onClick={() => setSaveDestination("deco-inventory")}
+                className={`flex-1 rounded-xl border px-5 py-4 text-[14px] font-medium transition-all ${saveDestination === "deco-inventory" ? "border-amber-500 bg-amber-500/10 text-amber-400" : "border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600"}`}>
+                <div className="font-bold mb-1">Deco Inventory</div>
+                <div className="text-[11px] opacity-70">Came from Baker</div>
+              </button>
+            </div>
+          </div>
 
           <button
             onClick={() => {
@@ -1792,7 +1796,6 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 const bakerUsed = Math.min(bakerProduced, demand);
                 const bakerRemaining = bakerProduced - bakerUsed;
 
-                // Deduct Deco Production Recipe items consumed by baking (FIFO)
                 if (bakerProduced > 0) {
                   let toDeduct = bakerProduced;
                   const linkedNames = recipe?.linkedIngredients ?? [];
@@ -1820,7 +1823,6 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   }
                 }
 
-                // Save baker's output to Baked Products tab
                 if (bakerUsed > 0) {
                   newFreezerItems.push({
                     id: `FRZ-${Date.now()}-${recipeDisplayName.replace(/[^a-zA0-9]/g, "")}`,
@@ -1872,11 +1874,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 }
               });
 
-              // Save to freezer
               onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, ...newFreezerItems]);
               db.upsertFreezerItems(newFreezerItems).catch(console.error);
 
-              // Deduct from Deco Production Recipe items
               if (updatedDecoItems.length > 0) {
                 onUpdateFreezer?.((prev: FreezerItem[]) => {
                   const updated = new Map(prev.map(i => [i.id, i]));
@@ -1886,10 +1886,8 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 db.upsertFreezerItems(updatedDecoItems).catch(console.error);
               }
 
-              // Save history
               newHistory.forEach(h => db.insertFreezerHistory(h).catch(console.error));
 
-              // Mark DOS items as completed
               const productsBaked = [...grouped.keys()].filter(p => (actualProduction[p] ?? 0) > 0);
               const dosToComplete = bakerDOS.filter(d => productsBaked.includes(d.product) && d.status === "in-progress");
               if (dosToComplete.length > 0) {
@@ -1897,7 +1895,6 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                 onUpdateDOS?.(prev => prev.map(d => dosToComplete.find(c => c.id === d.id) ? { ...d, status: "completed" as const } : d));
               }
 
-              // Save to Deco Inventory if selected
               if (saveDestination === "deco-inventory" && newFreezerItems.length > 0) {
                 const decoInvItems: InventoryItem[] = newFreezerItems.map(fi => ({
                   id: `INV-DECO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1925,30 +1922,13 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
               setActualProduction({});
               setSaveDestination("baker-freezer");
             }}
-            className="w-full rounded-xl bg-emerald-600 px-4 py-3.5 text-[15px] font-bold text-white hover:bg-emerald-500 transition-all active:scale-[0.98] mb-4"
+            className="w-full rounded-2xl bg-emerald-600 px-6 py-4 text-[16px] font-bold text-white hover:bg-emerald-500 hover:shadow-xl transition-all active:scale-[0.98] mb-4"
           >
             {saveDestination === "deco-inventory" ? "Complete & Send to Deco Inventory" : "Complete & Save to Freezer"}
           </button>
 
-          {/* Destination Picker */}
-          <div className="mb-4">
-            <div className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2">Save Destination</div>
-            <div className="flex gap-2">
-              <button onClick={() => setSaveDestination("baker-freezer")}
-                className={`flex-1 rounded-xl border px-4 py-3 text-[12px] font-medium transition-all ${saveDestination === "baker-freezer" ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" : "border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600"}`}>
-                <div className="font-semibold mb-0.5">Baker Freezer</div>
-                <div className="text-[10px] opacity-70">Baked Products</div>
-              </button>
-              <button onClick={() => setSaveDestination("deco-inventory")}
-                className={`flex-1 rounded-xl border px-4 py-3 text-[12px] font-medium transition-all ${saveDestination === "deco-inventory" ? "border-amber-500 bg-amber-500/10 text-amber-400" : "border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600"}`}>
-                <div className="font-semibold mb-0.5">Deco Inventory</div>
-                <div className="text-[10px] opacity-70">Came from Baker</div>
-              </button>
-            </div>
-          </div>
-
           <div className="mt-2 text-center">
-            <button onClick={() => setStep(2)} className="text-[12px] text-zinc-500 hover:text-zinc-300 transition-colors">
+            <button onClick={() => setStep(2)} className="text-[13px] text-zinc-500 hover:text-zinc-300 transition-colors">
               ← Back to Record Production
             </button>
           </div>
@@ -1983,76 +1963,75 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
         return (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedRecipe(null)} />
-            <div className="relative bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-                <div className="flex items-center gap-3">
-                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-900/40 text-amber-300 text-[16px] font-bold">R</span>
+            <div className="relative bg-zinc-900 border border-zinc-700 rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-8 py-6 border-b border-zinc-800">
+                <div className="flex items-center gap-4">
+                  <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-900/40 text-amber-300 text-[20px] font-bold">R</span>
                   <div>
-                    <h3 className="text-[16px] font-bold text-white">{recipeDisplayName}</h3>
-                    {displayRecipe && displayRecipe.productName !== selectedRecipe && <p className="text-[11px] text-zinc-500">DOS Product: {selectedRecipe}</p>}
+                    <h3 className="text-[24px] font-bold text-white">{recipeDisplayName}</h3>
+                    {displayRecipe && displayRecipe.productName !== selectedRecipe && <p className="text-[13px] text-zinc-500 mt-0.5">DOS Product: {selectedRecipe}</p>}
                   </div>
                 </div>
-                <button onClick={() => setSelectedRecipe(null)} className="rounded-lg p-1.5 hover:bg-zinc-800 transition-colors">
-                  <span className="text-zinc-400 text-[18px]">✕</span>
+                <button onClick={() => setSelectedRecipe(null)} className="rounded-xl p-2 hover:bg-zinc-800 transition-colors">
+                  <span className="text-zinc-400 text-[22px]">✕</span>
                 </button>
               </div>
-              <div className="p-5">
-                <div className="grid grid-cols-3 gap-3 mb-5">
-                  <div className="rounded-xl bg-zinc-800/50 p-3 text-center">
-                    <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wider">DOS Demand</div>
-                    <div className="text-[22px] font-bold text-white font-mono">{group.totalQty}</div>
-                    <div className="text-[10px] text-zinc-500">pcs</div>
+              <div className="p-8">
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="rounded-2xl bg-zinc-800/50 p-4 text-center">
+                    <div className="text-[12px] text-zinc-400 mb-1.5 uppercase tracking-wider font-semibold">DOS Demand</div>
+                    <div className="text-[32px] font-bold text-white font-mono">{group.totalQty}</div>
+                    <div className="text-[12px] text-zinc-500">pcs</div>
                   </div>
-                  <div className="rounded-xl bg-zinc-800/50 p-3 text-center">
-                    <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wider">Deco Output</div>
-                    <div className="text-[22px] font-bold text-emerald-400 font-mono">{actualDecoOutput || '—'}</div>
-                    <div className="text-[10px] text-zinc-500">pcs</div>
+                  <div className="rounded-2xl bg-zinc-800/50 p-4 text-center">
+                    <div className="text-[12px] text-zinc-400 mb-1.5 uppercase tracking-wider font-semibold">Deco Output</div>
+                    <div className="text-[32px] font-bold text-emerald-400 font-mono">{actualDecoOutput || '—'}</div>
+                    <div className="text-[12px] text-zinc-500">pcs</div>
                   </div>
-                  <div className="rounded-xl bg-zinc-800/50 p-3 text-center">
-                    <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wider">Excess</div>
-                    <div className={`text-[22px] font-bold font-mono ${actualExcess > 0 ? 'text-amber-400' : 'text-zinc-400'}`}>{actualExcess}</div>
-                    <div className="text-[10px] text-zinc-500">pcs</div>
+                  <div className="rounded-2xl bg-zinc-800/50 p-4 text-center">
+                    <div className="text-[12px] text-zinc-400 mb-1.5 uppercase tracking-wider font-semibold">Excess</div>
+                    <div className={`text-[32px] font-bold font-mono ${actualExcess > 0 ? 'text-amber-400' : 'text-zinc-400'}`}>{actualExcess}</div>
+                    <div className="text-[12px] text-zinc-500">pcs</div>
                   </div>
                 </div>
-                <div className="rounded-xl bg-zinc-800/30 border border-zinc-800 p-4 mb-5">
-                  <div className="text-[11px] text-zinc-500 mb-3 uppercase tracking-wider">Batch Calculation</div>
-                  <div className="flex items-center justify-between gap-4">
+                <div className="rounded-2xl bg-zinc-800/30 border border-zinc-700 p-5 mb-6">
+                  <div className="text-[13px] text-zinc-400 mb-3 uppercase tracking-wider font-semibold">Batch Calculation</div>
+                  <div className="flex items-center justify-between gap-6">
                     <div className="flex items-center gap-2">
-                      <span className="text-[12px] text-zinc-400">Batch</span>
-                      <span className="text-[16px] font-bold text-white font-mono">{requiredBatches}</span>
+                      <span className="text-[14px] text-zinc-400">Batch</span>
+                      <span className="text-[20px] font-bold text-white font-mono">{requiredBatches}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[12px] text-zinc-400">Yield</span>
-                      <span className="text-[16px] font-bold text-amber-400 font-mono">{hasYield ? `${yieldPerBatch} pcs` : 'N/A'}</span>
+                      <span className="text-[14px] text-zinc-400">Yield</span>
+                      <span className="text-[20px] font-bold text-amber-400 font-mono">{hasYield ? `${yieldPerBatch} pcs` : 'N/A'}</span>
                     </div>
                   </div>
                 </div>
                 {/* Additional Ingredients Used */}
-                <div className="mb-5">
+                <div className="mb-6">
                   <div className="flex items-center justify-between mb-3">
-                    <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Additional Ingredients Used</div>
+                    <div className="text-[13px] text-zinc-400 uppercase tracking-wider font-semibold">Additional Ingredients Used</div>
                     <button
                       onClick={() => { setShowIngredientPicker(true); setIngredientPickerSearch(""); setPickQuantities({}); }}
-                      className="rounded-lg bg-amber-600/20 px-3 py-1.5 text-[11px] font-semibold text-amber-400 hover:bg-amber-600/30 transition-all"
+                      className="rounded-xl bg-amber-600/20 px-4 py-2 text-[13px] font-semibold text-amber-400 hover:bg-amber-600/30 transition-all"
                     >
                       + Add from Inventory
                     </button>
                   </div>
                   {(!additionalIngredients[selectedRecipe] || additionalIngredients[selectedRecipe].length === 0) ? (
-                    <div className="rounded-lg bg-zinc-800/20 px-3 py-2.5 text-center">
-                      <span className="text-[11px] text-zinc-500">No additional ingredients added.</span>
+                    <div className="rounded-xl bg-zinc-800/20 px-4 py-3 text-center">
+                      <span className="text-[13px] text-zinc-500">No additional ingredients added.</span>
                     </div>
                   ) : (
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       {additionalIngredients[selectedRecipe].map((ing, i) => (
-                        <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/30 px-3 py-2">
-                          <span className="text-[12px] text-zinc-300">{ing.name}</span>
+                        <div key={i} className="flex items-center justify-between rounded-xl bg-zinc-800/30 px-4 py-3">
+                          <span className="text-[14px] text-zinc-300">{ing.name}</span>
                           <div className="flex items-center gap-2">
-                            <span className="text-[12px] text-zinc-400 font-mono">{ing.qty} {ing.unit}</span>
+                            <span className="text-[14px] text-zinc-400 font-mono">{ing.qty} {ing.unit}</span>
                             <button
                               onClick={() => {
                                 const removed = additionalIngredients[selectedRecipe][i];
-                                // Restore stock to inventory
                                 if (removed.sourceType === "inventory") {
                                   onUpdateInventory?.(prev => prev.map(inv => inv.id === removed.sourceId ? { ...inv, onHand: inv.onHand + removed.qty } : inv));
                                   db.updateInventoryItem(removed.sourceId, { onHand: (inventory.find(inv => inv.id === removed.sourceId)?.onHand ?? 0) + removed.qty, group: "ingredients" }).catch(console.error);
@@ -2062,7 +2041,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                                   [selectedRecipe]: prev[selectedRecipe].filter((_, idx) => idx !== i),
                                 }));
                               }}
-                              className="rounded-md px-1.5 py-0.5 text-[11px] text-red-400 hover:bg-red-900/30 transition-all"
+                              className="rounded-lg px-2 py-1 text-[12px] text-red-400 hover:bg-red-900/30 transition-all"
                             >
                               ✕
                             </button>
@@ -2073,9 +2052,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   )}
                 </div>
                 {/* Fillings */}
-                <div className="mb-5">
+                <div className="mb-6">
                   <div className="flex items-center justify-between mb-3">
-                    <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Fillings</div>
+                    <div className="text-[13px] text-zinc-400 uppercase tracking-wider font-semibold">Fillings</div>
                   </div>
                   {(() => {
                     const fillingRecipes = recipes.filter(r => r.group === "filling");
@@ -2088,12 +2067,12 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                     const addedNames = new Set(currentFillings.map(f => f.name.toLowerCase()));
                     const available = fillingOptions.filter(f => !addedNames.has(f.name.toLowerCase()));
                     return (
-                      <div className="space-y-2">
+                      <div className="space-y-2.5">
                         {currentFillings.map((f, i) => (
-                          <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/30 px-3 py-2">
-                            <span className="text-[12px] text-zinc-300">{f.name}</span>
+                          <div key={i} className="flex items-center justify-between rounded-xl bg-zinc-800/30 px-4 py-3">
+                            <span className="text-[14px] text-zinc-300">{f.name}</span>
                             <div className="flex items-center gap-2">
-                              <span className="text-[12px] text-zinc-400 font-mono">{f.qty} pcs</span>
+                              <span className="text-[14px] text-zinc-400 font-mono">{f.qty} pcs</span>
                               <button onClick={() => {
                                 const invItem = bakerInv.find(inv => inv.name === f.name);
                                 if (invItem) {
@@ -2104,20 +2083,19 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                                   onUpdateInventory?.(prev => [...prev, newItem]);
                                   db.upsertInventory([newItem]).catch(console.error);
                                 }
-                                // Restore freezer filling stock
                                 const frzItem = freezerItems.find(frz => frz.productName === f.name && frz.notes === "Filling");
                                 if (frzItem) {
                                   onUpdateFreezer?.((prev: FreezerItem[]) => prev.map(frz => frz.id === frzItem.id ? { ...frz, qty: frz.qty + f.qty } : frz));
                                   db.upsertFreezerItems([{ ...frzItem, qty: frzItem.qty + f.qty }]).catch(console.error);
                                 }
                                 setSelectedFillings(prev => ({ ...prev, [selectedRecipe]: prev[selectedRecipe].filter((_, idx) => idx !== i) }));
-                              }} className="rounded-md px-1.5 py-0.5 text-[11px] text-red-400 hover:bg-red-900/30 transition-all">✕</button>
+                              }} className="rounded-lg px-2 py-1 text-[12px] text-red-400 hover:bg-red-900/30 transition-all">✕</button>
                             </div>
                           </div>
                         ))}
                         {available.length > 0 && (
-                          <div className="flex items-center gap-2">
-                            <select className="flex-1 rounded-lg bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-[12px] text-white focus:outline-none focus:border-amber-500"
+                          <div className="flex items-center gap-3">
+                            <select className="flex-1 rounded-xl bg-zinc-800 border border-zinc-700 px-4 py-2.5 text-[14px] text-white focus:outline-none focus:border-amber-500"
                               value={fillingPickerName} onChange={e => { setFillingPickerName(e.target.value); setFillingPickerQty(""); }}>
                               <option value="">Select filling...</option>
                               {available.map(fo => (
@@ -2125,7 +2103,7 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                               ))}
                             </select>
                             <input type="number" min={1} placeholder="Qty" value={fillingPickerQty} onChange={e => setFillingPickerQty(e.target.value)}
-                              className="w-20 rounded-lg bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-[12px] font-mono text-white text-center focus:outline-none focus:border-amber-500" />
+                              className="w-24 rounded-xl bg-zinc-800 border border-zinc-700 px-3 py-2.5 text-[14px] font-mono text-white text-center focus:outline-none focus:border-amber-500" />
                             <button onClick={() => {
                               const qty = parseInt(fillingPickerQty || "0");
                               if (!fillingPickerName || qty <= 0) return;
@@ -2143,7 +2121,6 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                                   db.updateInventoryItem(invItem.id, { onHand: newOnHand, group: invItem.group }).catch(console.error);
                                 }
                               }
-                              // Deduct from freezer filling stock
                               const frzItem = freezerItems.find(frz => frz.productName === fillingPickerName && frz.notes === "Filling");
                               if (frzItem) {
                                 const newQty = frzItem.qty - qty;
@@ -2158,12 +2135,12 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                               setSelectedFillings(prev => ({ ...prev, [selectedRecipe]: [...(prev[selectedRecipe] || []), { name: fillingPickerName, qty }] }));
                               setFillingPickerName("");
                               setFillingPickerQty("");
-                            }} className="rounded-lg bg-amber-600/20 px-3 py-1.5 text-[11px] font-semibold text-amber-400 hover:bg-amber-600/30 transition-all">+ Add</button>
+                            }} className="rounded-xl bg-amber-600/20 px-4 py-2.5 text-[13px] font-semibold text-amber-400 hover:bg-amber-600/30 transition-all">+ Add</button>
                           </div>
                         )}
                         {available.length === 0 && currentFillings.length === 0 && (
-                          <div className="rounded-lg bg-zinc-800/20 px-3 py-2.5 text-center">
-                            <span className="text-[11px] text-zinc-500">No fillings available.</span>
+                          <div className="rounded-xl bg-zinc-800/20 px-4 py-3 text-center">
+                            <span className="text-[13px] text-zinc-500">No fillings available.</span>
                           </div>
                         )}
                       </div>
@@ -2171,18 +2148,18 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   })()}
                 </div>
                 {recipe && recipe.notes && (
-                  <div className="mb-5">
-                    <div className="text-[11px] text-zinc-500 mb-2 uppercase tracking-wider">Notes</div>
-                    <div className="text-[12px] text-zinc-400 rounded-lg bg-zinc-800/30 px-3 py-2.5">{recipe.notes}</div>
+                  <div className="mb-6">
+                    <div className="text-[13px] text-zinc-400 mb-2 uppercase tracking-wider font-semibold">Notes</div>
+                    <div className="text-[14px] text-zinc-400 rounded-xl bg-zinc-800/30 px-4 py-3">{recipe.notes}</div>
                   </div>
                 )}
-                <div className="mb-5">
-                  <div className="text-[11px] text-zinc-500 mb-3 uppercase tracking-wider">DOS Items ({group.dos.length})</div>
-                  <div className="space-y-1.5">
+                <div className="mb-6">
+                  <div className="text-[13px] text-zinc-400 mb-3 uppercase tracking-wider font-semibold">DOS Items ({group.dos.length})</div>
+                  <div className="space-y-2">
                     {group.dos.map((d, i) => (
-                      <div key={i} className="flex items-center justify-between rounded-lg bg-zinc-800/30 px-3 py-2">
-                        <span className="text-[12px] text-zinc-400 font-mono">{d.id}</span>
-                        <span className="text-[12px] text-white font-bold font-mono">{d.qty} pcs</span>
+                      <div key={i} className="flex items-center justify-between rounded-xl bg-zinc-800/30 px-4 py-3">
+                        <span className="text-[13px] text-zinc-400 font-mono">{d.id}</span>
+                        <span className="text-[14px] text-white font-bold font-mono">{d.qty} pcs</span>
                       </div>
                     ))}
                   </div>
@@ -2191,11 +2168,11 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                   <button
                     onClick={() => handleStartRecipe(selectedRecipe)}
                     disabled={isStarting}
-                    className="w-full rounded-xl bg-emerald-600 px-4 py-3.5 text-[15px] font-bold text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+                    className="w-full rounded-2xl bg-emerald-600 px-6 py-4 text-[16px] font-bold text-white hover:bg-emerald-500 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
                   >
                     {isStarting ? (
                       <span className="inline-flex items-center gap-2">
-                        <span className="inline-block h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                        <span className="inline-block h-5 w-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                         Starting...
                       </span>
                     ) : (
@@ -2203,9 +2180,9 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
                     )}
                   </button>
                 ) : (
-                  <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-900/30 border border-emerald-800/50 px-4 py-3.5">
-                    <span className="text-emerald-400 text-[16px]">✓</span>
-                    <span className="text-[14px] font-semibold text-emerald-300">Task Started — In Progress</span>
+                  <div className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-900/30 border border-emerald-800/50 px-6 py-4">
+                    <span className="text-emerald-400 text-[20px]">✓</span>
+                    <span className="text-[16px] font-semibold text-emerald-300">Task Started — In Progress</span>
                   </div>
                 )}
               </div>

@@ -47,6 +47,14 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
   const [bakerFreezerSearch, setBakerFreezerSearch] = useState("");
   const [promoSearch, setPromoSearch] = useState("");
 
+  const [showDecoFreezer, setShowDecoFreezer] = useState(false);
+  const [decoFreezerSearch, setDecoFreezerSearch] = useState("");
+  const [decoFreezerTab, setDecoFreezerTab] = useState<"production-recipe" | "advanced-premix">("production-recipe");
+  const [showMyInventory, setShowMyInventory] = useState(false);
+  const [myInventorySearch, setMyInventorySearch] = useState("");
+  const [selectedInventory, setSelectedInventory] = useState<Map<string, { item: InventoryItem; qty: number }>>(new Map());
+  const [viewingRecipe, setViewingRecipe] = useState<ProductRecipe | null>(null);
+
   const [showAddFreezer, setShowAddFreezer] = useState(false);
   const [showEditFreezer, setShowEditFreezer] = useState(false);
   const [editingFreezerItem, setEditingFreezerItem] = useState<FreezerItem | null>(null);
@@ -68,7 +76,7 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
   useEffect(() => {
     if (step !== 1 || !selectedDOS) return;
     const need = getNeedPerProduct();
-    const allStock = [...bakedProducts, ...decoProductionRecipes, ...advancedPremix];
+    const allStock = promo ? bakedProducts : [...decoProductionRecipes, ...advancedPremix];
     setSelectedFreezerItems(prev => {
       const next = new Map(prev);
       let changed = false;
@@ -529,28 +537,61 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
                 </div>
               </div>
 
-              <button onClick={() => setShowBakerFreezer(true)} className="w-full rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/50 py-3.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 hover:border-amber-400 transition-all flex items-center justify-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
-                View Baker Freezer — {bakedProducts.length} products available
-              </button>
+              {promo ? (
+                <>
+                  <button onClick={() => setShowBakerFreezer(true)} className="w-full rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/50 py-3.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 hover:border-amber-400 transition-all flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+                    View Baker Freezer — {bakedProducts.length} products available
+                  </button>
+                  <button onClick={() => setShowMyInventory(true)} className="w-full rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 py-3.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 hover:border-emerald-400 transition-all flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3.75h4.5m-4.5 3.75h4.5M12 12v4.5m0-4.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9z" /></svg>
+                    My Inventory — {pastryAccessInventory.length} ingredients available
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setShowDecoFreezer(true)} className="w-full rounded-2xl border-2 border-dashed border-rose-300 bg-rose-50/50 py-3.5 text-sm font-semibold text-rose-700 hover:bg-rose-50 hover:border-rose-400 transition-all flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
+                    View Deco Freezer — {decoProductionRecipes.length + advancedPremix.length} products available
+                  </button>
+                  <button onClick={() => setShowMyInventory(true)} className="w-full rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 py-3.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 hover:border-emerald-400 transition-all flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3.75h4.5m-4.5 3.75h4.5M12 12v4.5m0-4.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9z" /></svg>
+                    My Inventory — {pastryAccessInventory.length} ingredients available
+                  </button>
+                </>
+              )}
 
               {/* Order summary */}
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xl font-bold text-zinc-900">{selectedDOS.product}</h3>
-                    <p className="text-sm text-zinc-500 mt-1" style={{ fontFamily: "Fragment Mono, monospace" }}>{selectedDOS.id}</p>
-                    {promo && (
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {promo.items.map((item, idx) => (
-                          <span key={idx} className="inline-flex items-center rounded-lg bg-white border border-amber-200 px-3 py-1.5 text-sm font-medium text-amber-800">
-                            {item.productName} x{item.qty * (selectedDOS.qty ?? 1)}
-                          </span>
-                        ))}
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-lg font-bold text-zinc-900">{selectedDOS.product}</span>
+                      <span className="text-xs text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>{selectedDOS.id}</span>
+                    </div>
+                    {promo ? (
+                      <div className="mt-3 space-y-2">
+                        {promo.items.map((item, idx) => {
+                          const totalNeeded = item.qty * (selectedDOS.qty ?? 1);
+                          return (
+                            <div key={idx} className="flex items-center justify-between bg-white rounded-xl border border-amber-200 px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <span className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-700 shrink-0">{idx + 1}</span>
+                                <span className="text-sm font-semibold text-zinc-800">{item.productName}</span>
+                              </div>
+                              <span className="text-sm font-bold text-amber-700">x{totalNeeded}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="mt-3 flex items-center gap-2 bg-white rounded-xl border border-amber-200 px-4 py-3">
+                        <span className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-700 shrink-0">1</span>
+                        <span className="text-sm font-semibold text-zinc-800">{selectedDOS.product}</span>
                       </div>
                     )}
                   </div>
-                  <div className="text-right">
+                  <div className="text-right shrink-0 ml-6">
                     <div className="text-xs text-zinc-500 uppercase tracking-wider font-medium">Target</div>
                     <div className="text-3xl font-bold text-amber-700 mt-1" style={{ fontFamily: "Fragment Mono, monospace" }}>{selectedDOS.qty}</div>
                     <div className="text-sm text-zinc-500">pieces</div>
@@ -563,7 +604,7 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
                 const need = getNeedPerProduct();
                 if (need.size === 0) return null;
 
-                const allStock = [...bakedProducts, ...decoProductionRecipes, ...advancedPremix];
+                const allStock = promo ? bakedProducts : [...decoProductionRecipes, ...advancedPremix];
 
                 return (
                   <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
@@ -765,8 +806,8 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
                 <div className="divide-y divide-zinc-100">
                   {promo ? promo.items.map((item, idx) => {
                     const totalNeeded = item.qty * (selectedDOS.qty ?? 1);
-                    const allStock = [...bakedProducts, ...decoProductionRecipes, ...advancedPremix];
-                    const available = allStock.filter(i => i.productName === item.productName).reduce((s, i) => s + i.qty, 0);
+                    const stockSource = promo ? bakedProducts : [...decoProductionRecipes, ...advancedPremix];
+                    const available = stockSource.filter(i => i.productName === item.productName).reduce((s, i) => s + i.qty, 0);
                     const hasEnough = available >= totalNeeded;
                     return (
                       <div key={idx} className="flex items-center justify-between px-6 py-4">
@@ -1285,6 +1326,288 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
           </div>
         </div>
       )}
+
+      {/* Deco Freezer Modal */}
+      {showDecoFreezer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDecoFreezer(false)}>
+          <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-8 pt-7 pb-5 bg-gradient-to-br from-rose-50 via-rose-50/80 to-pink-50 border-b border-rose-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-extrabold text-zinc-900 tracking-tight">Deco Freezer</h2>
+                  <p className="text-sm text-zinc-500 mt-1">Production Recipe &amp; Advanced Premix from Deco</p>
+                </div>
+                <button onClick={() => setShowDecoFreezer(false)} className="w-8 h-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-200/70 px-3 py-1 text-xs font-bold text-rose-800">
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  {decoFreezerTab === "production-recipe" ? decoProductionRecipes.length : advancedPremix.length} items
+                </span>
+                <span className="text-xs text-zinc-400">Total: {decoFreezerTab === "production-recipe" ? decoProductionRecipes.reduce((s, i) => s + i.qty, 0) : advancedPremix.reduce((s, i) => s + i.qty, 0)} pcs</span>
+                {selectedDOS && (() => {
+                  const needMap = new Map<string, number>();
+                  if (promo) {
+                    promo.items.forEach(pi => needMap.set(pi.productName, (needMap.get(pi.productName) || 0) + pi.qty * (selectedDOS.qty ?? 1)));
+                  } else {
+                    needMap.set(selectedDOS.product, selectedDOS.qty ?? 1);
+                  }
+                  const neededCount = [...needMap.keys()].filter(n => [...decoProductionRecipes, ...advancedPremix].some(bp => bp.productName === n)).length;
+                  return neededCount > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">{neededCount} needed highlighted</span>
+                  ) : null;
+                })()}
+              </div>
+            </div>
+
+            {/* Sub-tabs */}
+            <div className="flex gap-2 px-6 pt-4 pb-2">
+              <button onClick={() => setDecoFreezerTab("production-recipe")} className={`rounded-lg px-4 py-2 text-xs font-semibold transition-all ${decoFreezerTab === "production-recipe" ? "bg-rose-600 text-white shadow-sm" : "bg-rose-50 text-rose-700 hover:bg-rose-100"}`}>Production Recipe</button>
+              <button onClick={() => setDecoFreezerTab("advanced-premix")} className={`rounded-lg px-4 py-2 text-xs font-semibold transition-all ${decoFreezerTab === "advanced-premix" ? "bg-rose-600 text-white shadow-sm" : "bg-rose-50 text-rose-700 hover:bg-rose-100"}`}>Advanced Premix</button>
+            </div>
+
+            <div className="px-6 pt-2 pb-2">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+                <input value={decoFreezerSearch} onChange={e => setDecoFreezerSearch(e.target.value)} placeholder={`Search ${decoFreezerTab === "production-recipe" ? "production recipes" : "advanced premix"}...`} className="w-full rounded-xl border border-zinc-200 bg-white pl-10 pr-4 py-3 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100 transition-all" />
+                {decoFreezerSearch && <button onClick={() => setDecoFreezerSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>}
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              {(() => {
+                const items = decoFreezerTab === "production-recipe" ? decoProductionRecipes : advancedPremix;
+                const filtered = items.filter(i => !decoFreezerSearch || i.productName.toLowerCase().includes(decoFreezerSearch.toLowerCase()));
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="px-8 py-16 text-center">
+                      <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+                      </div>
+                      <p className="text-base font-medium text-zinc-500">{decoFreezerTab === "production-recipe" ? "No Production Recipe items" : "No Advanced Premix items"}</p>
+                      <p className="text-sm text-zinc-400 mt-1">Wait for Deco to produce items.</p>
+                    </div>
+                  );
+                }
+
+                const grouped = new Map<string, { items: typeof filtered; totalQty: number }>();
+                filtered.forEach(item => {
+                  if (!grouped.has(item.productName)) grouped.set(item.productName, { items: [], totalQty: 0 });
+                  const g = grouped.get(item.productName)!;
+                  g.items.push(item);
+                  g.totalQty += item.qty;
+                });
+
+                return (
+                  <div className="divide-y divide-zinc-100">
+                    {[...grouped.entries()].map(([name, group]) => {
+                      const needMap = new Map<string, number>();
+                      if (selectedDOS) {
+                        if (promo) {
+                          promo.items.forEach(pi => needMap.set(pi.productName, (needMap.get(pi.productName) || 0) + pi.qty * (selectedDOS.qty ?? 1)));
+                        } else {
+                          needMap.set(selectedDOS.product, selectedDOS.qty ?? 1);
+                        }
+                      }
+                      const needed = needMap.get(name) || 0;
+                      const isNeeded = needed > 0;
+                      const hasEnough = group.totalQty >= needed;
+                      const recipe = recipes.find(r => r.productName.toLowerCase() === name.toLowerCase());
+
+                      return (
+                        <div key={name} className={`px-6 py-4 transition-all ${isNeeded ? "bg-rose-50/80 border-l-4 border-l-rose-400" : "hover:bg-zinc-50/50"}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isNeeded ? "bg-rose-400" : "bg-rose-100"}`}>
+                                <svg className={`w-5 h-5 ${isNeeded ? "text-white" : "text-rose-600"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <div className={`text-sm font-bold truncate ${isNeeded ? "text-rose-900" : "text-zinc-900"}`}>{name}</div>
+                                  {isNeeded && <span className="inline-flex items-center rounded-full bg-rose-200 px-2 py-0.5 text-[10px] font-bold text-rose-800 shrink-0">NEEDED</span>}
+                                  {recipe && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setViewingRecipe(recipe); }}
+                                      className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 hover:bg-blue-200 transition-colors shrink-0"
+                                    >
+                                      Recipe
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="text-xs text-zinc-400 mt-0.5">{group.items.length} batch{group.items.length > 1 ? "es" : ""}</div>
+                              </div>
+                            </div>
+                            <div className="text-right flex items-center gap-4 shrink-0 ml-4">
+                              {isNeeded && (
+                                <div className="text-right">
+                                  <div className={`text-sm font-bold font-mono ${hasEnough ? "text-emerald-600" : "text-red-500"}`}>Need: {needed}</div>
+                                  <div className="text-[10px] text-zinc-400">required</div>
+                                </div>
+                              )}
+                              <div>
+                                <div className={`text-xl font-extrabold font-mono ${isNeeded ? "text-rose-900" : "text-zinc-900"}`}>{group.totalQty}</div>
+                                <div className="text-[10px] text-zinc-400 uppercase tracking-wider">pcs</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Batch breakdown */}
+                          {group.items.length > 1 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2 ml-13">
+                              {group.items.map((item, idx) => (
+                                <span key={item.id} className="inline-flex items-center gap-1 rounded-md bg-zinc-50 border border-zinc-200 px-2 py-0.5 text-[10px] text-zinc-500">
+                                  Batch {idx + 1}: {item.qty} pcs
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Select button for needed items */}
+                          {isNeeded && (
+                            <div className="mt-2 flex gap-1.5">
+                              <button
+                                onClick={() => {
+                                  const stockItems = [...decoProductionRecipes, ...advancedPremix].filter(i => i.productName === name);
+                                  const needQty = needed;
+                                  const allocated = getAllocatedPerProduct().get(name) || 0;
+                                  const toAdd = Math.min(needQty - allocated, group.totalQty);
+                                  if (toAdd <= 0) return;
+                                  let remaining = toAdd;
+                                  setSelectedFreezerItems(prev => {
+                                    const next = new Map(prev);
+                                    for (const si of stockItems) {
+                                      if (remaining <= 0) break;
+                                      const alreadySelected = next.get(si.id);
+                                      const alreadyHas = alreadySelected ? alreadySelected.qty : 0;
+                                      const batchAvail = si.qty - alreadyHas;
+                                      if (batchAvail <= 0) continue;
+                                      const take = Math.min(remaining, batchAvail);
+                                      if (alreadySelected) {
+                                        next.set(si.id, { ...alreadySelected, qty: alreadySelected.qty + take });
+                                      } else {
+                                        next.set(si.id, { item: si, qty: take });
+                                      }
+                                      remaining -= take;
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                disabled={(() => {
+                                  const allocated = getAllocatedPerProduct().get(name) || 0;
+                                  return allocated >= needed;
+                                })()}
+                                className="rounded-lg bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                {(() => {
+                                  const allocated = getAllocatedPerProduct().get(name) || 0;
+                                  return allocated >= needed ? "Selected" : "Select for Assembly";
+                                })()}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="px-8 py-4 border-t border-zinc-100 bg-zinc-50/50">
+              <button onClick={() => setShowDecoFreezer(false)} className="w-full rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white py-3 text-sm font-semibold transition-colors">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recipe Detail Modal */}
+      {viewingRecipe && (() => {
+        const r = viewingRecipe;
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setViewingRecipe(null)}>
+            <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="px-8 pt-7 pb-5 bg-gradient-to-br from-blue-50 via-blue-50/80 to-indigo-50 border-b border-blue-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-extrabold text-zinc-900 tracking-tight">{r.productName}</h2>
+                    <p className="text-sm text-zinc-500 mt-1">{r.ingredients.length} ingredients · Yield: {r.yield ?? 1} pcs/batch</p>
+                  </div>
+                  <button onClick={() => setViewingRecipe(null)} className="w-8 h-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              </div>
+              <div className="px-8 py-6 space-y-6">
+                {/* Ingredients */}
+                {r.ingredients.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" /></svg>
+                      <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Ingredients</span>
+                    </div>
+                    <div className="rounded-2xl bg-zinc-50 border border-zinc-100 divide-y divide-zinc-100">
+                      {r.ingredients.map((ing, i) => (
+                        <div key={i} className="flex items-center justify-between px-5 py-3">
+                          <span className="text-sm font-medium text-zinc-800">{ing.name}</span>
+                          <span className="text-sm font-semibold text-zinc-600">{ing.qtyPerBatch} {ing.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Packaging Materials */}
+                {r.packagingMaterials.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+                      <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Packaging Materials</span>
+                    </div>
+                    <div className="rounded-2xl bg-zinc-50 border border-zinc-100 divide-y divide-zinc-100">
+                      {r.packagingMaterials.map((pkg, i) => (
+                        <div key={i} className="flex items-center justify-between px-5 py-3">
+                          <span className="text-sm font-medium text-zinc-800">{pkg.name}</span>
+                          <span className="text-sm font-semibold text-zinc-600">{pkg.qtyPerBatch} {pkg.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Decoration Supplies */}
+                {r.decorationSupplies.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>
+                      <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Decoration Supplies</span>
+                    </div>
+                    <div className="rounded-2xl bg-zinc-50 border border-zinc-100 divide-y divide-zinc-100">
+                      {r.decorationSupplies.map((deco, i) => (
+                        <div key={i} className="flex items-center justify-between px-5 py-3">
+                          <span className="text-sm font-medium text-zinc-800">{deco.name}</span>
+                          <span className="text-sm font-semibold text-zinc-600">{deco.qtyPerBatch} {deco.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {r.notes && (
+                  <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4">
+                    <p className="text-sm text-amber-800">{r.notes}</p>
+                  </div>
+                )}
+              </div>
+              <div className="px-8 pb-6">
+                <button onClick={() => setViewingRecipe(null)} className="w-full rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white py-3.5 text-sm font-semibold transition-colors">Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>);
   }
 
@@ -1757,6 +2080,138 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
           </div>
         );
       })()}
+
+      {/* My Inventory Modal */}
+      {showMyInventory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowMyInventory(false)}>
+          <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-8 pt-7 pb-5 bg-gradient-to-br from-emerald-50 via-emerald-50/80 to-teal-50 border-b border-emerald-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-extrabold text-zinc-900 tracking-tight">My Inventory</h2>
+                  <p className="text-sm text-zinc-500 mt-1">Select ingredients and quantities for assembly</p>
+                </div>
+                <button onClick={() => setShowMyInventory(false)} className="w-8 h-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-200/70 px-3 py-1 text-xs font-bold text-emerald-800">
+                  {pastryAccessInventory.length} ingredients
+                </span>
+              </div>
+            </div>
+
+            <div className="px-6 pt-4 pb-2">
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+                <input value={myInventorySearch} onChange={e => setMyInventorySearch(e.target.value)} placeholder="Search ingredients..." className="w-full rounded-xl border border-zinc-200 bg-white pl-10 pr-4 py-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 transition-all" />
+                {myInventorySearch && <button onClick={() => setMyInventorySearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>}
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              {pastryAccessInventory.length === 0 ? (
+                <div className="px-8 py-16 text-center">
+                  <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3.75h4.5m-4.5 3.75h4.5M12 12v4.5m0-4.5a4.5 4.5 0 100-9 4.5 4.5 0 000 9z" /></svg>
+                  </div>
+                  <p className="text-base font-medium text-zinc-500">No ingredients in inventory</p>
+                  <p className="text-sm text-zinc-400 mt-1">Add ingredients to access them here.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-zinc-100">
+                  {pastryAccessInventory.filter(i => !myInventorySearch || i.name.toLowerCase().includes(myInventorySearch.toLowerCase())).map(item => {
+                    const selected = selectedInventory.get(item.id);
+                    const selectedQty = selected ? selected.qty : 0;
+                    return (
+                      <div key={item.id} className="px-6 py-4 hover:bg-zinc-50/50 transition-all">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+                              <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" /><path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" /></svg>
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-bold text-zinc-900 truncate">{item.name}</div>
+                              <div className="text-xs text-zinc-400 mt-0.5">{item.sku || ""} · {item.category}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0 ml-4">
+                            <div className="text-right">
+                              <div className="text-sm text-zinc-500">On Hand: <span className="font-semibold text-zinc-800 font-mono">{item.onHand}</span></div>
+                              <div className="text-[10px] text-zinc-400 uppercase">{item.unit}</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 mt-2 ml-13">
+                          <span className="text-xs font-medium text-zinc-500">Use:</span>
+                          <button
+                            onClick={() => {
+                              setSelectedInventory(prev => {
+                                const next = new Map(prev);
+                                const existing = next.get(item.id);
+                                const currentQty = existing ? existing.qty : 0;
+                                if (currentQty <= 0) return prev;
+                                if (currentQty <= 1) {
+                                  next.delete(item.id);
+                                } else {
+                                  next.set(item.id, { item, qty: currentQty - 1 });
+                                }
+                                return next;
+                              });
+                              setSelectedFreezerItems(prev => {
+                                const next = new Map(prev);
+                                if (selectedQty <= 1) {
+                                  [...next.entries()].forEach(([id, v]) => {
+                                    if (v.item.id === item.id) next.delete(id);
+                                  });
+                                }
+                                return next;
+                              });
+                            }}
+                            disabled={selectedQty <= 0}
+                            className="w-8 h-8 rounded-lg border-2 border-zinc-200 bg-white text-lg font-bold text-zinc-500 hover:bg-zinc-100 hover:border-zinc-300 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+                          >-</button>
+                          <div className="w-14 text-center text-xl font-bold text-zinc-900 font-mono">{selectedQty}</div>
+                          <button
+                            onClick={() => {
+                              const maxQty = item.onHand;
+                              if (selectedQty >= maxQty) return;
+                              setSelectedInventory(prev => {
+                                const next = new Map(prev);
+                                const existing = next.get(item.id);
+                                const currentQty = existing ? existing.qty : 0;
+                                if (currentQty < maxQty) {
+                                  next.set(item.id, { item, qty: currentQty + 1 });
+                                }
+                                return next;
+                              });
+                            }}
+                            disabled={selectedQty >= item.onHand}
+                            className="w-8 h-8 rounded-lg border-2 border-emerald-300 bg-emerald-50 text-lg font-bold text-emerald-600 hover:bg-emerald-100 hover:border-emerald-400 transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-95"
+                          >+</button>
+                          <span className="text-xs text-zinc-400">/ {item.onHand} max</span>
+                        </div>
+                        {selectedQty > 0 && selectedDOS && (
+                          <div className="mt-2 ml-13">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                              Using {selectedQty} {item.unit} for {selectedDOS.product}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="px-8 py-4 border-t border-zinc-100 bg-zinc-50/50">
+              <button onClick={() => setShowMyInventory(false)} className="w-full rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white py-3 text-sm font-semibold transition-colors">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       </>
     );
   }

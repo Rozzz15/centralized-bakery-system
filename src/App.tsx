@@ -44,7 +44,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
   baker: [
     { id: "dashboard", label: "My Tasks", icon: "◼" },
     { id: "conversion", label: "Conversion", icon: "↻" },
-    { id: "filling", label: "Filling", icon: "○" },
+    { id: "filling", label: "Filling History", icon: "○" },
     { id: "freezer", label: "Freezer", icon: "◇" },
   ],
   deco: [
