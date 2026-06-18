@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Role, InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, ProductRecipe, ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage } from "./types";
+import type { Role, InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, ProductRecipe, ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage, StockTransaction } from "./types";
 import AdminDashboard from "./components/AdminDashboard";
 import BakerDashboard from "./components/BakerDashboard";
 import DecoDashboard from "./components/DecoDashboard";
@@ -34,8 +34,7 @@ const sidebarItems: Record<Role, { id: string; label: string; icon: string }[]> 
     { id: "dashboard", label: "Admin Dashboard", icon: "◼" },
     { id: "dos", label: "DOS Builder", icon: "◈" },
     { id: "products", label: "Products", icon: "⬢" },
-    { id: "pricing", label: "Pricing", icon: "◇" },
-    { id: "warehouse", label: "Warehouse", icon: "⬡" },
+    { id: "warehouse", label: "Stock Room", icon: "⬡" },
     { id: "production", label: "Production", icon: "⬣" },
     { id: "deliveries", label: "Deliveries", icon: "⬙" },
     { id: "finance", label: "Finance", icon: "◆" },
@@ -724,6 +723,14 @@ export default function App() {
     setAuditLogs(prev => [{ ...entry, id: `AUD-${Date.now()}-${prev.length}` }, ...prev]);
   };
 
+  const handleStockTransaction = async (tx: StockTransaction) => {
+    try {
+      await db.insertStockTransaction(tx);
+    } catch (err) {
+      console.error("Failed to insert stock transaction:", err);
+    }
+  };
+
   const handleLogout = () => {
     setShowLogoutConfirm(true);
   };
@@ -1029,7 +1036,7 @@ export default function App() {
 
         <main className="min-w-0 flex-1">
           <div className="p-4 sm:p-6 lg:p-8">
-            {role === "admin" && ["dashboard", "dos", "products", "pricing", "warehouse", "production", "deliveries", "audit", "finance"].includes(activeTab) && (
+            {role === "admin" && ["dashboard", "dos", "products", "warehouse", "production", "deliveries", "audit", "finance"].includes(activeTab) && (
               <AdminDashboard
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
@@ -1072,10 +1079,10 @@ export default function App() {
               />
             )}
             {role === "baker" && ["dashboard", "conversion", "freezer", "filling"].includes(activeTab) && (
-              <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} onUpdateDOS={setDosItems} productPricing={productPricing} />
+              <BakerDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} activeTab={activeTab} productCatalog={productCatalog} recipes={recipes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} onUpdateDOS={setDosItems} productPricing={productPricing} onStockTransaction={handleStockTransaction} />
             )}
             {role === "deco" && ["dashboard", "tasks-to-prepare", "recipe-analysis", "pre-mix", "advanced-premix", "deco-queue", "freezer", "waste-adjustment"].includes(activeTab) && (
-              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} onUpdateProduction={handleUpdateProduction} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} productRoutes={productRoutes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} wasteLog={wasteLog} onUpdateWasteLog={setWasteLog} />
+              <DecoDashboard production={production} dosItems={dosItems} onCompleteTask={handleCompleteTask} onUpdateProduction={handleUpdateProduction} activeTab={activeTab} setActiveTab={setActiveTab} productCatalog={productCatalog} recipes={recipes} productRoutes={productRoutes} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} inventory={inventory} onUpdateInventory={setInventory} onUpdateRecipes={setRecipes} onAddAuditLog={logAudit} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} wasteLog={wasteLog} onUpdateWasteLog={setWasteLog} onStockTransaction={handleStockTransaction} />
             )}
             {role === "kitchen" && ["dashboard", "queue", "qc"].includes(activeTab) && (
               <KitchenDashboard production={production} deliveries={deliveries} dosItems={dosItems} onUpdateDeliveries={setDeliveries} activeTab={activeTab} />
@@ -1090,7 +1097,7 @@ export default function App() {
               />
             )}
             {role === "pastry" && ["dashboard", "freezer", "promos"].includes(activeTab) && (
-              <PastryDashboard dosItems={dosItems} activeTab={activeTab} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} promosPackages={promosPackages} recipes={recipes} productCatalog={productCatalog} />
+              <PastryDashboard dosItems={dosItems} activeTab={activeTab} newDOSIds={newDOSIds} onMarkDOSSeen={(ids) => setNewDOSIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; })} freezerItems={freezerItems} onUpdateFreezer={setFreezerItems} freezerHistory={freezerHistory} inventory={inventory} onUpdateInventory={setInventory} promosPackages={promosPackages} recipes={recipes} productCatalog={productCatalog} onStockTransaction={handleStockTransaction} />
             )}
           </div>
         </main>

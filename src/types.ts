@@ -170,6 +170,7 @@ export type StockTransaction = {
   timestamp: string;
   target?: "baker" | "deco";
   group?: string;
+  role?: "admin" | "baker" | "deco" | "pastry";
 };
 
 export type DeliveryValidation = {
@@ -386,6 +387,17 @@ export type OutputAllocation = {
     allocatedQty: number;
     priority: number;
   }[];
+};
+
+export type Equipment = {
+  id: string;
+  name: string;
+  datePurchased: string;
+  costPrice: number;
+  sku: string;
+  supplier: string;
+  status: "active" | "maintenance" | "retired";
+  notes: string;
 };
 
 export type ProductionPlan = {

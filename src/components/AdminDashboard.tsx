@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { createPortal } from "react-dom";
-import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage } from "../types";
+import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, ProductPricingVariant, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage, Equipment } from "../types";
 import type { ProductRoute } from "../lib/db";
 import * as db from "../lib/db";
 import DOSBuilderModal from "./DOSBuilderModal";
@@ -47,6 +47,93 @@ type Props = {
   onUpdatePromosPackages: (cb: PromoPackage[] | ((prev: PromoPackage[]) => PromoPackage[])) => void;
   decoProductionPrep: { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean; additionalIngredients: { name: string; qty: number; unit: string; reason: string; source: string }[] }[];
 };
+
+function EquipmentModal({ equipment, equipmentList, onSave, onClose }: {
+  equipment: Equipment;
+  equipmentList: Equipment[];
+  onSave: (item: Equipment) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [eqName, setEqName] = useState(equipment.name);
+  const [eqSku, setEqSku] = useState(equipment.sku);
+  const [eqDatePurchased, setEqDatePurchased] = useState(equipment.datePurchased);
+  const [eqCostPrice, setEqCostPrice] = useState(equipment.costPrice);
+  const [eqSupplier, setEqSupplier] = useState(equipment.supplier);
+  const [eqStatus, setEqStatus] = useState(equipment.status);
+  const [eqNotes, setEqNotes] = useState(equipment.notes);
+  const [eqSaving, setEqSaving] = useState(false);
+  const isNew = !equipmentList.some(e => e.id === equipment.id);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h2 className="text-[18px] font-semibold mb-4">{isNew ? "Add Equipment" : "Edit Equipment"}</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Name</label>
+            <input value={eqName} onChange={e => setEqName(e.target.value)} placeholder="Equipment name" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">SKU</label>
+              <input value={eqSku} onChange={e => setEqSku(e.target.value)} placeholder="e.g. OVN-001" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Status</label>
+              <select value={eqStatus} onChange={e => setEqStatus(e.target.value as typeof eqStatus)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+                <option value="active">Active</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="retired">Retired</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Date Purchased</label>
+              <input type="date" value={eqDatePurchased} onChange={e => setEqDatePurchased(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Cost Price (₱)</label>
+              <input type="number" min="0" step="0.01" value={eqCostPrice || ""} onChange={e => setEqCostPrice(parseFloat(e.target.value) || 0)} placeholder="0.00" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] font-mono outline-none focus:border-zinc-400" />
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Supplier</label>
+            <input value={eqSupplier} onChange={e => setEqSupplier(e.target.value)} placeholder="Supplier name" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Notes</label>
+            <textarea value={eqNotes} onChange={e => setEqNotes(e.target.value)} placeholder="Optional notes" rows={2} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400 resize-none" />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+          <button disabled={!eqName.trim() || eqSaving} onClick={async () => {
+            setEqSaving(true);
+            try {
+              const updated: Equipment = {
+                ...equipment,
+                name: eqName.trim(),
+                sku: eqSku.trim(),
+                datePurchased: eqDatePurchased,
+                costPrice: eqCostPrice,
+                supplier: eqSupplier.trim(),
+                status: eqStatus,
+                notes: eqNotes.trim(),
+              };
+              await onSave(updated);
+            } catch (err) {
+              console.error("Save equipment failed:", err);
+              alert("Failed to save equipment");
+            } finally {
+              setEqSaving(false);
+            }
+          }} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 disabled:opacity-40">{eqSaving ? "Saving..." : isNew ? "Add Equipment" : "Save Changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminDashboard({
   activeTab,
@@ -135,10 +222,18 @@ export default function AdminDashboard({
   });
 
   // Stockroom
-  const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "history">("ingredients");
+  const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "equipment" | "history" | "analytics">("ingredients");
   const [transactions, setTransactions] = useState<StockTransaction[]>([]);
   const [showReceive, setShowReceive] = useState(false);
+  const [equipment, setEquipment] = useState<import("../types").Equipment[]>([]);
+  const [showEquipmentModal, setShowEquipmentModal] = useState(false);
+  const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [ingredientRoleFilter, setIngredientRoleFilter] = useState<"all" | "baker" | "deco" | "pastry">("all");
+  const [historyRoleFilter, setHistoryRoleFilter] = useState<"all" | "admin" | "baker" | "deco" | "pastry">("all");
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<"all" | "in" | "out">("all");
+  const [historyGroupFilter, setHistoryGroupFilter] = useState<"all" | "ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies">("all");
+  const [analyticsRange, setAnalyticsRange] = useState<"all" | "day" | "week" | "month" | "year">("all");
+  const [analyticsTab, setAnalyticsTab] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies">("ingredients");
 
   // Delivery validation
   const [validations, setValidations] = useState<DeliveryValidation[]>([]);
@@ -201,12 +296,6 @@ export default function AdminDashboard({
   };
   const todayDOS = getTodayDOS();
 
-  // Pricing
-  const [pricingSearch, setPricingSearch] = useState("");
-  const [pricingFilter, setPricingFilter] = useState<"all" | "active" | "draft" | "archived">("all");
-  const [editingPricing, setEditingPricing] = useState<ProductPricing | null>(null);
-  const [showPricingModal, setShowPricingModal] = useState(false);
-
 // Products
   const [showRecipe, setShowRecipe] = useState(false);
   const [recipeProduct, setRecipeProduct] = useState<string | null>(null);
@@ -261,6 +350,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
   const prevTab = useRef(activeTab);
   useEffect(() => {
     if (activeTab !== "warehouse" || prevTab.current === "warehouse") { prevTab.current = activeTab; return; }
+    db.fetchEquipment().then(setEquipment).catch(() => {});
     prevTab.current = activeTab;
     const now = new Date();
     const todayStr = now.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
@@ -355,13 +445,23 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         </div>
 
         {activeProductSubTab === "Products" && (
-          <div className="overflow-hidden rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
-          <div className="overflow-x-auto">
+          <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm">
+          <div className="overflow-auto max-h-[600px]">
             <table className="w-full">
-              <thead className="bg-zinc-50 text-left text-[12px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
-                <tr><th className="px-5 py-3.5">Product</th><th className="px-5 py-3.5">Linked Recipe</th><th className="px-5 py-3.5">Categories</th><th className="px-5 py-3.5">Route</th><th className="px-5 py-3.5">Pack</th><th className="px-5 py-3.5">Deco</th><th className="px-5 py-3.5 w-36" /></tr>
+              <thead className="bg-zinc-50 text-left text-[12px] uppercase tracking-wider text-zinc-500 sticky top-0 z-10 border-b border-zinc-100" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                <tr>
+                  <th className="px-5 py-3.5 bg-zinc-50">Product</th>
+                  <th className="px-5 py-3.5 bg-zinc-50">Linked Recipe</th>
+                  <th className="px-5 py-3.5 bg-zinc-50">Categories</th>
+                  <th className="px-5 py-3.5 text-right bg-zinc-50">Stock</th>
+                  <th className="px-5 py-3.5 text-right bg-zinc-50">Price</th>
+                  <th className="px-5 py-3.5 text-right bg-zinc-50">Cost</th>
+                  <th className="px-5 py-3.5 text-right bg-zinc-50">Margins</th>
+                  <th className="px-5 py-3.5 text-right bg-zinc-50">QTY</th>
+                  <th className="px-5 py-3.5 w-36 bg-zinc-50" />
+                </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 text-[14px]">
+              <tbody className="divide-y divide-zinc-50">
                 {[...filteredProducts].sort((a, b) => {
                     if (productSort === "a-z") return a.localeCompare(b);
                     if (productSort === "z-a") return b.localeCompare(a);
@@ -370,74 +470,84 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                     return catA.localeCompare(catB) || a.localeCompare(b);
                   }).map(product => {
                   const recipe = recipes.find(r => r.productName === product);
+                  const pricing = productPricing.find(p => p.productName === product);
+                  const margin = pricing && pricing.sellingPrice > 0 ? ((pricing.sellingPrice - pricing.estimatedCost) / pricing.sellingPrice * 100) : 0;
                   return (
-                    <tr key={product} className="hover:bg-zinc-50/60 cursor-pointer" onClick={() => setViewingProduct(product)}>
+                    <tr key={product} className="hover:bg-zinc-50/50 transition-colors cursor-pointer" onClick={() => setViewingProduct(product)}>
                       <td className="px-5 py-4">
-                        <div className="font-semibold text-zinc-900 text-[15px]">{product}</div>
+                        <div className="text-[14px] font-semibold text-zinc-900">{product}</div>
+                        {recipe?.linkedIngredients && recipe.linkedIngredients.length > 0 && (
+                          <div className="text-[12px] text-zinc-400 mt-0.5">{recipe.linkedIngredients.length} ingredient{recipe.linkedIngredients.length > 1 ? "s" : ""}</div>
+                        )}
                       </td>
                       <td className="px-5 py-4">
-                        {recipe?.linkedIngredients && recipe.linkedIngredients.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1.5">
+                        {recipe?.linkedIngredients && recipe.linkedIngredients.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
                             {recipe.linkedIngredients.map(lp => (
                               <span key={lp} className="rounded-full bg-sky-100 px-2.5 py-1 text-[12px] font-medium text-sky-700">{lp}</span>
                             ))}
                           </div>
-                        )}
-                        {!recipe?.linkedIngredients || recipe.linkedIngredients.length === 0 && <span className="text-[13px] text-zinc-400 italic">—</span>}
+                        ) : <span className="text-[13px] text-zinc-400">—</span>}
                       </td>
                       <td className="px-5 py-4">
                         {productCategoryMap[product] ? (
                           <span className="inline-block rounded-full bg-zinc-100 px-2.5 py-1 text-[12px] font-medium text-zinc-600">{productCategoryMap[product]}</span>
-                        ) : (
-                          <span className="text-[13px] text-zinc-400 italic">—</span>
-                        )}
+                        ) : <span className="text-[13px] text-zinc-400">—</span>}
                       </td>
-                      <td className="px-5 py-4">
-                        <select
-                          value={productRoutes[product] || ""}
-                          onChange={e => {
-                            e.stopPropagation();
-                            const val = (e.target.value || null) as ProductRoute | null;
-                            onUpdateProductRoutes(prev => {
-                              const next = { ...prev };
-                              if (val) next[product] = val;
-                              else delete next[product];
-                              return next;
-                            });
-                            db.saveProductRoute(product, val).catch(console.error);
-                          }}
-                          onClick={e => e.stopPropagation()}
-                          className={`rounded-lg border px-2.5 py-1.5 text-[12px] font-medium outline-none cursor-pointer ${
-                            productRoutes[product] === "baker" ? "border-stone-300 bg-stone-50 text-stone-700"
-                            : productRoutes[product] === "deco" ? "border-rose-300 bg-rose-50 text-rose-700"
-                            : productRoutes[product] === "pastry" ? "border-amber-300 bg-amber-50 text-amber-700"
-                            : "border-zinc-200 bg-white text-zinc-400"
-                          }`}
-                        >
-                          <option value="">—</option>
-                          <option value="baker">Baker</option>
-                          <option value="deco">Deco</option>
-                          <option value="pastry">Pastry</option>
-                        </select>
+                      <td className="px-5 py-4 text-right">
+                        {(() => {
+                          const recipe = recipes.find(r => r.productName === product);
+                          const allIngs = recipe ? [...recipe.ingredients, ...recipe.packagingMaterials, ...recipe.decorationSupplies] : [];
+                          if (allIngs.length === 0) return <span className="text-[12px] text-zinc-400">No recipe</span>;
+                          const stockStatuses = allIngs.map(ing => {
+                            const inv = inventory.find(i => i.id === ing.inventoryId);
+                            if (!inv) return "missing";
+                            if (inv.onHand === 0) return "out";
+                            if (inv.onHand < inv.threshold) return "low";
+                            return "ok";
+                          });
+                          const outCount = stockStatuses.filter(s => s === "out").length;
+                          const lowCount = stockStatuses.filter(s => s === "low").length;
+                          const okCount = stockStatuses.filter(s => s === "ok").length;
+                          const missingCount = stockStatuses.filter(s => s === "missing").length;
+                          if (outCount > 0) return <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-red-600"><span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>{outCount} out</span>;
+                          if (lowCount > 0) return <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-amber-600"><span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>{lowCount} low</span>;
+                          if (missingCount > 0) return <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-zinc-500"><span className="w-1.5 h-1.5 rounded-full bg-zinc-300"></span>{missingCount} missing</span>;
+                          return <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-600"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>{okCount} OK</span>;
+                        })()}
                       </td>
-                      <td className="px-5 py-4">
-                        {recipe?.packagingMaterials && recipe.packagingMaterials.length > 0 ? (
-                          <span className="text-[13px] text-zinc-600">{recipe.packagingMaterials.length} pack.</span>
-                        ) : (
-                          <span className="text-[13px] text-zinc-400 italic">—</span>
-                        )}
+                      <td className="px-5 py-4 text-[14px] font-semibold text-zinc-900 text-right">{pricing && pricing.sellingPrice > 0 ? `₱${pricing.sellingPrice.toFixed(2)}` : "—"}</td>
+                      <td className="px-5 py-4 text-[14px] text-zinc-700 text-right">{pricing && pricing.estimatedCost > 0 ? `₱${pricing.estimatedCost.toFixed(2)}` : "—"}</td>
+                      <td className="px-5 py-4 text-right">
+                        {pricing && pricing.sellingPrice > 0 ? (
+                          <span className={`text-[13px] font-semibold ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`}>{margin.toFixed(1)}%</span>
+                        ) : <span className="text-[13px] text-zinc-400">—</span>}
                       </td>
-                      <td className="px-5 py-4">
-                        {recipe?.decorationSupplies && recipe.decorationSupplies.length > 0 ? (
-                          <span className="text-[13px] text-zinc-600">{recipe.decorationSupplies.length} deco.</span>
-                        ) : (
-                          <span className="text-[13px] text-zinc-400 italic">—</span>
-                        )}
+                      <td className="px-5 py-4 text-right">
+                        {(() => {
+                          const bakerQty = freezerItems.filter(i => i.productName === product && i.producedBy === "baker" && i.status === "stored" && i.qty > 0).reduce((s, i) => s + i.qty, 0);
+                          const decoFreezerQty = freezerItems.filter(i => i.productName === product && i.producedBy === "deco" && i.status === "stored" && i.qty > 0).reduce((s, i) => s + i.qty, 0);
+                          const decoInvQty = inventory.filter(i => i.name === product && (!i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco")) && i.onHand > 0).reduce((s, i) => s + i.onHand, 0);
+                          const decoQty = decoFreezerQty + decoInvQty;
+                          const pastryQty = freezerItems.filter(i => i.productName === product && i.producedBy === "pastry" && i.status === "stored" && i.qty > 0).reduce((s, i) => s + i.qty, 0);
+                          const totalQty = bakerQty + decoQty + pastryQty;
+                          if (totalQty === 0) return <span className="text-[13px] text-zinc-400">0</span>;
+                          return (
+                            <div className="flex flex-col items-end">
+                              <span className="text-[14px] font-bold text-zinc-900" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalQty}</span>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                {bakerQty > 0 && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">B:{bakerQty}</span>}
+                                {decoQty > 0 && <span className="text-[10px] px-1 py-0.5 rounded bg-rose-100 text-rose-700 font-medium">D:{decoQty}</span>}
+                                {pastryQty > 0 && <span className="text-[10px] px-1 py-0.5 rounded bg-purple-100 text-purple-700 font-medium">P:{pastryQty}</span>}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-5 py-4 text-right">
                         <div className="flex items-center gap-1.5 justify-end">
-                          <button onClick={e => { e.stopPropagation(); setEditingProduct(product); setRenamingProduct(product); setCategories(prev => prev); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
-                          <button onClick={e => { e.stopPropagation(); setDeletingProduct(product); }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                          <button onClick={e => { e.stopPropagation(); setEditingProduct(product); setRenamingProduct(product); setCategories(prev => prev); }} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-all">Edit</button>
+                          <button onClick={e => { e.stopPropagation(); setDeletingProduct(product); }} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-red-600 hover:bg-red-50 transition-all">Del</button>
                         </div>
                       </td>
                     </tr>
@@ -596,7 +706,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
               inventory={inventory}
               recipes={recipes}
               categories={categories}
-              onSave={async (name, packagingMaterials, decorationSupplies, linkedIngredients, category) => {
+              onSave={async (name, packagingMaterials, decorationSupplies, linkedIngredients, category, pricing) => {
                 onUpdateProductCatalog(prev => prev.includes(name) ? prev : [...prev, name]);
                 await db.addToCatalog(name).catch(console.error);
                 if (packagingMaterials && packagingMaterials.length > 0 || decorationSupplies && decorationSupplies.length > 0 || (linkedIngredients && linkedIngredients.length > 0)) {
@@ -610,6 +720,28 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 }
                 await db.saveProductCategory(name, category || null).catch(console.error);
                 setProductCategoryMap(prev => ({ ...prev, [name]: category || "" }));
+                // Save pricing data
+                const recipeForCost = recipes.find(r => r.productName === name);
+                const allIngs = recipeForCost ? [...recipeForCost.ingredients, ...recipeForCost.packagingMaterials, ...recipeForCost.decorationSupplies] : [];
+                const estCost = allIngs.reduce((sum, ing) => {
+                  const inv = inventory.find(i => i.id === ing.inventoryId);
+                  return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+                }, 0);
+                const effectiveCost = pricing.costPrice > 0 ? pricing.costPrice : estCost;
+                const margin = pricing.sellingPrice > 0 ? ((pricing.sellingPrice - effectiveCost) / pricing.sellingPrice * 100) : 0;
+                const newPricing: ProductPricing = {
+                  id: `PRC-${Date.now()}`,
+                  productName: name,
+                  category: category || "",
+                  estimatedCost: effectiveCost,
+                  sellingPrice: pricing.sellingPrice,
+                  wholesalePrice: pricing.wholesalePrice,
+                  profitMargin: margin,
+                  status: pricing.status,
+                  variants: pricing.variants,
+                };
+                onUpdateProductPricing(prev => [...prev, newPricing]);
+                await db.upsertProductPricing([...productPricing, newPricing]).catch(console.error);
                 setShowAddProduct(false);
               }}
               onClose={() => setShowAddProduct(false)}
@@ -645,7 +777,8 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             inventory={inventory}
             categories={categories}
             initialCategory={productCategoryMap[editingProduct] || ""}
-            onSave={async (originalName, newName, ingredients, packagingMaterials, decorationSupplies, linkedIngredients, category) => {
+            productPricing={productPricing.find(p => p.productName === editingProduct)}
+            onSave={async (originalName, newName, ingredients, packagingMaterials, decorationSupplies, linkedIngredients, category, pricing) => {
               if (originalName !== newName) {
                 onUpdateProductCatalog(prev => {
                   const next = prev.filter(p => p !== originalName);
@@ -685,6 +818,39 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 alert(`Failed to save category: ${err.message || JSON.stringify(err)}`);
               });
               setProductCategoryMap(prev => ({ ...prev, [newName]: category || "" }));
+              // Save pricing data if provided
+              if (pricing) {
+                const recipeForCost = recipes.find(r => r.productName === originalName);
+                const allIngs = recipeForCost ? [...recipeForCost.ingredients, ...recipeForCost.packagingMaterials, ...recipeForCost.decorationSupplies] : [];
+                const estCost = allIngs.reduce((sum, ing) => {
+                  const inv = inventory.find(i => i.id === ing.inventoryId);
+                  return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+                }, 0);
+                const effectiveCost = pricing.costPrice > 0 ? pricing.costPrice : estCost;
+                const margin = pricing.sellingPrice > 0 ? ((pricing.sellingPrice - effectiveCost) / pricing.sellingPrice * 100) : 0;
+                const existingPricing = productPricing.find(p => p.productName === originalName);
+                const updatedPricing: ProductPricing = {
+                  id: existingPricing?.id || `PRC-${Date.now()}`,
+                  productName: newName,
+                  category: category || "",
+                  estimatedCost: effectiveCost,
+                  sellingPrice: pricing.sellingPrice,
+                  wholesalePrice: pricing.wholesalePrice,
+                  profitMargin: margin,
+                  status: pricing.status,
+                  variants: pricing.variants,
+                };
+                onUpdateProductPricing(prev => {
+                  const idx = prev.findIndex(p => p.productName === originalName);
+                  if (idx >= 0) {
+                    const next = [...prev];
+                    next[idx] = updatedPricing;
+                    return next;
+                  }
+                  return [...prev, updatedPricing];
+                });
+                await db.upsertProductPricing(updatedPricing).catch(console.error);
+              }
               setEditingProduct(null);
               setRenamingProduct("");
             }}
@@ -797,26 +963,187 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           {viewingProduct && (() => {
             const product = viewingProduct;
             const recipe = recipes.find(r => r.productName === product);
+            const pricing = productPricing.find(p => p.productName === product);
             const category = productCategoryMap[product];
+
+            // QTY breakdown
+            const bakerQty = freezerItems.filter(i => i.productName === product && i.producedBy === "baker" && i.status === "stored" && i.qty > 0).reduce((s, i) => s + i.qty, 0);
+            const decoFreezerQty = freezerItems.filter(i => i.productName === product && i.producedBy === "deco" && i.status === "stored" && i.qty > 0).reduce((s, i) => s + i.qty, 0);
+            const decoInvQty = inventory.filter(i => i.name === product && (!i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco")) && i.onHand > 0).reduce((s, i) => s + i.onHand, 0);
+            const decoQty = decoFreezerQty + decoInvQty;
+            const pastryQty = freezerItems.filter(i => i.productName === product && i.producedBy === "pastry" && i.status === "stored" && i.qty > 0).reduce((s, i) => s + i.qty, 0);
+            const totalQty = bakerQty + decoQty + pastryQty;
+
+            // Cost from recipe
+            const allRecipeItems = recipe ? [...recipe.ingredients, ...recipe.packagingMaterials, ...recipe.decorationSupplies] : [];
+            const estCost = allRecipeItems.reduce((sum, ing) => {
+              const inv = inventory.find(i => i.id === ing.inventoryId);
+              return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+            }, 0);
+            const sp = pricing?.sellingPrice || 0;
+            const cp = pricing?.estimatedCost || 0;
+            const effectiveCost = cp > 0 ? cp : estCost;
+            const profit = sp > 0 ? sp - effectiveCost : 0;
+            const margin = sp > 0 ? ((profit / sp) * 100) : 0;
+
+            // Baker batches
+            const bakerBatches = freezerItems.filter(i => i.productName === product && i.producedBy === "baker" && i.status === "stored" && i.qty > 0);
+
             return (
               <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={() => setViewingProduct(null)}>
-                <div className="w-full max-w-[520px] max-h-[90vh] overflow-y-auto rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-                  <div className="flex items-center justify-between mb-5">
+                <div className="w-full max-w-[560px] max-h-[90vh] overflow-y-auto rounded-[28px] border border-[#E8E0D5] bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                  {/* Header */}
+                  <div className="flex items-start justify-between mb-5">
                     <div>
-                      <h3 className="text-[16px] font-semibold">{product}</h3>
-                      {category && <span className="mt-1 inline-block rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">{category}</span>}
+                      <h3 className="text-[18px] font-bold text-zinc-900">{product}</h3>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        {category && <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-medium text-zinc-600">{category}</span>}
+                        {pricing?.status && <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium ${pricing.status === "active" ? "bg-emerald-100 text-emerald-700" : pricing.status === "draft" ? "bg-amber-100 text-amber-700" : "bg-zinc-200 text-zinc-500"}`}>{pricing.status}</span>}
+                      </div>
                     </div>
-                    <button onClick={() => setViewingProduct(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100">✕</button>
+                    <button onClick={() => setViewingProduct(null)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600">✕</button>
+                  </div>
+
+                  {/* QTY Section */}
+                  <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 mb-4">
+                    <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-3">Available Quantity</h4>
+                    <div className="text-center mb-3">
+                      <span className="text-[32px] font-bold text-zinc-900" style={{ fontFamily: "Fragment Mono, monospace" }}>{totalQty}</span>
+                      <span className="text-[13px] text-zinc-500 ml-1">total units</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className={`rounded-xl p-3 text-center ${bakerQty > 0 ? "bg-amber-50 border border-amber-200" : "bg-white border border-zinc-200"}`}>
+                        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Baker</div>
+                        <div className={`text-[20px] font-bold ${bakerQty > 0 ? "text-amber-700" : "text-zinc-400"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{bakerQty}</div>
+                        <div className="text-[10px] text-zinc-400">baked products</div>
+                      </div>
+                      <div className={`rounded-xl p-3 text-center ${decoQty > 0 ? "bg-rose-50 border border-rose-200" : "bg-white border border-zinc-200"}`}>
+                        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Deco</div>
+                        <div className={`text-[20px] font-bold ${decoQty > 0 ? "text-rose-700" : "text-zinc-400"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{decoQty}</div>
+                        <div className="text-[10px] text-zinc-400">display cakes</div>
+                      </div>
+                      <div className={`rounded-xl p-3 text-center ${pastryQty > 0 ? "bg-purple-50 border border-purple-200" : "bg-white border border-zinc-200"}`}>
+                        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Pastry</div>
+                        <div className={`text-[20px] font-bold ${pastryQty > 0 ? "text-purple-700" : "text-zinc-400"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{pastryQty}</div>
+                        <div className="text-[10px] text-zinc-400">assembled pkgs</div>
+                      </div>
+                    </div>
+                    {bakerBatches.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-zinc-200">
+                        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Baker Batches</div>
+                        <div className="space-y-1">
+                          {bakerBatches.slice(0, 5).map(b => (
+                            <div key={b.id} className="flex items-center justify-between text-[11px]">
+                              <span className="text-zinc-600">{b.batchRef}</span>
+                              <span className="text-zinc-700 font-mono">{b.qty} {b.unit}</span>
+                            </div>
+                          ))}
+                          {bakerBatches.length > 5 && <div className="text-[10px] text-zinc-400 text-center">+{bakerBatches.length - 5} more batches</div>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pricing Section */}
+                  <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 mb-4">
+                    <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-3">Pricing & Margins</h4>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div className="rounded-xl bg-white border border-zinc-200 p-3">
+                        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Selling Price</div>
+                        <div className="text-[18px] font-bold text-zinc-900" style={{ fontFamily: "Fragment Mono, monospace" }}>{sp > 0 ? `₱${sp.toFixed(2)}` : "—"}</div>
+                      </div>
+                      <div className="rounded-xl bg-white border border-zinc-200 p-3">
+                        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Wholesale Price</div>
+                        <div className="text-[18px] font-bold text-zinc-900" style={{ fontFamily: "Fragment Mono, monospace" }}>{pricing?.wholesalePrice ? `₱${pricing.wholesalePrice.toFixed(2)}` : "—"}</div>
+                      </div>
+                      <div className="rounded-xl bg-white border border-zinc-200 p-3">
+                        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Cost Price</div>
+                        <div className="text-[18px] font-bold text-zinc-700" style={{ fontFamily: "Fragment Mono, monospace" }}>{effectiveCost > 0 ? `₱${effectiveCost.toFixed(2)}` : "—"}</div>
+                      </div>
+                      <div className="rounded-xl bg-white border border-zinc-200 p-3">
+                        <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Profit</div>
+                        <div className={`text-[18px] font-bold ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{sp > 0 ? `₱${profit.toFixed(2)}` : "—"}</div>
+                      </div>
+                    </div>
+                    {sp > 0 && (
+                      <div className="rounded-xl bg-white border border-zinc-200 p-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-500">Profit Margin</span>
+                          <span className={`text-[14px] font-bold ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{margin.toFixed(1)}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-zinc-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${margin >= 30 ? "bg-emerald-500" : margin >= 15 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${Math.min(100, margin)}%` }}></div>
+                        </div>
+                        <div className="flex justify-between mt-1">
+                          <span className="text-[9px] text-zinc-400">0%</span>
+                          <span className="text-[9px] text-zinc-400">50%</span>
+                          <span className="text-[9px] text-zinc-400">100%</span>
+                        </div>
+                      </div>
+                    )}
+                    {!sp && <p className="text-[12px] text-zinc-400 italic text-center">No pricing set for this product.</p>}
                   </div>
 
                   {/* Linked Recipe */}
                   {recipe?.linkedIngredients && recipe.linkedIngredients.length > 0 && (
                     <div className="mb-4">
                       <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Linked Recipe</h4>
-                      <div className="flex flex-wrap gap-1.5">
-                        {recipe.linkedIngredients.map(lp => (
-                          <span key={lp} className="rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-medium text-sky-700">{lp}</span>
-                        ))}
+                      <div className="space-y-2">
+                        {recipe.linkedIngredients.map(lp => {
+                          const linkedRecipe = recipes.find(r => r.productName === lp);
+                          const linkedIngCount = linkedRecipe?.ingredients.length || 0;
+                          const linkedPkgCount = linkedRecipe?.packagingMaterials.length || 0;
+                          const linkedDecoCount = linkedRecipe?.decorationSupplies.length || 0;
+                          const linkedCost = linkedRecipe ? [...(linkedRecipe.ingredients || []), ...(linkedRecipe.packagingMaterials || []), ...(linkedRecipe.decorationSupplies || [])].reduce((sum, ing) => {
+                            const inv = inventory.find(i => i.id === ing.inventoryId);
+                            return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+                          }, 0) : 0;
+                          return (
+                            <div key={lp} className="flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50/50 px-4 py-3">
+                              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-sky-100">
+                                <svg className="h-5 w-5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[13px] font-semibold text-zinc-900 truncate">{lp}</div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  {linkedIngCount > 0 && <span className="text-[10px] text-zinc-500">{linkedIngCount} ing</span>}
+                                  {linkedIngCount > 0 && (linkedPkgCount > 0 || linkedDecoCount > 0) && <span className="text-zinc-300">·</span>}
+                                  {linkedPkgCount > 0 && <span className="text-[10px] text-zinc-500">{linkedPkgCount} pkg</span>}
+                                  {linkedPkgCount > 0 && linkedDecoCount > 0 && <span className="text-zinc-300">·</span>}
+                                  {linkedDecoCount > 0 && <span className="text-[10px] text-zinc-500">{linkedDecoCount} deco</span>}
+                                </div>
+                              </div>
+                              {linkedCost > 0 && (
+                                <div className="text-right shrink-0">
+                                  <div className="text-[11px] text-zinc-400">Est. Cost</div>
+                                  <div className="text-[13px] font-semibold text-zinc-700" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{linkedCost.toFixed(2)}</div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ingredients */}
+                  {recipe?.ingredients && recipe.ingredients.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Ingredients</h4>
+                      <div className="space-y-1">
+                        {recipe.ingredients.map(item => {
+                          const inv = inventory.find(i => i.id === item.inventoryId);
+                          const lineCost = inv ? inv.cost * item.qtyPerBatch : 0;
+                          return (
+                            <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                              <span className="text-[12px] font-medium text-zinc-900">{item.name}</span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-[11px] text-zinc-500">{item.qtyPerBatch} {item.unit}</span>
+                                <span className="text-[11px] text-zinc-700 font-mono">₱{lineCost.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -826,12 +1153,19 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                     <div className="mb-4">
                       <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Packaging Materials</h4>
                       <div className="space-y-1">
-                        {recipe.packagingMaterials.map(item => (
-                          <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
-                            <span className="text-[12px] font-medium text-zinc-900">{item.name}</span>
-                            <span className="text-[11px] text-zinc-500">{item.qtyPerBatch} {item.unit}</span>
-                          </div>
-                        ))}
+                        {recipe.packagingMaterials.map(item => {
+                          const inv = inventory.find(i => i.id === item.inventoryId);
+                          const lineCost = inv ? inv.cost * item.qtyPerBatch : 0;
+                          return (
+                            <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                              <span className="text-[12px] font-medium text-zinc-900">{item.name}</span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-[11px] text-zinc-500">{item.qtyPerBatch} {item.unit}</span>
+                                <span className="text-[11px] text-zinc-700 font-mono">₱{lineCost.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -841,18 +1175,43 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                     <div className="mb-4">
                       <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Decoration Supplies</h4>
                       <div className="space-y-1">
-                        {recipe.decorationSupplies.map(item => (
-                          <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
-                            <span className="text-[12px] font-medium text-zinc-900">{item.name}</span>
-                            <span className="text-[11px] text-zinc-500">{item.qtyPerBatch} {item.unit}</span>
-                          </div>
-                        ))}
+                        {recipe.decorationSupplies.map(item => {
+                          const inv = inventory.find(i => i.id === item.inventoryId);
+                          const lineCost = inv ? inv.cost * item.qtyPerBatch : 0;
+                          return (
+                            <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                              <span className="text-[12px] font-medium text-zinc-900">{item.name}</span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-[11px] text-zinc-500">{item.qtyPerBatch} {item.unit}</span>
+                                <span className="text-[11px] text-zinc-700 font-mono">₱{lineCost.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
 
-                  {!recipe && (
-                    <p className="text-[13px] text-zinc-400 italic text-center py-4">No recipe linked yet.</p>
+                  {!recipe && !pricing && (
+                    <p className="text-[13px] text-zinc-400 italic text-center py-4">No recipe or pricing linked yet.</p>
+                  )}
+
+                  {/* Size Variants */}
+                  {pricing?.variants && pricing.variants.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2">Size Variants</h4>
+                      <div className="space-y-1">
+                        {pricing.variants.map(v => (
+                          <div key={v.id} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
+                            <span className="text-[12px] font-medium text-zinc-900">{v.size || "Standard"}</span>
+                            <div className="flex items-center gap-4">
+                              <span className="text-[11px] text-zinc-700 font-mono">Sell: ₱{v.sellingPrice.toFixed(2)}</span>
+                              <span className="text-[11px] text-zinc-500 font-mono">Wholesale: ₱{v.wholesalePrice.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
 
                   <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
@@ -992,31 +1351,51 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     const expired = inventory.filter(i => i.expiryDate && i.expiryDate < todayStr);
     const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000);
 
-    const groupItems = (g: typeof warehouseSection) => inventory.filter(i => g === "history" ? false : i.group === g);
+    const groupItems = (g: typeof warehouseSection) => g === "history" || g === "equipment" ? [] : inventory.filter(i => i.group === g);
     const roleFiltered = (items: InventoryItem[]) => ingredientRoleFilter === "all" ? items : items.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter));
 
-    const sidebarItems: { key: typeof warehouseSection; label: string; icon: string }[] = [
-      { key: "ingredients", label: "Ingredients", icon: "◇" },
-      { key: "packaging-materials", label: "Packaging Materials", icon: "□" },
-      { key: "decoration-supplies", label: "Decoration Supplies", icon: "○" },
-      { key: "operational-supplies", label: "Operational Supplies", icon: "△" },
-      { key: "history", label: "Stock History", icon: "▽" },
+    const sidebarSections: { key: typeof warehouseSection; label: string; icon: string }[][] = [
+      [
+        { key: "ingredients", label: "Ingredients", icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" },
+        { key: "packaging-materials", label: "Packaging", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
+        { key: "decoration-supplies", label: "Decoration", icon: "M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" },
+        { key: "operational-supplies", label: "Operational", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z" },
+        { key: "equipment", label: "Equipment", icon: "M11.42 15.17l-5.5-5.5a2 2 0 010-2.83l2.83-2.83a2 2 0 012.83 0l5.5 5.5M11.42 15.17l5.5 5.5M11.42 15.17l-2.83 2.83a2 2 0 000 2.83l.7.7M11.42 15.17l4.24-4.24m-5.5 5.5l-4.24 4.24" },
+      ],
+      [
+        { key: "history", label: "Stock History", icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
+        { key: "analytics", label: "Analytics", icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" },
+      ],
     ];
 
+    const sidebarLookup = sidebarSections.flat().reduce((acc, item) => { acc[item.key] = item; return acc; }, {} as Record<string, { key: typeof warehouseSection; label: string; icon: string }>);
+
     return (
-      <div className="flex gap-5">
+      <div className="flex gap-6">
         {/* Sidebar */}
-        <div className="w-52 shrink-0 space-y-1">
-          <div className="text-[12px] font-semibold uppercase tracking-wider text-zinc-400 mb-2 px-3">Stock Room</div>
-          {sidebarItems.map(item => (
-            <button key={item.key} onClick={() => setWarehouseSection(item.key)}
-              className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-[14px] font-semibold text-left transition-all ${warehouseSection === item.key ? "bg-zinc-900 text-white shadow-sm" : "text-zinc-600 hover:bg-zinc-100"}`}>
-              <span className="text-[15px]">{item.icon}</span>
-              <span>{item.label}</span>
-              {item.key !== "history" && (
-                <span className="ml-auto rounded-full bg-zinc-200 px-2 py-0.5 text-[11px] font-mono font-semibold text-zinc-600">{groupItems(item.key).length}</span>
-              )}
-            </button>
+        <div className="w-56 shrink-0">
+          <div className="mb-4 px-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-400">Stock Room</div>
+            <div className="mt-1 h-px bg-zinc-200" />
+          </div>
+          {sidebarSections.map((section, si) => (
+            <div key={si} className="mb-2">
+              {section.map(item => (
+                <button key={item.key} onClick={() => setWarehouseSection(item.key)}
+                  className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold transition-all ${warehouseSection === item.key ? "bg-zinc-900 text-white shadow-sm" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700"}`}>
+                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all ${warehouseSection === item.key ? "bg-white/15" : "bg-zinc-100 group-hover:bg-zinc-200"}`}>
+                    <svg className={`h-4 w-4 ${warehouseSection === item.key ? "text-white" : "text-zinc-500"}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d={item.icon} />
+                    </svg>
+                  </span>
+                  <span className="flex-1">{item.label}</span>
+                  {(item.key !== "history" && item.key !== "analytics") && (
+                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-all ${warehouseSection === item.key ? "bg-white/15 text-white" : "bg-zinc-100 text-zinc-500"}`}>{groupItems(item.key).length}</span>
+                  )}
+                </button>
+              ))}
+              {si < sidebarSections.length - 1 && <div className="mx-3 mt-2 h-px bg-zinc-100" />}
+            </div>
           ))}
         </div>
 
@@ -1025,22 +1404,24 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-[26px] font-bold text-zinc-900">
-                {warehouseSection === "history" ? "Stock History" : sidebarItems.find(s => s.key === warehouseSection)?.label}
+                {warehouseSection === "history" ? "Stock History" : sidebarLookup[warehouseSection]?.label}
               </h1>
               <p className="mt-1 text-[14px] text-zinc-600">Manage all material IN and OUT movements.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {warehouseSection !== "history" && (
+              {warehouseSection === "equipment" ? (
+                <button onClick={() => { setEditingEquipment({ id: `EQ-${Date.now()}`, name: "", datePurchased: "", costPrice: 0, sku: "", supplier: "", status: "active", notes: "" }); setShowEquipmentModal(true); }} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Add Equipment</button>
+              ) : warehouseSection !== "history" ? (
                 <>
                   <button onClick={() => setShowReceive(true)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Receive from Supplier</button>
                   <button onClick={() => setEditingInvItem({ id: `INV-${Date.now()}`, name: "", sku: "", unit: "", onHand: 0, threshold: 10, cost: 0, supplier: "", lastIn: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0], category: warehouseSection === "packaging-materials" ? "packaging" : "dry", group: warehouseSection, accessRoles: [] })} className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ New Item</button>
                 </>
-              )}
+              ) : null}
             </div>
           </div>
 
-          {/* Quick Stats (shown for group views, not history) */}
-          {warehouseSection !== "history" && (
+          {/* Quick Stats (shown for group views, not history or equipment) */}
+          {warehouseSection !== "history" && warehouseSection !== "equipment" && (
             <div className="grid grid-cols-5 gap-3">
               <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Items</div><div className="text-[26px] font-bold mt-1">{roleFiltered(groupItems(warehouseSection)).length}</div></div>
               <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Low Stock</div><div className="text-[26px] font-bold mt-1 text-red-600">{roleFiltered(lowStock.filter(i => i.group === warehouseSection)).length}</div></button>
@@ -1051,7 +1432,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           )}
 
           {/* Role filter pills */}
-          {warehouseSection !== "history" && (
+          {warehouseSection !== "history" && warehouseSection !== "equipment" && (
             <div className="flex items-center gap-1.5 rounded-xl bg-zinc-100 p-1">
               {[
                 { id: "all" as const, label: "All" },
@@ -1070,49 +1451,450 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           {/* Stock History View */}
           {warehouseSection === "history" ? (
             <div>
-              {transactions.length > 0 ? (
-                <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-[18px] font-bold text-white">Transaction History</h2>
-                    <span className="rounded-full bg-zinc-700 px-3 py-1 text-[12px] font-semibold text-zinc-200">{transactions.length} entries</span>
-                  </div>
-                  
-                  {/* Container with constrained height */}
-                  <div className="max-h-[400px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
-                    <div className="space-y-0">
-                      {/* Compact Header Row */}
-                      <div className="grid grid-cols-[auto,1fr,auto] gap-2 px-3 py-1.5 text-[11px] font-bold text-zinc-500 uppercase tracking-wider sticky top-0 bg-zinc-900/95 backdrop-blur-sm z-10 border-b border-zinc-800">
-                        <span>Type</span>
-                        <span>Item / Reference</span>
-                        <span className="text-right">Qty / Time</span>
+              {/* Filter bar */}
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-1">
+                  {["all", "in", "out"].map(t => (
+                    <button key={t} onClick={() => setHistoryTypeFilter(t as typeof historyTypeFilter)}
+                      className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition-all ${historyTypeFilter === t ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
+                      {t === "all" ? "All Types" : t.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-1">
+                  {["all", "admin", "baker", "deco", "pastry"].map(r => (
+                    <button key={r} onClick={() => setHistoryRoleFilter(r as typeof historyRoleFilter)}
+                      className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition-all ${historyRoleFilter === r ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
+                      {r === "all" ? "All Roles" : r.charAt(0).toUpperCase() + r.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-1">
+                  {["all", "ingredients", "packaging-materials", "decoration-supplies", "operational-supplies"].map(g => (
+                    <button key={g} onClick={() => setHistoryGroupFilter(g as typeof historyGroupFilter)}
+                      className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition-all ${historyGroupFilter === g ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
+                      {g === "all" ? "All Groups" : g.replace(/-/g, " ")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {(() => {
+                const parseTxDate = (timestamp: string): Date | null => {
+                  // Try direct parse first (works for "Jun 18, 2026, 05:47 AM" format)
+                  const direct = new Date(timestamp);
+                  const currentYear = new Date().getFullYear();
+                  if (!isNaN(direct.getTime()) && direct.getFullYear() >= currentYear - 1) return direct;
+                  // Fallback: old format "Jun 18, 05:47 AM" - append current year
+                  const parts = timestamp.split(",");
+                  if (parts.length >= 2) {
+                    const datePart = parts[0].trim();
+                    const timePart = parts.slice(1).join(",").trim();
+                    const withYear = new Date(`${datePart}, ${currentYear}, ${timePart}`);
+                    if (!isNaN(withYear.getTime())) return withYear;
+                  }
+                  return null;
+                };
+
+                const filtered = transactions.filter(tx => {
+                  if (historyTypeFilter !== "all" && tx.type !== historyTypeFilter) return false;
+                  if (historyRoleFilter !== "all" && tx.role !== historyRoleFilter) return false;
+                  if (historyGroupFilter !== "all" && tx.group !== historyGroupFilter) return false;
+                  return true;
+                });
+
+                // Group by date
+                const grouped = new Map<string, StockTransaction[]>();
+                filtered.forEach(tx => {
+                  const txDate = parseTxDate(tx.timestamp);
+                  const datePart = txDate
+                    ? txDate.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" })
+                    : tx.timestamp.split(",")[0]?.trim() || tx.timestamp.split(" ")[0] || "Unknown";
+                  if (!grouped.has(datePart)) grouped.set(datePart, []);
+                  grouped.get(datePart)!.push(tx);
+                });
+
+                const roleColors: Record<string, string> = {
+                  admin: "bg-blue-950 text-blue-300",
+                  baker: "bg-amber-950 text-amber-300",
+                  deco: "bg-rose-950 text-rose-300",
+                  pastry: "bg-purple-950 text-purple-300",
+                  "": "bg-zinc-800 text-zinc-400",
+                };
+
+                const groupColors: Record<string, string> = {
+                  ingredients: "bg-emerald-900/40 text-emerald-400",
+                  "packaging-materials": "bg-sky-900/40 text-sky-400",
+                  "decoration-supplies": "bg-pink-900/40 text-pink-400",
+                  "operational-supplies": "bg-orange-900/40 text-orange-400",
+                };
+
+                return filtered.length > 0 ? (
+                  <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-[18px] font-bold text-white">Transaction History</h2>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[12px] text-zinc-400">{filtered.length} of {transactions.length} entries</span>
+                        <span className="rounded-full bg-zinc-700 px-3 py-1 text-[12px] font-semibold text-zinc-200">{transactions.length} total</span>
                       </div>
-                      
-                      {[...transactions].reverse().map(tx => (
-                        <div key={tx.id} className="grid grid-cols-[auto,1fr,auto] items-center gap-2 px-3 py-1.5 text-[13px] hover:bg-zinc-800/50 border-b border-zinc-800/50">
-                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase ${tx.type === "in" ? "bg-emerald-950 text-emerald-300" : "bg-amber-950 text-amber-300"}`}>{tx.type}</span>
-                          <div className="flex flex-col truncate">
-                            <span className="font-semibold text-zinc-100 truncate">{tx.itemName}</span>
-                            <span className="text-[11px] text-zinc-500 truncate">{tx.reference || "No Ref"} {tx.group && `· ${tx.group.replace(/-/g, " ")}`}</span>
+                    </div>
+
+                    <div className="max-h-[600px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+                      {[...grouped.entries()].map(([date, txs]) => (
+                        <div key={date} className="mb-4">
+                          <div className="flex items-center gap-2 mb-2 sticky top-0 bg-zinc-900/95 backdrop-blur-sm z-10 py-1">
+                            <div className="h-px flex-1 bg-zinc-700"></div>
+                            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">{date}</span>
+                            <div className="h-px flex-1 bg-zinc-700"></div>
                           </div>
-                          <div className="flex flex-col items-end whitespace-nowrap">
-                            <span className="text-[13px] text-zinc-200 font-semibold">{tx.type === "in" ? "+" : "-"}{tx.qty} {tx.unit}</span>
-                            <span className="text-[11px] text-zinc-500">{tx.timestamp.split(' ')[1]}</span>
+                          <div className="space-y-0">
+                            {txs.map(tx => (
+                              <div key={tx.id} className="flex items-center gap-3 px-3 py-2 text-[13px] hover:bg-zinc-800/50 border-b border-zinc-800/50 rounded-lg">
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase shrink-0 ${tx.type === "in" ? "bg-emerald-950 text-emerald-300" : "bg-amber-950 text-amber-300"}`}>{tx.type}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-semibold text-zinc-100 truncate">{tx.itemName}</div>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-[11px] text-zinc-500 truncate">{tx.reference || "No Ref"}</span>
+                                    {tx.group && <span className={`text-[10px] px-1.5 py-0.5 rounded ${groupColors[tx.group] || "bg-zinc-800 text-zinc-400"}`}>{tx.group.replace(/-/g, " ")}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {tx.role && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${roleColors[tx.role] || "bg-zinc-800 text-zinc-400"}`}>{tx.role}</span>}
+                                  <div className="flex flex-col items-end">
+                                    <span className="text-[13px] text-zinc-200 font-semibold">{tx.type === "in" ? "+" : "-"}{tx.qty} {tx.unit}</span>
+                                    <span className="text-[11px] text-zinc-500">{tx.timestamp.split(",")[1]?.trim() || tx.timestamp.split(" ")[1] || ""}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))}
                     </div>
                   </div>
+                ) : (
+                  <div className="rounded-[24px] border border-zinc-800 bg-zinc-900 p-10 text-center">
+                    <p className="text-[14px] text-zinc-500">No transactions match the selected filters.</p>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : warehouseSection === "analytics" ? (
+            <div className="space-y-5">
+              {(() => {
+                // Analytics: most used items per group
+                const groupMap: Record<string, { label: string; color: string }> = {
+                  ingredients: { label: "Ingredients", color: "emerald" },
+                  "packaging-materials": { label: "Packaging Materials", color: "sky" },
+                  "decoration-supplies": { label: "Decoration Supplies", color: "pink" },
+                  "operational-supplies": { label: "Operational Supplies", color: "orange" },
+                };
+
+                // Date range filtering
+                const parseTxDate = (timestamp: string): Date | null => {
+                  // Try direct parse first (works for "Jun 18, 2026, 05:47 AM" format)
+                  const direct = new Date(timestamp);
+                  const currentYear = new Date().getFullYear();
+                  if (!isNaN(direct.getTime()) && direct.getFullYear() >= currentYear - 1) return direct;
+                  // Fallback: old format "Jun 18, 05:47 AM" - append current year
+                  const parts = timestamp.split(",");
+                  if (parts.length >= 2) {
+                    const datePart = parts[0].trim();
+                    const timePart = parts.slice(1).join(",").trim();
+                    const withYear = new Date(`${datePart}, ${currentYear}, ${timePart}`);
+                    if (!isNaN(withYear.getTime())) return withYear;
+                  }
+                  return null;
+                };
+
+                const filterByRange = (txs: StockTransaction[]) => {
+                  if (analyticsRange === "all") return txs;
+                  const now = new Date();
+                  return txs.filter(tx => {
+                    const txDate = parseTxDate(tx.timestamp);
+                    if (!txDate) return false;
+                    switch (analyticsRange) {
+                      case "day": {
+                        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                        return txDate >= today;
+                      }
+                      case "week": {
+                        const weekAgo = new Date(now);
+                        weekAgo.setDate(weekAgo.getDate() - 7);
+                        return txDate >= weekAgo;
+                      }
+                      case "month": {
+                        const monthAgo = new Date(now);
+                        monthAgo.setMonth(monthAgo.getMonth() - 1);
+                        return txDate >= monthAgo;
+                      }
+                      case "year": {
+                        const yearAgo = new Date(now);
+                        yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+                        return txDate >= yearAgo;
+                      }
+                      default: return true;
+                    }
+                  });
+                };
+
+                const filteredTransactions = filterByRange(transactions);
+
+                const getMostUsed = (group: string) => {
+                  const outTxs = filteredTransactions.filter(tx => tx.type === "out" && tx.group === group);
+                  const itemMap = new Map<string, { name: string; totalQty: number; txCount: number; roles: Set<string> }>();
+                  outTxs.forEach(tx => {
+                    const names = tx.itemName.split(",").map(n => n.trim()).filter(Boolean);
+                    names.forEach(name => {
+                      if (!name) return;
+                      const existing = itemMap.get(name) || { name, totalQty: 0, txCount: 0, roles: new Set() };
+                      existing.totalQty += tx.qty / names.length;
+                      existing.txCount += 1;
+                      if (tx.role) existing.roles.add(tx.role);
+                      itemMap.set(name, existing);
+                    });
+                  });
+                  return [...itemMap.values()].sort((a, b) => b.txCount - a.txCount).slice(0, 10);
+                };
+
+                const totalIn = filteredTransactions.filter(tx => tx.type === "in").length;
+                const totalOut = filteredTransactions.filter(tx => tx.type === "out").length;
+                const roleCounts = new Map<string, number>();
+                filteredTransactions.forEach(tx => {
+                  const role = tx.role || "unknown";
+                  roleCounts.set(role, (roleCounts.get(role) || 0) + 1);
+                });
+
+                const colorMap: Record<string, { bg: string; text: string; bar: string }> = {
+                  emerald: { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700", bar: "bg-emerald-500" },
+                  sky: { bg: "bg-sky-50 border-sky-200", text: "text-sky-700", bar: "bg-sky-500" },
+                  pink: { bg: "bg-pink-50 border-pink-200", text: "text-pink-700", bar: "bg-pink-500" },
+                  orange: { bg: "bg-orange-50 border-orange-200", text: "text-orange-700", bar: "bg-orange-500" },
+                };
+
+                const rangeLabels: Record<string, string> = {
+                  all: "All Time",
+                  day: "Today",
+                  week: "This Week",
+                  month: "This Month",
+                  year: "This Year",
+                };
+
+                return (
+                  <>
+                    {/* Date Range Selector */}
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-[18px] font-bold text-zinc-900">Stock Analytics</h2>
+                      <div className="flex items-center gap-1 rounded-xl bg-zinc-100 p-1">
+                        {(["all", "day", "week", "month", "year"] as const).map(r => (
+                          <button key={r} onClick={() => setAnalyticsRange(r)}
+                            className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition-all ${analyticsRange === r ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
+                            {rangeLabels[r]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Overview cards */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="rounded-2xl border border-zinc-200 bg-white p-5">
+                        <div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Transactions</div>
+                        <div className="text-[32px] font-bold mt-1">{filteredTransactions.length}</div>
+                        <div className="flex gap-4 mt-2">
+                          <span className="text-[12px] text-emerald-600 font-medium">{totalIn} IN</span>
+                          <span className="text-[12px] text-amber-600 font-medium">{totalOut} OUT</span>
+                        </div>
+                        <div className="text-[10px] text-zinc-400 mt-2">{rangeLabels[analyticsRange]}</div>
+                      </div>
+                      <div className="rounded-2xl border border-zinc-200 bg-white p-5">
+                        <div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Transactions by Role</div>
+                        <div className="mt-3 space-y-2">
+                          {[...roleCounts.entries()].filter(([r]) => r !== "unknown").sort((a, b) => b[1] - a[1]).map(([role, count]) => (
+                            <div key={role} className="flex items-center gap-2">
+                              <span className="text-[12px] text-zinc-600 w-16 capitalize">{role}</span>
+                              <div className="flex-1 h-2 bg-zinc-100 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${role === "admin" ? "bg-blue-500" : role === "baker" ? "bg-amber-500" : role === "deco" ? "bg-rose-500" : "bg-purple-500"}`} style={{ width: `${filteredTransactions.length > 0 ? (count / filteredTransactions.length) * 100 : 0}%` }}></div>
+                              </div>
+                              <span className="text-[11px] text-zinc-500 w-8 text-right">{count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-zinc-200 bg-white p-5">
+                        <div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Top Groups by Activity</div>
+                        <div className="mt-3 space-y-2">
+                          {Object.entries(groupMap).map(([key, info]) => {
+                            const count = filteredTransactions.filter(tx => tx.group === key).length;
+                            return (
+                              <div key={key} className="flex items-center gap-2">
+                                <span className={`text-[12px] w-32 truncate ${colorMap[info.color]?.text || "text-zinc-600"}`}>{info.label}</span>
+                                <div className="flex-1 h-2 bg-zinc-100 rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full ${colorMap[info.color]?.bar || "bg-zinc-500"}`} style={{ width: `${filteredTransactions.length > 0 ? (count / filteredTransactions.length) * 100 : 0}%` }}></div>
+                                </div>
+                                <span className="text-[11px] text-zinc-500 w-8 text-right">{count}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Most Used Items - Tabbed */}
+                    <div className="rounded-[24px] border border-zinc-200 bg-white overflow-hidden">
+                      {/* Tab Header */}
+                      <div className="flex items-center border-b border-zinc-200 bg-zinc-50">
+                        {Object.entries(groupMap).map(([groupKey, info]) => {
+                          const isActive = analyticsTab === groupKey;
+                          const itemCount = getMostUsed(groupKey).length;
+                          return (
+                            <button
+                              key={groupKey}
+                              onClick={() => setAnalyticsTab(groupKey as typeof analyticsTab)}
+                              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3.5 text-[13px] font-medium transition-all border-b-2 ${isActive ? `border-current ${colorMap[info.color]?.text || "text-zinc-900"} bg-white` : "border-transparent text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100"}`}
+                            >
+                              <span>{info.label}</span>
+                              {itemCount > 0 && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${isActive ? "bg-current/10" : "bg-zinc-200 text-zinc-500"}`}>{itemCount}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Tab Content */}
+                      {(() => {
+                        const activeItems = getMostUsed(analyticsTab);
+                        const activeInfo = groupMap[analyticsTab];
+                        const activeColors = colorMap[activeInfo.color] || colorMap.emerald;
+                        const totalDeductions = activeItems.reduce((s, i) => s + i.txCount, 0);
+                        const totalQtyUsed = activeItems.reduce((s, i) => s + i.totalQty, 0);
+                        const medals = ["🥇", "🥈", "🥉"];
+
+                        return (
+                          <div className="p-6">
+                            {/* Summary Bar */}
+                            <div className="flex items-center justify-between mb-5 pb-4 border-b border-zinc-100">
+                              <div className="flex items-center gap-4">
+                                <span className="text-[12px] text-zinc-500">{rangeLabels[analyticsRange]}</span>
+                                <span className="text-zinc-300">·</span>
+                                <span className="text-[12px] text-zinc-500">{activeItems.length} items tracked</span>
+                                <span className="text-zinc-300">·</span>
+                                <span className="text-[12px] text-zinc-500">{totalDeductions} deductions</span>
+                              </div>
+                              {activeItems.length > 0 && (
+                                <div className="text-right">
+                                  <span className={`text-[20px] font-bold ${activeColors.text}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{totalQtyUsed}</span>
+                                  <span className="text-[11px] text-zinc-400 ml-1">total used</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Items List */}
+                            {activeItems.length > 0 ? (
+                              <div className="space-y-2">
+                                {activeItems.map((item, idx) => {
+                                  const barWidth = activeItems[0]?.txCount ? (item.txCount / activeItems[0].txCount) * 100 : 0;
+                                  return (
+                                    <div key={item.name} className={`flex items-center gap-3 rounded-xl px-4 py-3 transition-all hover:bg-zinc-50 ${idx < 3 ? "bg-zinc-50 border border-zinc-100" : ""}`}>
+                                      <div className="w-10 text-center shrink-0">
+                                        {idx < 3 ? (
+                                          <span className="text-[18px]">{medals[idx]}</span>
+                                        ) : (
+                                          <span className="text-[14px] text-zinc-400 font-mono font-bold">{idx + 1}</span>
+                                        )}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <span className="text-[14px] font-semibold text-zinc-900 truncate">{item.name}</span>
+                                          <div className="flex items-center gap-3 shrink-0 ml-3">
+                                            <div className="text-right">
+                                              <span className="text-[14px] font-bold text-zinc-800" style={{ fontFamily: "Fragment Mono, monospace" }}>{item.totalQty.toFixed(1)}</span>
+                                              <span className="text-[10px] text-zinc-400 ml-1">qty</span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                          <div className="flex-1 h-2.5 bg-zinc-100 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full ${activeColors.bar} transition-all`} style={{ width: `${barWidth}%` }}></div>
+                                          </div>
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-[11px] font-semibold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">{item.txCount}×</span>
+                                            {[...item.roles].map(r => (
+                                              <span key={r} className={`text-[10px] px-2 py-0.5 rounded font-medium ${r === "baker" ? "bg-amber-100 text-amber-700" : r === "deco" ? "bg-rose-100 text-rose-700" : r === "pastry" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>{r}</span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="py-12 text-center">
+                                <div className="text-[40px] mb-3 opacity-20">📊</div>
+                                <p className="text-[14px] text-zinc-400 italic">No deduction data for {activeInfo.label.toLowerCase()} in this period.</p>
+                                <p className="text-[12px] text-zinc-300 mt-1">Try selecting a different time range above.</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          ) : warehouseSection === "equipment" ? (
+            <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-[18px] font-semibold text-zinc-900">Equipment</h2>
+                <div className="relative w-56">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+                  <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search equipment..." className="w-full rounded-xl border border-zinc-200 bg-white py-2.5 pl-9 pr-3 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-400" />
                 </div>
-              ) : (
-                <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No transactions yet.</p></div>
-              )}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-zinc-50 border-b border-zinc-200">
+                    <tr className="text-[12px] uppercase tracking-wider text-zinc-500 font-semibold">
+                      <th className="px-5 py-3">Name</th>
+                      <th className="px-5 py-3">SKU</th>
+                      <th className="px-5 py-3">Date Purchased</th>
+                      <th className="px-5 py-3 text-right">Cost Price</th>
+                      <th className="px-5 py-3">Supplier</th>
+                      <th className="px-5 py-3">Status</th>
+                      <th className="px-5 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {equipment.filter(e => !invSearch || e.name.toLowerCase().includes(invSearch.toLowerCase()) || e.sku.toLowerCase().includes(invSearch.toLowerCase()) || e.supplier.toLowerCase().includes(invSearch.toLowerCase())).length === 0 ? (
+                      <tr><td colSpan={7} className="px-5 py-12 text-center text-[14px] text-zinc-400">No equipment added yet.</td></tr>
+                    ) : equipment.filter(e => !invSearch || e.name.toLowerCase().includes(invSearch.toLowerCase()) || e.sku.toLowerCase().includes(invSearch.toLowerCase()) || e.supplier.toLowerCase().includes(invSearch.toLowerCase())).map(eq => (
+                      <tr key={eq.id} className="hover:bg-zinc-50 transition-colors">
+                        <td className="px-5 py-4"><div className="text-[14px] font-semibold text-zinc-900">{eq.name}</div>{eq.notes && <div className="text-[11px] text-zinc-400 mt-0.5">{eq.notes}</div>}</td>
+                        <td className="px-5 py-4 text-[13px] text-zinc-500 font-mono">{eq.sku || "\u2014"}</td>
+                        <td className="px-5 py-4 text-[13px] text-zinc-500">{eq.datePurchased || "\u2014"}</td>
+                        <td className="px-5 py-4 text-[14px] text-right font-mono font-semibold text-zinc-700">{"\u20B1"}{eq.costPrice.toFixed(2)}</td>
+                        <td className="px-5 py-4 text-[13px] text-zinc-500">{eq.supplier || "\u2014"}</td>
+                        <td className="px-5 py-4"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${eq.status === "active" ? "bg-emerald-100 text-emerald-700" : eq.status === "maintenance" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{eq.status}</span></td>
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => { setEditingEquipment(eq); setShowEquipmentModal(true); }} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
+                            <button onClick={() => { if (confirm(`Delete equipment "${eq.name}"?`)) { db.deleteEquipment(eq.id).catch(console.error); setEquipment(prev => prev.filter(e => e.id !== eq.id)); } }} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : (
             <>
 {/* Items filtered by group — redesigned card layout */}
               <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-[18px] font-semibold text-zinc-900">{sidebarItems.find(s => s.key === warehouseSection)?.label}</h2>
+                  <h2 className="text-[18px] font-semibold text-zinc-900">{sidebarLookup[warehouseSection]?.label}</h2>
                   <div className="flex items-center gap-2">
                     <div className="relative w-56">
                       <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
@@ -1235,7 +2017,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                           });
                           onUpdateInventory(newInv);
                           await db.upsertInventory(newInv).catch(console.error);
-                          const tx: StockTransaction = { id: 'TX-' + Date.now(), type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: "Released to Baker", timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "baker", group: "ingredients" };
+                          const tx: StockTransaction = { id: 'TX-' + Date.now(), type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: "Released to Baker", timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "baker", group: "ingredients", role: "admin" };
                           setTransactions(prev => [...prev, tx]);
                           await db.insertStockTransaction(tx).catch(console.error);
                         }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700">Release</button>
@@ -1280,7 +2062,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                           });
                           onUpdateInventory(newInv);
                           await db.upsertInventory(newInv).catch(console.error);
-                          const tx: StockTransaction = { id: 'TX-' + Date.now(), type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: "Released to Deco", timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: "decoration-supplies" };
+                          const tx: StockTransaction = { id: 'TX-' + Date.now(), type: "out", itemName: req.items.map(i => i.name).join(", "), itemId: req.id, qty: req.items.reduce((s, i) => s + i.qty, 0), unit: "", reference: "Released to Deco", timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: "decoration-supplies", role: "admin" };
                           setTransactions(prev => [...prev, tx]);
                           await db.insertStockTransaction(tx).catch(console.error);
                         }} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700">Release</button>
@@ -1297,7 +2079,24 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
 
 {/* Receive Modal */}
         {showReceive && <ReceiveModal inventory={inventory} onUpdateInventory={onUpdateInventory} onTransaction={async (tx) => { setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); onAddAuditLog?.("STOCK_RECEIVED", `${tx.itemName} x${tx.qty} ${tx.unit} — ${tx.reference}`); }} onClose={() => setShowReceive(false)} />}
-        {editingInvItem && <EditInventoryModal item={editingInvItem} onSave={async (updated) => { try { const exists = inventory.some(i => i.id === updated.id); if (exists) { const old = inventory.find(i => i.id === updated.id); onUpdateInventory(inventory.map(i => i.id === updated.id ? updated : i)); onAddAuditLog?.("INVENTORY_EDITED", `${updated.name} (${updated.sku}) updated`); if (old && old.onHand !== updated.onHand) { const diff = updated.onHand - old.onHand; const tx: StockTransaction = { id: `STX-${Date.now()}`, type: diff > 0 ? "in" : "out", itemName: updated.name, itemId: updated.id, qty: Math.abs(diff), unit: updated.unit, reference: "Manual adjustment", timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), group: updated.group }; setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); } } else { onUpdateInventory([...inventory, updated]); onAddAuditLog?.("INVENTORY_ADDED", `${updated.name} (${updated.sku}) added to ${updated.group}`); } } catch (err) { console.error("Save inventory failed:", err); alert("Failed to save item"); } setEditingInvItem(null); }} onClose={() => setEditingInvItem(null)} />}
+        {editingInvItem && <EditInventoryModal item={editingInvItem} onSave={async (updated) => { try { const exists = inventory.some(i => i.id === updated.id); if (exists) { const old = inventory.find(i => i.id === updated.id); onUpdateInventory(inventory.map(i => i.id === updated.id ? updated : i)); onAddAuditLog?.("INVENTORY_EDITED", `${updated.name} (${updated.sku}) updated`); if (old && old.onHand !== updated.onHand) { const diff = updated.onHand - old.onHand; const tx: StockTransaction = { id: `STX-${Date.now()}`, type: diff > 0 ? "in" : "out", itemName: updated.name, itemId: updated.id, qty: Math.abs(diff), unit: updated.unit, reference: "Manual adjustment", timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), group: updated.group, role: "admin" }; setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); } } else { onUpdateInventory([...inventory, updated]); onAddAuditLog?.("INVENTORY_ADDED", `${updated.name} (${updated.sku}) added to ${updated.group}`); } } catch (err) { console.error("Save inventory failed:", err); alert("Failed to save item"); } setEditingInvItem(null); }} onClose={() => setEditingInvItem(null)} />}
+        {showEquipmentModal && editingEquipment && createPortal(<EquipmentModal
+          equipment={editingEquipment}
+          equipmentList={equipment}
+          onSave={async (updated) => {
+            const isNew = !equipment.some(e => e.id === editingEquipment.id);
+            await db.upsertEquipment(updated);
+            if (isNew) {
+              setEquipment(prev => [...prev, updated]);
+              onAddAuditLog?.("EQUIPMENT_ADDED", `${updated.name} added`);
+            } else {
+              setEquipment(prev => prev.map(e => e.id === updated.id ? updated : e));
+              onAddAuditLog?.("EQUIPMENT_EDITED", `${updated.name} updated`);
+            }
+            setShowEquipmentModal(false);
+          }}
+          onClose={() => setShowEquipmentModal(false)}
+        />, document.body)}
 
         {/* Toast Container */}
         {toast && (
@@ -1339,7 +2138,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         })()}
       </div>
     </div>
-    );
+  );
   }
 
   /* ── Audit Tab ── */
@@ -2456,7 +3255,7 @@ return (
                               branch: d.branch,
                               items: [...d.items],
                               status: "validated" as const,
-                              timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+                              timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
                             };
                             setValidations(prev => [...prev, newVal]);
                             await db.replaceDeliveryValidations([...validations, newVal]).catch(console.error);
@@ -2739,7 +3538,7 @@ return (
                         qtyChanged: -item.qty,
                         action: remaining <= 0 ? "dispatched (removed)" : "dispatched",
                         reference: newDelivery.id,
-                        timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+                        timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
                       });
                       if (remaining <= 0) {
                         updatedFreezer.splice(idx, 1);
@@ -2933,155 +3732,6 @@ return (
     );
   }
 
-  /* ── Pricing Tab ── */
-  if (activeTab === "pricing") {
-    const calcEstimatedCost = (productName: string) => {
-      const recipe = recipes.find(r => r.productName === productName);
-      if (!recipe) return 0;
-      const allItems = [...recipe.ingredients, ...recipe.packagingMaterials, ...recipe.decorationSupplies];
-      return allItems.reduce((sum, ing) => {
-        const inv = inventory.find(i => i.id === ing.inventoryId);
-        return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
-      }, 0);
-    };
-
-    const catalogWithRecipes = productCatalog.map(name => {
-      const existing = productPricing.find(p => p.productName === name);
-      const cost = calcEstimatedCost(name);
-      if (existing) return { ...existing, estimatedCost: cost };
-      return {
-        id: `PRC-${name.replace(/\s+/g, "-").toLowerCase()}`,
-        productName: name,
-        category: recipes.find(r => r.productName === name) ? "Bakery" : "",
-        estimatedCost: cost,
-        sellingPrice: 0,
-        wholesalePrice: 0,
-        profitMargin: 0,
-        status: "draft" as const,
-        variants: [],
-      };
-    });
-
-    const allPricing = catalogWithRecipes;
-    const filtered = allPricing.filter(p => {
-      if (pricingFilter !== "all" && p.status !== pricingFilter) return false;
-      if (pricingSearch && !p.productName.toLowerCase().includes(pricingSearch.toLowerCase())) return false;
-      return true;
-    });
-
-    const totalProducts = allPricing.length;
-    const activeProducts = allPricing.filter(p => p.status === "active").length;
-    const avgMargin = allPricing.filter(p => p.sellingPrice > 0).reduce((s, p) => s + p.profitMargin, 0) / (allPricing.filter(p => p.sellingPrice > 0).length || 1);
-
-    return (
-      <div className="space-y-5">
-        <div className="flex items-center justify-between">
-          <div><h1 className="text-[26px] font-bold text-zinc-900">Product Pricing</h1><p className="mt-1 text-[14px] text-zinc-600">Set selling prices, wholesale rates, and manage product variants.</p></div>
-          <button onClick={() => { setEditingPricing({ id: `PRC-${Date.now()}`, productName: "", category: "", estimatedCost: 0, sellingPrice: 0, wholesalePrice: 0, profitMargin: 0, status: "draft", variants: [] }); setShowPricingModal(true); }} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Add Product</button>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Products</div><div className="text-[26px] font-bold mt-1">{totalProducts}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Active</div><div className="text-[26px] font-bold mt-1 text-emerald-600">{activeProducts}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Drafts</div><div className="text-[26px] font-bold mt-1 text-amber-600">{allPricing.filter(p => p.status === "draft").length}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Avg Margin</div><div className="text-[26px] font-bold mt-1 text-blue-600">{avgMargin.toFixed(1)}%</div></div>
-        </div>
-
-        {/* Search & Filter */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px]">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-[14px]">⌕</span>
-            <input value={pricingSearch} onChange={e => setPricingSearch(e.target.value)} placeholder="Search products..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[14px] focus:outline-none focus:border-zinc-400" />
-          </div>
-          <div className="flex gap-1.5">
-            {(["all", "active", "draft", "archived"] as const).map(f => (
-              <button key={f} onClick={() => setPricingFilter(f)} className={`rounded-lg px-3 py-2.5 text-[13px] font-semibold transition-all ${pricingFilter === f ? "bg-zinc-900 text-white" : "border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"}`}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Pricing Table */}
-        <div className="rounded-[24px] border border-[#E8E0D5] bg-white shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-zinc-50 border-b border-zinc-100">
-                <tr className="text-[12px] uppercase tracking-wider text-zinc-500">
-                  <th className="px-5 py-3.5">Product</th>
-                  <th className="px-5 py-3.5">Category</th>
-                  <th className="px-5 py-3.5 text-right">Est. Cost</th>
-                  <th className="px-5 py-3.5 text-right">Selling Price</th>
-                  <th className="px-5 py-3.5 text-right">Wholesale</th>
-                  <th className="px-5 py-3.5 text-right">Margin</th>
-                  <th className="px-5 py-3.5 text-center">Status</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-50">
-                {filtered.length === 0 ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-[14px] text-zinc-400">No products found.</td></tr>
-                ) : filtered.map(p => {
-                  const margin = p.sellingPrice > 0 ? ((p.sellingPrice - p.estimatedCost) / p.sellingPrice * 100) : 0;
-                  return (
-                    <tr key={p.id} className="hover:bg-zinc-50/50 transition-colors">
-                      <td className="px-5 py-4">
-                        <div className="text-[14px] font-semibold text-zinc-900">{p.productName}</div>
-                        {p.variants.length > 0 && <div className="text-[12px] text-zinc-400 mt-0.5">{p.variants.length} variant{p.variants.length > 1 ? "s" : ""}</div>}
-                      </td>
-                      <td className="px-5 py-4 text-[13px] text-zinc-600">{p.category || "—"}</td>
-                      <td className="px-5 py-4 text-[14px] text-zinc-700 text-right">₱{p.estimatedCost.toFixed(2)}</td>
-                      <td className="px-5 py-4 text-[14px] font-semibold text-zinc-900 text-right">{p.sellingPrice > 0 ? `₱${p.sellingPrice.toFixed(2)}` : "—"}</td>
-                      <td className="px-5 py-4 text-[14px] text-zinc-700 text-right">{p.wholesalePrice > 0 ? `₱${p.wholesalePrice.toFixed(2)}` : "—"}</td>
-                      <td className="px-5 py-4 text-right">
-                        {p.sellingPrice > 0 ? (
-                          <span className={`text-[13px] font-semibold ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`}>{margin.toFixed(1)}%</span>
-                        ) : <span className="text-[13px] text-zinc-400">—</span>}
-                      </td>
-                      <td className="px-5 py-4 text-center">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[12px] font-semibold uppercase border ${p.status === "active" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : p.status === "draft" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-zinc-100 text-zinc-500 border-zinc-200"}`}>{p.status}</span>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <button onClick={() => { setEditingPricing(p); setShowPricingModal(true); }} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-all">Edit</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Pricing Modal */}
-        {showPricingModal && editingPricing && (
-          <PricingModal
-            item={editingPricing}
-            recipes={recipes}
-            inventory={inventory}
-            productCatalog={productCatalog}
-            onSave={(updated) => {
-              const exists = productPricing.find(p => p.id === updated.id);
-              const next = exists ? productPricing.map(p => p.id === updated.id ? updated : p) : [...productPricing, updated];
-              onUpdateProductPricing(next);
-              db.upsertProductPricing(next).catch(console.error);
-              if (!exists && updated.productName && !productCatalog.includes(updated.productName)) {
-                onUpdateProductCatalog(prev => [...prev, updated.productName]);
-                db.addToCatalog(updated.productName).catch(console.error);
-              }
-              onAddAuditLog?.("PRICING_UPDATED", `${updated.productName} — ₱${updated.sellingPrice.toFixed(2)} selling, ₱${updated.wholesalePrice.toFixed(2)} wholesale`);
-              setShowPricingModal(false);
-            }}
-            onDelete={(id) => {
-              const next = productPricing.filter(p => p.id !== id);
-              onUpdateProductPricing(next);
-              db.deleteProductPricing(id).catch(console.error);
-              setShowPricingModal(false);
-            }}
-            onClose={() => setShowPricingModal(false)}
-          />
-        )}
-      </div>
-    );
-  }
 
   if (activeTab === "finance") {
     const inPeriod = (dateStr: string) => {
@@ -4269,7 +4919,7 @@ function CompactTaskCard({ task, color, additionalIngredients }: { task: Product
 }
 
 function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onClose }: {
-  inventory: InventoryItem[]; recipes: ProductRecipe[]; categories: string[]; onSave: (name: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedIngredients: string[], category: string) => void; onClose: () => void;
+  inventory: InventoryItem[]; recipes: ProductRecipe[]; categories: string[]; onSave: (name: string, packaging: RecipeIngredient[], decoration: RecipeIngredient[], linkedIngredients: string[], category: string, pricing: { sellingPrice: number; wholesalePrice: number; costPrice: number; status: "active" | "draft" | "archived"; variants: ProductPricingVariant[] }) => void; onClose: () => void;
 }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
@@ -4282,6 +4932,11 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
   const [packagingSearch, setPackagingSearch] = useState("");
   const [decorationSearch, setDecorationSearch] = useState("");
   const [linkedIngredients, setLinkedIngredients] = useState<string[]>([]);
+  const [sellingPrice, setSellingPrice] = useState("");
+  const [wholesalePrice, setWholesalePrice] = useState("");
+  const [costPrice, setCostPrice] = useState("");
+  const [status, setStatus] = useState<"active" | "draft" | "archived">("draft");
+  const [variants, setVariants] = useState<ProductPricingVariant[]>([]);
 
   function addPackaging(inv: InventoryItem) {
     if (packagingItems.some(i => i.inventoryId === inv.id)) return;
@@ -4306,7 +4961,22 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(name.trim(), packagingItems, decorationItems, linkedIngredients, category);
+    const sp = Number(sellingPrice) || 0;
+    const cp = Number(costPrice) || 0;
+    const recipe = recipes.find(r => r.productName === name);
+    const allIngredients = recipe ? [...recipe.ingredients, ...recipe.packagingMaterials, ...recipe.decorationSupplies] : [];
+    const estCost = allIngredients.reduce((sum, ing) => {
+      const inv = inventory.find(i => i.id === ing.inventoryId);
+      return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+    }, 0);
+    const margin = sp > 0 ? ((sp - estCost) / sp * 100) : 0;
+    onSave(name.trim(), packagingItems, decorationItems, linkedIngredients, category, {
+      sellingPrice: sp,
+      wholesalePrice: Number(wholesalePrice) || 0,
+      costPrice: cp,
+      status,
+      variants,
+    });
   }
 
   return (
@@ -4366,25 +5036,31 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
           <div className="mb-3">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Packaging</span>
+                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Packaging Tracker</span>
                 <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-700">{packagingItems.length}</span>
               </div>
               <div className="relative">
-                <button type="button" onClick={() => setShowPackagingPicker(!showPackagingPicker)} className="text-[12px] font-medium text-blue-600 hover:text-blue-800">+ Add</button>
+                <button type="button" onClick={() => setShowPackagingPicker(!showPackagingPicker)} className="text-[12px] font-medium text-blue-600 hover:text-blue-800">+ Track</button>
                 {showPackagingPicker && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setShowPackagingPicker(false)} />
-                    <div className="absolute top-5 right-0 z-20 w-60 rounded-xl border border-zinc-200 bg-white shadow-lg">
+                    <div className="absolute top-5 right-0 z-20 w-64 rounded-xl border border-zinc-200 bg-white shadow-lg">
                       <div className="p-2 border-b border-zinc-100">
                         <input value={packagingSearch} onChange={e => setPackagingSearch(e.target.value)} placeholder="Search packaging..." className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[11px] outline-none focus:border-zinc-400" />
                       </div>
-                      <div className="max-h-40 overflow-y-auto">
+                      <div className="max-h-48 overflow-y-auto">
                         {availablePackaging.length === 0 ? (
                           <p className="px-3 py-3 text-[12px] text-zinc-400 text-center">No packaging items found.</p>
                         ) : availablePackaging.map(i => (
                           <button key={i.id} type="button" onClick={() => { addPackaging(i); setPackagingSearch(""); }} className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 text-[12px]">
-                            <span className="font-medium text-zinc-900">{i.name}</span>
-                            <span className="text-zinc-400 font-mono">{i.unit}</span>
+                            <div className="flex-1 min-w-0">
+                              <span className="font-medium text-zinc-900 block truncate">{i.name}</span>
+                              <span className="text-[10px] text-zinc-400">{i.sku || "No SKU"}</span>
+                            </div>
+                            <div className="text-right shrink-0 ml-2">
+                              <span className={`text-[11px] font-semibold ${i.onHand > i.threshold ? "text-emerald-600" : i.onHand > 0 ? "text-amber-600" : "text-red-500"}`}>{i.onHand}</span>
+                              <span className="text-[10px] text-zinc-400 ml-0.5">{i.unit}</span>
+                            </div>
                           </button>
                         ))}
                       </div>
@@ -4394,19 +5070,34 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
               </div>
             </div>
             {packagingItems.length === 0 ? (
-              <p className="text-[12px] text-zinc-400 py-3 text-center border border-dashed border-zinc-200 rounded-xl">No packaging added.</p>
+              <p className="text-[12px] text-zinc-400 py-3 text-center border border-dashed border-zinc-200 rounded-xl">No packaging tracked. Click "+ Track" to add packaging items.</p>
             ) : (
-              <div className="space-y-1 max-h-[140px] overflow-y-auto">
-                {packagingItems.map(item => (
-                  <div key={item.inventoryId} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-white px-3 py-2">
-                    <span className="text-[12px] font-medium text-zinc-900 truncate flex-1">{item.name}</span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <input value={item.unit} onChange={e => setPackagingItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, unit: e.target.value } : i))} className="w-12 rounded-lg border border-zinc-200 px-1.5 py-1 text-[10px] text-center outline-none focus:border-zinc-900" />
-                      <input type="number" min="0" step="any" value={item.qtyPerBatch} onChange={e => setPackagingItems(prev => prev.map(i => i.inventoryId === item.inventoryId ? { ...i, qtyPerBatch: Number(e.target.value) } : i))} className="w-16 rounded-lg border border-zinc-200 px-2 py-1 text-[11px] text-center outline-none focus:border-zinc-400" />
-                      <button type="button" onClick={() => setPackagingItems(prev => prev.filter(i => i.inventoryId !== item.inventoryId))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+              <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
+                {packagingItems.map(item => {
+                  const invItem = inventory.find(i => i.id === item.inventoryId);
+                  const onHand = invItem?.onHand || 0;
+                  const threshold = invItem?.threshold || 0;
+                  const isLow = onHand > 0 && onHand < threshold;
+                  const isOut = onHand === 0;
+                  return (
+                    <div key={item.inventoryId} className="flex items-center justify-between rounded-xl border border-zinc-100 bg-white px-3 py-2.5">
+                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${isOut ? "bg-red-400" : isLow ? "bg-amber-400" : "bg-emerald-400"}`}></div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[12px] font-semibold text-zinc-900 block truncate">{item.name}</span>
+                          {invItem?.sku && <span className="text-[10px] text-zinc-400">{invItem.sku}</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <div className="text-right">
+                          <span className={`text-[13px] font-bold ${isOut ? "text-red-500" : isLow ? "text-amber-600" : "text-emerald-600"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{onHand}</span>
+                          <span className="text-[10px] text-zinc-400 ml-0.5">{item.unit}</span>
+                        </div>
+                        <button type="button" onClick={() => setPackagingItems(prev => prev.filter(i => i.inventoryId !== item.inventoryId))} className="w-6 h-6 grid place-items-center rounded-lg text-zinc-300 hover:text-red-500 hover:bg-red-50 transition-all text-[12px]">×</button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -4457,6 +5148,110 @@ function AddProductWithRecipeModal({ inventory, recipes, categories, onSave, onC
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Pricing Section */}
+          <div className="mb-4 pt-4 border-t border-[#E8E0D5]">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-3">Pricing</div>
+            
+            {(() => {
+              const recipe = recipes.find(r => r.productName === name);
+              const allIngs = recipe ? [...recipe.ingredients, ...recipe.packagingMaterials, ...recipe.decorationSupplies] : [];
+              const estCost = allIngs.reduce((sum, ing) => {
+                const inv = inventory.find(i => i.id === ing.inventoryId);
+                return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
+              }, 0);
+              const sp = Number(sellingPrice) || 0;
+              const cp = Number(costPrice) || 0;
+              const effectiveCost = cp > 0 ? cp : estCost;
+              const profit = sp > 0 ? sp - effectiveCost : 0;
+              const margin = sp > 0 ? ((profit / sp) * 100) : 0;
+              if (allIngs.length === 0) return null;
+              return (
+                <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4 mb-4">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-3">Estimated Production Cost</div>
+                  <div className="space-y-1.5 mb-3">
+                    {allIngs.map((ing, i) => {
+                      const inv = inventory.find(iv => iv.id === ing.inventoryId);
+                      const lineCost = inv ? inv.cost * ing.qtyPerBatch : 0;
+                      return (
+                        <div key={i} className="flex items-center justify-between text-[12px]">
+                          <span className="text-zinc-600">{ing.name} <span className="text-zinc-400">({ing.qtyPerBatch} {ing.unit})</span></span>
+                          <span className="text-zinc-700" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{lineCost.toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center justify-between text-[13px] font-semibold border-t border-zinc-200 pt-2 mt-2">
+                      <span className="text-zinc-800">Total Est. Cost</span>
+                      <span className="text-zinc-900" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{estCost.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3 text-center border-t border-zinc-200 pt-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-zinc-500">Est. Cost</div>
+                      <div className="text-[14px] font-semibold text-zinc-700 mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{estCost.toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-zinc-500">Cost Price</div>
+                      <div className="text-[14px] font-semibold text-zinc-700 mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>{cp > 0 ? `₱${cp.toFixed(2)}` : "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-zinc-500">Profit</div>
+                      <div className={`text-[14px] font-semibold mt-0.5 ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{sp > 0 ? `₱${profit.toFixed(2)}` : "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-zinc-500">Margin</div>
+                      <div className={`text-[14px] font-semibold mt-0.5 ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{sp > 0 ? `${margin.toFixed(1)}%` : "—"}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Cost Price (₱)</label>
+                <input type="number" min="0" step="0.01" value={costPrice} onChange={e => setCostPrice(e.target.value)} placeholder="0.00" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
+                <div className="text-[10px] text-zinc-400 mt-1">Override est. cost from recipe</div>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Selling Price (₱)</label>
+                <input type="number" min="0" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Wholesale Price (₱)</label>
+                <input type="number" min="0" step="0.01" value={wholesalePrice} onChange={e => setWholesalePrice(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Status</label>
+                <select value={status} onChange={e => setStatus(e.target.value as typeof status)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+                  <option value="active">Active</option>
+                  <option value="draft">Draft</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Size Variants</label>
+                <button type="button" onClick={() => setVariants(prev => [...prev, { id: `VAR-${Date.now()}`, size: "", sellingPrice: 0, wholesalePrice: 0 }])} className="text-[12px] text-zinc-500 hover:text-zinc-800 font-medium">+ Add Variant</button>
+              </div>
+              {variants.length === 0 ? (
+                <p className="text-[12px] text-zinc-400">No variants. Click "+ Add Variant" for size-based pricing.</p>
+              ) : (
+                <div className="space-y-2">
+                  {variants.map((v, i) => (
+                    <div key={v.id} className="flex items-center gap-2">
+                      <input value={v.size} onChange={e => { const u = [...variants]; u[i] = { ...u[i], size: e.target.value }; setVariants(u); }} placeholder="Size (e.g. Small, Regular)" className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] outline-none focus:border-zinc-400" />
+                      <input type="number" min="0" step="0.01" value={v.sellingPrice || ""} onChange={e => { const u = [...variants]; u[i] = { ...u[i], sellingPrice: Number(e.target.value) || 0 }; setVariants(u); }} placeholder="Selling" className="w-24 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] text-center outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
+                      <input type="number" min="0" step="0.01" value={v.wholesalePrice || ""} onChange={e => { const u = [...variants]; u[i] = { ...u[i], wholesalePrice: Number(e.target.value) || 0 }; setVariants(u); }} placeholder="Wholesale" className="w-24 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] text-center outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
+                      <button type="button" onClick={() => setVariants(prev => prev.filter((_, idx) => idx !== i))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex gap-2 pt-3 border-t border-[#E8E0D5]">
@@ -4662,169 +5457,6 @@ function EditDOSModal({ item, onClose, onSave }: { item: DOSItem; onClose: () =>
   );
 }
 
-function PricingModal({ item, recipes, inventory, productCatalog, onSave, onDelete, onClose }: {
-  item: ProductPricing;
-  recipes: ProductRecipe[];
-  inventory: InventoryItem[];
-  productCatalog: string[];
-  onSave: (item: ProductPricing) => void;
-  onDelete: (id: string) => void;
-  onClose: () => void;
-}) {
-  const isNew = !item.sellingPrice && !item.wholesalePrice && !item.category && !item.variants.length;
-  const [productName, setProductName] = useState(item.productName);
-  const [sellingPrice, setSellingPrice] = useState(String(item.sellingPrice || ""));
-  const [wholesalePrice, setWholesalePrice] = useState(String(item.wholesalePrice || ""));
-  const [status, setStatus] = useState<"active" | "draft" | "archived">(item.status);
-  const [category, setCategory] = useState(item.category);
-  const [variants, setVariants] = useState(item.variants || []);
-
-  const recipe = recipes.find(r => r.productName === productName);
-  const allIngredients = recipe ? [...recipe.ingredients, ...recipe.packagingMaterials, ...recipe.decorationSupplies] : [];
-  const estCost = allIngredients.reduce((sum, ing) => {
-    const inv = inventory.find(i => i.id === ing.inventoryId);
-    return sum + (inv ? inv.cost * ing.qtyPerBatch : 0);
-  }, 0);
-  const sp = Number(sellingPrice) || 0;
-  const margin = sp > 0 ? ((sp - estCost) / sp * 100) : 0;
-
-  const handleSave = () => {
-    if (!productName.trim()) return;
-    onSave({
-      ...item,
-      productName: productName.trim(),
-      category,
-      estimatedCost: estCost,
-      sellingPrice: sp,
-      wholesalePrice: Number(wholesalePrice) || 0,
-      profitMargin: margin,
-      status,
-      variants,
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5">
-          <div><h2 className="text-[18px] font-semibold">{isNew ? "Add Product" : "Edit Pricing"}</h2><p className="text-[13px] text-zinc-500">{isNew ? "Set pricing for a new product" : item.productName}</p></div>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600">✕</button>
-        </div>
-
-        {/* Product Name */}
-        {isNew && (
-          <div className="mb-5">
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Select Product</label>
-            <select value={productName} onChange={e => setProductName(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">
-              <option value="">Choose a product...</option>
-              {productCatalog.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Cost Breakdown */}
-        <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4 mb-5">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-3">Estimated Production Cost</div>
-          {allIngredients.length === 0 ? (
-            <p className="text-[12px] text-zinc-400">No recipe found for this product. Add a recipe to auto-calculate cost.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {allIngredients.map((ing, i) => {
-                const inv = inventory.find(iv => iv.id === ing.inventoryId);
-                const lineCost = inv ? inv.cost * ing.qtyPerBatch : 0;
-                return (
-                  <div key={i} className="flex items-center justify-between text-[12px]">
-                    <span className="text-zinc-600">{ing.name} <span className="text-zinc-400">({ing.qtyPerBatch} {ing.unit})</span></span>
-                    <span className="text-zinc-700" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{lineCost.toFixed(2)}</span>
-                  </div>
-                );
-              })}
-              <div className="flex items-center justify-between text-[13px] font-semibold border-t border-zinc-200 pt-2 mt-2">
-                <span className="text-zinc-800">Total Est. Cost</span>
-                <span className="text-zinc-900" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{estCost.toFixed(2)}</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Fields */}
-        <div className="grid grid-cols-2 gap-4 mb-5">
-          <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Category</label>
-            <input value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Bakery" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
-          </div>
-          <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Status</label>
-            <select value={status} onChange={e => setStatus(e.target.value as typeof status)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400">
-              <option value="active">Active</option>
-              <option value="draft">Draft</option>
-              <option value="archived">Archived</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Selling Price (₱)</label>
-            <input type="number" min="0" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
-          </div>
-          <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Wholesale Price (₱)</label>
-            <input type="number" min="0" step="0.01" value={wholesalePrice} onChange={e => setWholesalePrice(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
-          </div>
-        </div>
-
-        {/* Profit Summary */}
-        <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4 mb-5">
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500">Est. Cost</div>
-              <div className="text-[16px] font-semibold text-zinc-700 mt-0.5" style={{ fontFamily: "Fragment Mono, monospace" }}>₱{estCost.toFixed(2)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500">Profit</div>
-              <div className={`text-[16px] font-semibold mt-0.5 ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{sp > 0 ? `₱${(sp - estCost).toFixed(2)}` : "—"}</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-zinc-500">Margin</div>
-              <div className={`text-[16px] font-semibold mt-0.5 ${margin >= 30 ? "text-emerald-600" : margin >= 15 ? "text-amber-600" : "text-red-500"}`} style={{ fontFamily: "Fragment Mono, monospace" }}>{sp > 0 ? `${margin.toFixed(1)}%` : "—"}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Variants */}
-        <div className="mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Size Variants</label>
-            <button onClick={() => setVariants(prev => [...prev, { id: `VAR-${Date.now()}`, size: "", sellingPrice: 0, wholesalePrice: 0 }])} className="text-[12px] text-zinc-500 hover:text-zinc-800 font-medium">+ Add Variant</button>
-          </div>
-          {variants.length === 0 ? (
-            <p className="text-[12px] text-zinc-400">No variants. Click "+ Add Variant" for size-based pricing.</p>
-          ) : (
-            <div className="space-y-2">
-              {variants.map((v, i) => (
-                <div key={v.id} className="flex items-center gap-2">
-                  <input value={v.size} onChange={e => { const u = [...variants]; u[i] = { ...u[i], size: e.target.value }; setVariants(u); }} placeholder="Size (e.g. Small, Regular)" className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] outline-none focus:border-zinc-400" />
-                  <input type="number" min="0" step="0.01" value={v.sellingPrice || ""} onChange={e => { const u = [...variants]; u[i] = { ...u[i], sellingPrice: Number(e.target.value) || 0 }; setVariants(u); }} placeholder="Selling" className="w-24 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] text-center outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
-                  <input type="number" min="0" step="0.01" value={v.wholesalePrice || ""} onChange={e => { const u = [...variants]; u[i] = { ...u[i], wholesalePrice: Number(e.target.value) || 0 }; setVariants(u); }} placeholder="Wholesale" className="w-24 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] text-center outline-none focus:border-zinc-400" style={{ fontFamily: "Fragment Mono, monospace" }} />
-                  <button onClick={() => setVariants(prev => prev.filter((_, idx) => idx !== i))} className="text-zinc-400 hover:text-red-500 text-[13px]">×</button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-2">
-          <button onClick={() => onDelete(item.id)} className="rounded-xl border border-red-200 px-4 py-2 text-[13px] font-medium text-red-600 hover:bg-red-50 transition-all">Delete</button>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="rounded-xl border border-zinc-200 px-4 py-2 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Cancel</button>
-            <button onClick={handleSave} className="rounded-xl bg-zinc-900 px-5 py-2 text-[13px] font-medium text-white hover:bg-zinc-800 transition-all">Save Pricing</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function ReceiveModal({ inventory, onUpdateInventory, onTransaction, onClose }: {
   inventory: InventoryItem[]; onUpdateInventory: (cb: InventoryItem[] | ((prev: InventoryItem[]) => InventoryItem[])) => void;
@@ -4848,8 +5480,9 @@ function ReceiveModal({ inventory, onUpdateInventory, onTransaction, onClose }: 
       qty: Number(qty),
       unit: item.unit,
       reference: `Supplier ${reference}`,
-      timestamp: new Date().toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+      timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
       group: item.group,
+      role: "admin",
     });
     onClose();
   };

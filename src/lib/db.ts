@@ -306,6 +306,7 @@ export type DecoQueueRow = {
   theme: string;
   status: "pending" | "in-progress" | "completed";
   notes: string;
+  customerName?: string;
   sourceInventoryId?: string;
   sourceQty?: number;
   sourceBatchRef?: string;
@@ -324,6 +325,7 @@ export async function fetchDecorationQueue(): Promise<DecoQueueRow[]> {
     theme: d.theme ?? "Standard",
     status: d.status ?? "pending",
     notes: d.notes ?? "",
+    customerName: d.customer_name || undefined,
     sourceInventoryId: d.freezer_item_id || undefined,
     sourceQty: d.source_qty ?? undefined,
     sourceBatchRef: d.source_batch_ref || undefined,
@@ -341,6 +343,7 @@ export async function upsertDecorationQueueTask(task: DecoQueueRow) {
     theme: task.theme,
     status: task.status,
     notes: task.notes,
+    customer_name: task.customerName ?? null,
     freezer_item_id: task.sourceInventoryId ?? null,
     source_qty: task.sourceQty ?? null,
     source_batch_ref: task.sourceBatchRef ?? null,
@@ -557,13 +560,13 @@ export async function fetchStockTransactions(): Promise<StockTransaction[]> {
   if (error) throw error;
   return (data ?? []).map((d: any) => ({
     id: d.id, type: d.type, itemName: d.item_name, itemId: d.item_id,
-    qty: d.qty, unit: d.unit, reference: d.reference, timestamp: d.timestamp, target: d.target, group: d.group_name || "",
+    qty: d.qty, unit: d.unit, reference: d.reference, timestamp: d.timestamp, target: d.target, group: d.group_name || "", role: d.role || "",
   }));
 }
 export async function insertStockTransaction(tx: StockTransaction) {
   const { error } = await supabase.from("stock_transactions").insert({
     id: tx.id, type: tx.type, item_name: tx.itemName, item_id: tx.itemId,
-    qty: tx.qty, unit: tx.unit, reference: tx.reference, timestamp: tx.timestamp, target: tx.target, group_name: tx.group || "",
+    qty: tx.qty, unit: tx.unit, reference: tx.reference, timestamp: tx.timestamp, target: tx.target, group_name: tx.group || "", role: tx.role || "",
   });
   if (error) throw error;
 }
@@ -573,7 +576,7 @@ export async function replaceStockTransactions(txs: StockTransaction[]) {
   if (txs.length === 0) return;
   const { error } = await supabase.from("stock_transactions").insert(txs.map(t => ({
     id: t.id, type: t.type, item_name: t.itemName, item_id: t.itemId,
-    qty: t.qty, unit: t.unit, reference: t.reference, timestamp: t.timestamp, target: t.target,
+    qty: t.qty, unit: t.unit, reference: t.reference, timestamp: t.timestamp, target: t.target, role: t.role || "",
   })));
   if (error) throw error;
 }
@@ -1280,6 +1283,49 @@ export async function deleteProductionPlan(id: string) {
   if (error) throw error;
 }
 
+
+// ─── Equipment ───
+function parseEquipment(d: any): import("../types").Equipment {
+  return {
+    id: d.id,
+    name: d.name,
+    datePurchased: d.date_purchased ?? "",
+    costPrice: d.cost_price ?? 0,
+    sku: d.sku ?? "",
+    supplier: d.supplier ?? "",
+    status: d.status ?? "active",
+    notes: d.notes ?? "",
+  };
+}
+
+function toEquipmentRow(e: import("../types").Equipment) {
+  return {
+    id: e.id,
+    name: e.name,
+    date_purchased: e.datePurchased,
+    cost_price: e.costPrice,
+    sku: e.sku,
+    supplier: e.supplier,
+    status: e.status,
+    notes: e.notes,
+  };
+}
+
+export async function fetchEquipment(): Promise<import("../types").Equipment[]> {
+  const { data, error } = await supabase.from("equipment").select("*").order("name");
+  if (error) throw error;
+  return (data ?? []).map(parseEquipment);
+}
+
+export async function upsertEquipment(item: import("../types").Equipment) {
+  const { error } = await supabase.from("equipment").upsert(toEquipmentRow(item), { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteEquipment(id: string) {
+  const { error } = await supabase.from("equipment").delete().eq("id", id);
+  if (error) throw error;
+}
 
 export async function uploadReferenceImage(file: File, dosItemId: string): Promise<string> {
   const ext = file.name.split(".").pop() || "png";

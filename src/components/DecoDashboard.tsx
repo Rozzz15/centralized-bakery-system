@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog } from "../types";
+import type { ProductionTask, DOSItem, ProductRecipe, InventoryItem, FreezerItem, FreezerHistory, Role, WasteLog, StockTransaction } from "../types";
 import * as db from "../lib/db";
 import type { AdditionalIngredient } from "../lib/db";
 import { aggregateRecipeDemand, calculateBatches, allocateOutput, sumIngredients, sumPackaging, sumDecoSupplies } from "../utils/production-calculation";
@@ -22,6 +22,7 @@ type DecoTask = {
   theme: string;
   status: "pending" | "in-progress" | "completed";
   notes: string;
+  customerName?: string;
   sourceInventoryId?: string;
   sourceQty?: number;
   sourceBatchRef?: string;
@@ -37,11 +38,20 @@ function SearchableDropdown({ items, onChange, placeholder, accentColor }: {
   accentColor: "blue" | "purple" | "amber";
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [pos, setPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
   const updatePos = () => { if (inputRef.current) { const r = inputRef.current.getBoundingClientRect(); setPos({ top: r.bottom + 4, left: r.left, width: r.width }); } };
-  useEffect(() => { if (open) updatePos(); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    updatePos();
+    const onScroll = () => { if (inputRef.current) { const r = inputRef.current.getBoundingClientRect(); setPos({ top: r.bottom + 4, left: r.left, width: r.width }); } };
+    const onClickOutside = (e: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false); };
+    window.addEventListener("scroll", onScroll, true);
+    document.addEventListener("mousedown", onClickOutside);
+    return () => { window.removeEventListener("scroll", onScroll, true); document.removeEventListener("mousedown", onClickOutside); };
+  }, [open]);
   const filtered = items.filter(i => !search || i.label.toLowerCase().includes(search.toLowerCase()));
   const colorMap = {
     blue: { border: "border-blue-200", text: "text-blue-500", hover: "hover:bg-blue-50", ring: "focus:border-blue-400 focus:ring-2 focus:ring-blue-100" },
@@ -50,16 +60,16 @@ function SearchableDropdown({ items, onChange, placeholder, accentColor }: {
   };
   const colors = colorMap[accentColor];
   return (
-    <div className="relative" onClick={e => e.stopPropagation()}>
+    <div ref={containerRef} className="relative" onClick={e => e.stopPropagation()}>
       <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
       <input ref={inputRef} type="text" value={search} onChange={e => { setSearch(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder={placeholder} className={`w-full rounded-xl border ${colors.border} bg-white pl-9 pr-3 py-3 text-[14px] outline-none ${colors.ring}`} />
       {search && <button onClick={() => { setSearch(""); setOpen(false); }} className={`absolute right-3 top-1/2 -translate-y-1/2 ${colors.text} hover:opacity-70 text-[14px]`}>✕</button>}
       {open && filtered.length > 0 && (
-        <div className="fixed z-[100] rounded-xl border border-zinc-200 bg-white shadow-2xl max-h-56 overflow-y-auto" style={{ top: pos.top, left: pos.left, width: pos.width }}>
+        <div className="fixed z-[100] mt-2 rounded-2xl border border-zinc-200 bg-white shadow-2xl max-h-64 overflow-y-auto" style={{ top: pos.top, left: pos.left, width: pos.width }}>
           {filtered.map(i => (
-            <button key={i.id} onClick={() => { onChange(i.id); setSearch(""); setOpen(false); }} className={`w-full text-left px-4 py-2.5 ${colors.hover} transition-colors flex items-center justify-between`}>
-              <span className="text-[13px] font-semibold text-zinc-800">{i.label}</span>
-              <span className={`text-[11px] ${colors.text}`}>{i.sublabel}</span>
+            <button key={i.id} onClick={() => { onChange(i.id); setSearch(""); setOpen(false); }} className={`w-full text-left px-4 py-3 ${colors.hover} transition-colors flex items-center justify-between border-b border-zinc-100 last:border-b-0`}>
+              <span className="text-[14px] font-semibold text-zinc-800">{i.label}</span>
+              <span className={`text-[12px] font-medium ${colors.text}`}>{i.sublabel}</span>
             </button>
           ))}
         </div>
@@ -169,9 +179,10 @@ type Props = {
   onUpdateWasteLog?: (cb: WasteLog[] | ((prev: WasteLog[]) => WasteLog[])) => void;
   productRoutes?: Record<string, db.ProductRoute>;
   onUpdateProduction?: (taskId: string, updates: Partial<ProductionTask>) => void;
+  onStockTransaction?: (tx: StockTransaction) => void;
 };
 
-export default function DecoDashboard({ production, dosItems, onCompleteTask, activeTab, setActiveTab, productCatalog, recipes, inventory, onUpdateInventory, onUpdateRecipes, onAddAuditLog, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], wasteLog = [], onUpdateWasteLog, productRoutes = {}, onUpdateProduction }: Props) {
+export default function DecoDashboard({ production, dosItems, onCompleteTask, activeTab, setActiveTab, productCatalog, recipes, inventory, onUpdateInventory, onUpdateRecipes, onAddAuditLog, newDOSIds, onMarkDOSSeen, freezerItems = [], onUpdateFreezer, freezerHistory = [], wasteLog = [], onUpdateWasteLog, productRoutes = {}, onUpdateProduction, onStockTransaction }: Props) {
   // Defer setState calls to the next macrotask (setTimeout 0) to avoid
   // "Cannot update a component (App) while rendering DecoDashboard" warning.
   // queueMicrotask is NOT enough — React's setState also runs in microtasks.
@@ -179,6 +190,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   // Product categories for From Baker dropdown
   const [productCategories, setProductCategories] = useState<string[]>([]);
+  const [productCategoryMap, setProductCategoryMap] = useState<Record<string, string>>({});
 
   // StrictMode dev-mode dedup: React calls setState updater functions twice.
   // This ref tracks (id+status) pairs we've already processed side effects for,
@@ -193,12 +205,15 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
 
   const getBaseName = (name: string) =>
     name.toLowerCase().replace(/[\s]*[\(\*\d].*$/, '').trim();
-  const findRecipe = (productName: string) =>
-    recipes.find(r =>
-      r.productName.toLowerCase() === productName.toLowerCase() ||
-      (r.linkedIngredients ?? []).some(l => l.toLowerCase() === productName.toLowerCase()) ||
-      getBaseName(r.productName) === getBaseName(productName)
-    );
+  const findRecipe = (productName: string) => {
+    const pn = productName.toLowerCase();
+    const exact = recipes.filter(r => r.productName.toLowerCase() === pn);
+    const withLinks = exact.find(r => (r.linkedIngredients ?? []).length > 0);
+    if (withLinks) return withLinks;
+    if (exact.length > 0) return exact[0];
+    return recipes.find(r => (r.linkedIngredients ?? []).some(l => l.toLowerCase() === pn)) ??
+      recipes.find(r => getBaseName(r.productName) === getBaseName(productName));
+  };
 
   const todayStr = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
   const todayDOS = dosItems.filter(d => {
@@ -302,6 +317,10 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [bakerInvSize, setBakerInvSize] = useState("");
   const [bakerInvQty, setBakerInvQty] = useState(0);
   const [bakerInvCategory, setBakerInvCategory] = useState("dry");
+  const [showAddDisplayCake, setShowAddDisplayCake] = useState(false);
+  const [displayCakeProduct, setDisplayCakeProduct] = useState("");
+  const [displayCakeSize, setDisplayCakeSize] = useState("");
+  const [displayCakeQty, setDisplayCakeQty] = useState(0);
   const [showEditFreezer, setShowEditFreezer] = useState(false);
   const [editingFreezerItem, setEditingFreezerItem] = useState<FreezerItem | null>(null);
   const [newProduct, setNewProduct] = useState("");
@@ -310,7 +329,14 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
   const [newBatch, setNewBatch] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [freezerSearch, setFreezerSearch] = useState("");
-  const [freezerTab, setFreezerTab] = useState<"Display Cakes" | "Production Recipe" | "My Inventory">("Display Cakes");
+  const [freezerTab, setFreezerTab] = useState<"Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory">("Display Cakes");
+
+  // Refetch freezer items when switching sub-tabs for live data
+  useEffect(() => {
+    if (activeTab === "freezer") {
+      db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error);
+    }
+  }, [freezerTab]);
 
   const [customOrders, setCustomOrders] = useState<CustomOrder[]>([
     { id: "CO-001", customer: "Anna Santos", product: "Chocolate Cake", request: "Pink ribbon + gold topper + #21 candle", status: "pending", createdAt: "May 28, 10:30 AM" },
@@ -330,6 +356,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         theme: r.theme,
         status: r.status,
         notes: r.notes,
+        customerName: r.customerName,
         sourceInventoryId: r.sourceInventoryId,
         sourceQty: r.sourceQty,
         sourceBatchRef: r.sourceBatchRef,
@@ -347,6 +374,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
           theme: r.theme,
           status: r.status,
           notes: r.notes,
+          customerName: r.customerName,
           sourceInventoryId: r.sourceInventoryId,
           sourceQty: r.sourceQty,
           sourceBatchRef: r.sourceBatchRef,
@@ -359,7 +387,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     return unsub;
   }, []);
 
-  const [designModal, setDesignModal] = useState<{ product: string; inventoryId: string; qty: number; theme?: string; notes?: string; colorScheme?: string; designNotes?: string; topper?: string; referenceImage?: string; messageCaption?: string; layers?: string } | null>(null);
+  const [designModal, setDesignModal] = useState<{ product: string; inventoryId: string; qty: number; theme?: string; notes?: string; customerName?: string; colorScheme?: string; designNotes?: string; topper?: string; referenceImage?: string; messageCaption?: string; layers?: string } | null>(null);
   const [designTheme, setDesignTheme] = useState("");
   const [designNotes, setDesignNotes] = useState("");
   const [designQty, setDesignQty] = useState(1);
@@ -442,9 +470,10 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Fetch product categories for From Baker dropdown
+  // Fetch product categories and mappings for From Baker dropdown
   useEffect(() => {
     db.fetchCategories().then(cats => setProductCategories(cats)).catch(() => {});
+    db.fetchProductCategories().then(map => setProductCategoryMap(map)).catch(() => {});
   }, []);
 
   const allIngredients = inventory.filter(i => i.group === "ingredients" || i.group === "decoration-supplies" || i.group === "packaging-materials");
@@ -469,6 +498,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
       ingredients: recipeDraft.filter(i => i.name.trim()),
       packagingMaterials: existingRecipe?.packagingMaterials ?? [],
       decorationSupplies: existingRecipe?.decorationSupplies ?? [],
+      linkedIngredients: existingRecipe?.linkedIngredients ?? [],
       yield: recipeDraftYield || 1,
     };
     onUpdateRecipes(prev => {
@@ -501,6 +531,13 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
     });
     onUpdateInventory(newInv);
     await db.upsertInventory(newInv).catch(console.error);
+    // Log stock transactions for each deducted ingredient
+    newInv.forEach(item => {
+      const orig = inventory.find(o => o.id === item.id);
+      if (orig && orig.onHand > item.onHand) {
+        onStockTransaction?.({ id: `STX-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type: "out", itemName: item.name, itemId: item.id, qty: orig.onHand - item.onHand, unit: item.unit, reference: `Pre-mix: ${product}`, timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: item.group, role: "deco" });
+      }
+    });
     onAddAuditLog?.("PRE_MIX_COMPLETED", `${product}: ${deductions.join(", ")}`);
     setPreMixDone(prev => new Set(prev).add(product));
     // Mark all deduped ingredients as prepared
@@ -530,6 +567,7 @@ export default function DecoDashboard({ production, dosItems, onCompleteTask, ac
         db.upsertDecorationQueueTask({
           id: task.id, product: task.product, orderRef: task.orderRef,
           theme: task.theme, status: task.status, notes: task.notes,
+          customerName: task.customerName,
           sourceInventoryId: task.sourceInventoryId, sourceQty: task.sourceQty,
           sourceBatchRef: task.sourceBatchRef, sourceProducedBy: task.sourceProducedBy ?? undefined, createdAt: task.createdAt,
           sourceSnapshot: task.sourceSnapshot,
@@ -946,7 +984,15 @@ return (
                           const orig = inventory.find(o => o.id === item.id);
                           return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
                         });
-                        if (changedItems.length > 0) db.upsertInventory(changedItems).catch(err => console.error("Inventory deduction save failed:", err));
+                        if (changedItems.length > 0) {
+                          db.upsertInventory(changedItems).catch(err => console.error("Inventory deduction save failed:", err));
+                          changedItems.forEach(item => {
+                            const orig = inventory.find(o => o.id === item.id);
+                            if (orig && orig.onHand > item.onHand) {
+                              onStockTransaction?.({ id: `STX-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type: "out", itemName: item.name, itemId: item.id, qty: orig.onHand - item.onHand, unit: item.unit, reference: `Production Recipe`, timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: item.group, role: "deco" });
+                            }
+                          });
+                        }
                         if (allDeductions.length > 0) onAddAuditLog?.("INGREDIENTS_DEDUCTED", `Put in Production Recipe: ${allDeductions.join(", ")}`);
                         if (allSkipped.length > 0) onAddAuditLog?.("DEDUCTION_SKIPPED", `Put in Production Recipe: ${allSkipped.join(", ")}`);
                       }
@@ -1042,7 +1088,15 @@ return (
                         return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
                       });
                       const allToPersist = [...allUpdatedItems, ...allNewItems, ...changedByDeduction];
-                      if (allToPersist.length > 0) db.upsertInventory(allToPersist).catch(err => console.error("Inventory save failed:", err));
+                      if (allToPersist.length > 0) {
+                        db.upsertInventory(allToPersist).catch(err => console.error("Inventory save failed:", err));
+                        changedByDeduction.forEach(item => {
+                          const orig = inventory.find(o => o.id === item.id);
+                          if (orig && orig.onHand > item.onHand) {
+                            onStockTransaction?.({ id: `STX-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type: "out", itemName: item.name, itemId: item.id, qty: orig.onHand - item.onHand, unit: item.unit, reference: `Put in My Inventory`, timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: item.group, role: "deco" });
+                          }
+                        });
+                      }
                       if (allDeductions.length > 0) onAddAuditLog?.("INGREDIENTS_DEDUCTED", `Put in My Inventory: ${allDeductions.join(", ")}`);
                       if (allSkipped.length > 0) onAddAuditLog?.("DEDUCTION_SKIPPED", `Put in My Inventory: ${allSkipped.join(", ")}`);
                       onAddAuditLog?.("INVENTORY_ADDED", `Items added to My Inventory`);
@@ -1120,7 +1174,8 @@ return (
             if (linkedNames.length > 0) {
               linkedNames.forEach(name => {
                 const key = name.toLowerCase();
-                const existing = recipes.find(r => r.productName.toLowerCase() === key);
+                const candidates = recipes.filter(r => r.productName.toLowerCase() === key);
+                const existing = candidates.find(r => (r.linkedIngredients ?? []).length > 0) ?? candidates[0];
                 if (recipeMap.has(key)) {
                   recipeMap.get(key)!.totalQty += d.qty;
                 } else if (existing) {
@@ -1641,6 +1696,12 @@ return (
         db.upsertInventory(changed)
           .then(() => console.log("[Deco] Upserted", changed.length, "inventory items"))
           .catch(err => console.error("[Deco] Failed to upsert inventory:", err));
+        changed.forEach(item => {
+          const orig = inventory.find(o => o.id === item.id);
+          if (orig && orig.onHand > item.onHand) {
+            onStockTransaction?.({ id: `STX-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type: "out", itemName: item.name, itemId: item.id, qty: orig.onHand - item.onHand, unit: item.unit, reference: `Decoration: ${selectedDos?.product || "task"}`, timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: item.group, role: "deco" });
+          }
+        });
       }
 
       {
@@ -2103,7 +2164,15 @@ return (
                   const orig = inventory.find(i => i.id === item.id);
                   return orig && Math.abs(orig.onHand - item.onHand) > 0.0001;
                 });
-                if (changed.length > 0) db.upsertInventory(changed).catch(console.error);
+                if (changed.length > 0) {
+                  db.upsertInventory(changed).catch(console.error);
+                  changed.forEach(item => {
+                    const orig = inventory.find(o => o.id === item.id);
+                    if (orig && orig.onHand > item.onHand) {
+                      onStockTransaction?.({ id: `STX-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type: "out", itemName: item.name, itemId: item.id, qty: orig.onHand - item.onHand, unit: item.unit, reference: `Advanced Premix`, timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: item.group, role: "deco" });
+                    }
+                  });
+                }
                 if (mergedItems.length > 0) {
                   onUpdateFreezer?.((prev: FreezerItem[]) => prev.map(fi => { const m = mergedItems.find(x => x.id === fi.id); return m || fi; }));
                   db.upsertFreezerItems(mergedItems).catch(console.error);
@@ -2225,6 +2294,8 @@ return (
 
     const renderDecoCard = (task: DecoTask, opts?: { compact?: boolean; expanded?: boolean; onToggle?: () => void }) => {
       const taskRecipes = getRecipesForProduct(task.product);
+      const matchingDOS = dosItems.find(d => d.product === task.product);
+      const customerName = task.customerName || matchingDOS?.customerName || task.product;
       const taskPkgMap = new Map<string, { name: string; qty: number; unit: string; source: string }>();
       const taskDecoMap = new Map<string, { name: string; qty: number; unit: string; source: string }>();
       taskRecipes.forEach(r => {
@@ -2324,18 +2395,14 @@ return (
             <div className="flex items-center gap-2">
               <span className="rounded-lg bg-zinc-900 text-white font-mono font-bold text-[13px] px-2.5 py-1">×{qtyMult}</span>
               <div>
-                <span className="text-[15px] font-semibold text-zinc-900">{task.product}</span>
-                <span className="ml-2 text-[12px] text-zinc-400">{task.orderRef}</span>
+                <div className="text-[15px] font-semibold text-zinc-900">{customerName}</div>
+                <div className="text-[12px] text-purple-600 font-medium">{task.theme}</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium ${isCompleted ? "bg-emerald-100 text-emerald-700" : task.status === "in-progress" ? "bg-blue-100 text-blue-700" : "bg-zinc-100 text-zinc-600"}`}>{task.status}</span>
               <button onClick={() => { if (confirm(`Remove decoration task for ${task.product}?`)) deleteDecoTask(task.id); }} className="rounded-lg border border-red-200 bg-white px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-50 transition-all">Delete</button>
             </div>
-          </div>
-          <div className="flex items-center gap-2 text-[12px] text-zinc-500 mb-3">
-            <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-600">{task.theme}</span>
-            <span>{task.notes}</span>
           </div>
           {(taskPkg.length > 0 || taskDeco.length > 0) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
@@ -2372,9 +2439,20 @@ return (
             </div>
           )}
           {!isCompleted && (
-            <div className="flex justify-center pt-1">
+            <div className="flex justify-center gap-3 pt-1">
               {task.status === "pending" && (
-                <button onClick={() => updateDecoTask(task.id, "in-progress")} className="rounded-xl bg-blue-600 px-6 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-700 transition-all shadow-sm">Start Decorating</button>
+                <>
+                  <button onClick={() => {
+                    const inv = inventory.find(i => i.id === task.sourceInventoryId);
+                    if (inv) {
+                      setDesignModal({ product: task.product, inventoryId: inv.id, qty: task.sourceQty || inv.onHand, theme: task.theme, notes: task.notes, customerName: task.customerName });
+                      setDesignTheme(task.theme || "");
+                      setDesignNotes(task.notes || "");
+                      setDesignQty(task.sourceQty || 1);
+                    }
+                  }} className="rounded-xl border border-zinc-300 bg-white px-5 py-2.5 text-[13px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-all shadow-sm">Back to Designing</button>
+                  <button onClick={() => updateDecoTask(task.id, "in-progress")} className="rounded-xl bg-blue-600 px-6 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-700 transition-all shadow-sm">Start Decorating</button>
+                </>
               )}
               {task.status === "in-progress" && (
                 <button onClick={() => updateDecoTask(task.id, "completed")} className="rounded-xl bg-emerald-600 px-6 py-2.5 text-[13px] font-semibold text-white hover:bg-emerald-700 transition-all shadow-sm">Put it on Display Cake 🎂</button>
@@ -2397,7 +2475,7 @@ return (
     const openDesignFromDOS = (dos: DOSItem) => {
       const inv = inventory.find(i => i.name === dos.product && (i.source === "production-prep" || i.source === "came-from-baker"));
       if (!inv) { alert(`No "${dos.product}" available in My Inventory. Complete Tasks to Prepare first.`); return; }
-      setDesignModal({ product: dos.product, inventoryId: inv.id, qty: inv.onHand, theme: dos.themeOccasion, notes: dos.cakeDesignNotes, colorScheme: dos.colorScheme, topper: dos.topper, referenceImage: dos.referenceImage, messageCaption: dos.messageCaption, layers: dos.layers });
+      setDesignModal({ product: dos.product, inventoryId: inv.id, qty: inv.onHand, theme: dos.themeOccasion, notes: dos.cakeDesignNotes, customerName: dos.customerName, colorScheme: dos.colorScheme, topper: dos.topper, referenceImage: dos.referenceImage, messageCaption: dos.messageCaption, layers: dos.layers });
       setDesignTheme(dos.themeOccasion || "");
       setDesignNotes(dos.cakeDesignNotes || "");
       setDesignQty(Math.max(1, dos.qty));
@@ -2436,6 +2514,7 @@ return (
           theme: designTheme.trim() || "Custom Design",
           status: "pending",
           notes: designNotes.trim() || "Designed from My Inventory",
+          customerName: designModal?.customerName || "",
           sourceInventoryId: bc.inventoryId,
           sourceQty: bc.qty,
           sourceSnapshot: { ...inventory.find(i => i.id === bc.inventoryId)! },
@@ -2450,6 +2529,7 @@ return (
           db.upsertDecorationQueueTask({
             id: task.id, product: task.product, orderRef: task.orderRef,
             theme: task.theme, status: task.status, notes: task.notes,
+            customerName: task.customerName,
             sourceInventoryId: task.sourceInventoryId, sourceQty: task.sourceQty,
             sourceBatchRef: undefined, sourceProducedBy: undefined, createdAt: task.createdAt,
             sourceSnapshot: task.sourceSnapshot,
@@ -2520,6 +2600,7 @@ return (
         theme: designTheme.trim() || "Custom Design",
         status: "pending",
         notes: designNotes.trim() || "Designed from My Inventory",
+        customerName: designModal.customerName || "",
         sourceInventoryId: designModal.inventoryId,
         sourceQty: designQty,
         sourceSnapshot: { ...sourceItem },
@@ -2535,6 +2616,7 @@ return (
       db.upsertDecorationQueueTask({
         id: newTask.id, product: newTask.product, orderRef: newTask.orderRef,
         theme: newTask.theme, status: newTask.status, notes: newTask.notes,
+        customerName: newTask.customerName,
         sourceInventoryId: newTask.sourceInventoryId, sourceQty: newTask.sourceQty,
         sourceBatchRef: undefined, sourceProducedBy: undefined, createdAt: newTask.createdAt,
         sourceSnapshot: newTask.sourceSnapshot,
@@ -2947,21 +3029,16 @@ return (
                                 {bakerInventory.map(item => {
                                   const selected = selectedBaseCakes.find(b => b.inventoryId === item.id);
                                   return (
-                                    <div key={`baker-${item.id}`} className={`rounded-xl border p-4 transition-all ${selected ? 'border-amber-500 bg-amber-100 shadow-md' : 'border-amber-200 bg-white/80 hover:border-amber-400 hover:shadow-sm'}`}>
-                                      <div className="flex items-start gap-3">
-                                        <button
-                                          onClick={() => toggleBaseCake(item, "From Baker")}
-                                          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${selected ? 'border-amber-500 bg-amber-500 text-white' : 'border-amber-300 bg-white hover:border-amber-400'}`}
-                                        >
-                                          {selected && <span className="text-[12px] font-bold">✓</span>}
-                                        </button>
-                                        <div className="flex-1 min-w-0">
-                                          <div className="text-[13px] font-bold text-zinc-900 truncate">{item.name}</div>
-                                          <div className="text-[11px] text-zinc-500">{item.onHand} {item.unit} available</div>
+                                    <div key={`baker-${item.id}`} onClick={() => toggleBaseCake(item, "From Baker")} className={`rounded-xl border p-4 cursor-pointer transition-all ${selected ? 'border-amber-500 bg-amber-100 shadow-md' : 'border-amber-200 bg-white/80 hover:border-amber-400 hover:shadow-sm'}`}>
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="text-[13px] font-bold text-zinc-900 truncate">{item.name}</div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span className="text-[14px] font-semibold text-zinc-600">{item.onHand} {item.unit}</span>
+                                          {selected && <span className="text-amber-500 font-bold text-[16px]">✓</span>}
                                         </div>
                                       </div>
                                       {selected && (
-                                        <div className="mt-3 flex items-center gap-2 pl-9">
+                                        <div className="mt-3 flex items-center gap-2 pl-9" onClick={(e) => e.stopPropagation()}>
                                           <span className="text-[11px] text-amber-700 font-semibold">Qty:</span>
                                           <button
                                             onClick={() => updateBaseCakeQty(item.id, selected.qty - 1)}
@@ -2997,21 +3074,16 @@ return (
                                 {prepInventory.map(item => {
                                   const selected = selectedBaseCakes.find(b => b.inventoryId === item.id);
                                   return (
-                                    <div key={`prep-${item.id}`} className={`rounded-xl border p-4 transition-all ${selected ? 'border-blue-500 bg-blue-100 shadow-md' : 'border-blue-200 bg-white/80 hover:border-blue-400 hover:shadow-sm'}`}>
+                                    <div key={`prep-${item.id}`} onClick={() => toggleBaseCake(item, "Production Prep")} className={`rounded-xl border p-4 cursor-pointer transition-all ${selected ? 'border-blue-500 bg-blue-100 shadow-md' : 'border-blue-200 bg-white/80 hover:border-blue-400 hover:shadow-sm'}`}>
                                       <div className="flex items-start gap-3">
-                                        <button
-                                          onClick={() => toggleBaseCake(item, "Production Prep")}
-                                          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${selected ? 'border-blue-500 bg-blue-500 text-white' : 'border-blue-300 bg-white hover:border-blue-400'}`}
-                                        >
-                                          {selected && <span className="text-[12px] font-bold">✓</span>}
-                                        </button>
                                         <div className="flex-1 min-w-0">
                                           <div className="text-[13px] font-bold text-zinc-900 truncate">{item.name}</div>
                                           <div className="text-[11px] text-zinc-500">{item.onHand} {item.unit} available</div>
                                         </div>
+                                        {selected && <span className="text-blue-500 font-bold text-[16px]">✓</span>}
                                       </div>
                                       {selected && (
-                                        <div className="mt-3 flex items-center gap-2 pl-9">
+                                        <div className="mt-3 flex items-center gap-2 pl-9" onClick={(e) => e.stopPropagation()}>
                                           <span className="text-[11px] text-blue-700 font-semibold">Qty:</span>
                                           <button
                                             onClick={() => updateBaseCakeQty(item.id, selected.qty - 1)}
@@ -3323,7 +3395,7 @@ return (
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight">Ingredients</h1>
-          <p className="mt-1 text-[13px] text-zinc-500">View ingredient stock from the Warehouse.</p>
+          <p className="mt-1 text-[13px] text-zinc-500">View ingredient stock from the Stock Room.</p>
         </div>
         {ingredientItems.length === 0 ? (
           <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center"><p className="text-[14px] text-zinc-400">No ingredients in inventory.</p></div>
@@ -3356,12 +3428,14 @@ return (
     const decoOnlyInventory = inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco"));
     
     // Categorization logic
-    const tabs: ("Display Cakes" | "Production Recipe" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "My Inventory"];
-    const displayCakes = myFreezer.filter(i => !i.notes?.startsWith("Production Recipe") && !i.batchRef?.startsWith("ADV-"));
-    const productionRecipes = myFreezer.filter(i => i.notes?.startsWith("Production Recipe") && i.qty > 0);
+    const tabs: ("Display Cakes" | "Production Recipe" | "Advanced Premix" | "My Inventory")[] = ["Display Cakes", "Production Recipe", "Advanced Premix", "My Inventory"];
+    const displayCakes = myFreezer.filter(i => !i.notes?.startsWith("Production Recipe") && !i.batchRef?.startsWith("ADV-") && i.qty > 0);
+    const productionRecipes = myFreezer.filter(i => i.notes?.startsWith("Production Recipe") && !i.batchRef?.startsWith("ADV-") && i.qty > 0);
+    const advancedPremixItems = myFreezer.filter(i => i.batchRef?.startsWith("ADV-") && i.qty > 0);
     const getFilteredItems = () => {
         if (freezerTab === "Display Cakes") return displayCakes;
         if (freezerTab === "Production Recipe") return productionRecipes;
+        if (freezerTab === "Advanced Premix") return advancedPremixItems;
         return decoOnlyInventory as unknown as FreezerItem[];
     };
     
@@ -3402,29 +3476,35 @@ return (
     return (
       <>
       <div className="space-y-5">
-        <div className="flex items-center justify-between">
-          <div><h1 className="text-[24px] font-semibold">Freezer — Finished Products</h1><p className="mt-1 text-[13px] text-zinc-600">Track decorated products ready for dispatch.</p></div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-zinc-200">
-            {tabs.map(tab => (
-                <button key={tab} onClick={() => setFreezerTab(tab)} className={`px-4 py-2 text-[13px] font-medium ${freezerTab === tab ? "border-b-2 border-zinc-900 text-zinc-900" : "text-zinc-500 hover:text-zinc-700"}`}>
-                    {tab}
-                </button>
-            ))}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[11px] text-zinc-500 uppercase tracking-wider">{freezerTab}</div><div className="text-[24px] font-semibold mt-1">{filtered.length}</div></div>
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-            <div className="text-[11px] text-zinc-500 uppercase tracking-wider">{isInventoryTab ? "Total Stock" : "Total Qty"}</div>
-            <div className="text-[24px] font-semibold mt-1">
-              {isInventoryTab
-                ? `${(filtered as unknown as InventoryItem[]).reduce((s, i) => s + i.onHand, 0)} units`
-                : `${(filtered as FreezerItem[]).reduce((s, i) => s + i.qty, 0)} pcs`}
+        <div className="rounded-3xl bg-white p-8 shadow-lg border border-zinc-200">
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <h1 className="text-[36px] font-bold tracking-tight text-zinc-900">Freezer — Finished Products</h1>
+              <p className="mt-2 text-[15px] text-zinc-500">Track decorated products ready for dispatch.</p>
             </div>
           </div>
+        </div>
+
+        {/* Pill Tabs */}
+        <div className="flex gap-2 rounded-2xl bg-zinc-100 p-1.5">
+          {tabs.map(tab => (
+            <button key={tab} onClick={() => setFreezerTab(tab)} className={`flex-1 rounded-xl py-3 text-[14px] font-semibold transition-all ${freezerTab === tab ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Stat Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {tabs.map(tab => {
+            const count = tab === "Display Cakes" ? displayCakes.length : tab === "Production Recipe" ? productionRecipes.length : tab === "Advanced Premix" ? advancedPremixItems.length : decoOnlyInventory.length;
+            return (
+              <button key={tab} onClick={() => setFreezerTab(tab)} className={`rounded-2xl border p-5 text-left transition-all hover:shadow-md ${freezerTab === tab ? "bg-amber-50 border-amber-300" : "bg-white border-zinc-200 hover:border-zinc-300"}`}>
+                <div className="text-[12px] text-zinc-400 uppercase tracking-wider font-semibold">{tab}</div>
+                <div className="text-[28px] font-bold text-zinc-900 mt-2">{count}</div>
+              </button>
+            );
+          })}
         </div>
 
         <div className="relative max-w-[280px]">
@@ -3488,7 +3568,7 @@ return (
                       <span className="text-[11px] uppercase tracking-wider font-semibold text-amber-700">From Baker</span>
                       <span className="ml-2 text-[10px] text-amber-600">({bakerItems.length})</span>
                     </div>
-                    <button onClick={() => { setBakerInvProduct(""); setBakerInvSize(""); setBakerInvQty(0); setBakerInvCategory("dry"); setShowAddBakerInventory(true); }} className="rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-amber-700 transition-colors">+ Add</button>
+                    <button onClick={() => { setBakerInvProduct(""); setBakerInvSize(""); setBakerInvQty(0); setBakerInvCategory("dry"); db.fetchProductCategories().then(map => setProductCategoryMap(map)).catch(() => {}); setShowAddBakerInventory(true); }} className="rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-amber-700 transition-colors">+ Add</button>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
@@ -3570,6 +3650,14 @@ return (
             </div>
           );
         })() : freezerTab === "Display Cakes" ? (
+              <div className="rounded-[24px] border border-rose-200 bg-white shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 bg-rose-50/60 border-b border-rose-100">
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider font-semibold text-rose-700">Display Cakes</span>
+                  <span className="ml-2 text-[10px] text-rose-600">({displayCakes.length})</span>
+                </div>
+                <button onClick={() => { setDisplayCakeProduct(""); setDisplayCakeSize(""); setDisplayCakeQty(0); db.fetchProductCategories().then(map => setProductCategoryMap(map)).catch(() => {}); setShowAddDisplayCake(true); }} className="rounded-lg bg-rose-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-rose-700 transition-colors">+ Add</button>
+              </div>
               <table className="w-full text-left">
                 <thead className="bg-zinc-50 border-b border-zinc-100">
                   <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
@@ -3608,6 +3696,36 @@ return (
                   ))}
                 </tbody>
               </table>
+              </div>
+            ) : freezerTab === "Advanced Premix" ? (
+              <div className="space-y-3">
+                {(filtered as FreezerItem[]).length === 0 ? (
+                  <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center text-[13px] text-zinc-400">No advanced premix items in freezer.</div>
+                ) : (filtered as FreezerItem[]).map(item => (
+                  <div key={item.id} className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white text-[13px] font-bold">ADV</div>
+                      <div>
+                        <div className="text-[14px] font-semibold text-zinc-900">{item.productName}</div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[11px] font-mono text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">{item.batchRef}</span>
+                          {item.notes && <span className="text-[11px] text-zinc-400 truncate max-w-[200px]">{item.notes}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className="text-[18px] font-bold text-zinc-900 font-mono">{item.qty} <span className="text-[12px] font-normal text-zinc-500">{item.unit}</span></div>
+                        <div className="text-[11px] text-zinc-400">{item.dateProduced}</div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => { setEditingFreezerItem(item); setShowEditFreezer(true); }} className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-amber-50">Edit</button>
+                        <button onClick={() => { if (confirm(`Delete ${item.productName}?`)) { const updated = freezerItems.filter(f => f.id !== item.id); onUpdateFreezer?.(updated); db.deleteFreezerItem(item.id).catch(console.error); } }} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[11px] font-medium text-red-600 hover:bg-red-50">Del</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
               <table className="w-full text-left">
                 <thead className="bg-zinc-50 border-b border-zinc-100">
@@ -3716,7 +3834,7 @@ return (
                   <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Product</label>
                   <select value={bakerInvProduct} onChange={e => setBakerInvProduct(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400">
                     <option value="">Select product...</option>
-                    {productCatalog.map(p => <option key={p} value={p}>{p}</option>)}
+                    {productCatalog.filter(p => productCategoryMap[p] === "Freezer Deco").map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
                 <div>
@@ -3767,6 +3885,63 @@ return (
           </div>
         )}
 
+        {showAddDisplayCake && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddDisplayCake(false)}>
+            <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <h2 className="text-[18px] font-semibold mb-4">Add to Display Cakes</h2>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Product</label>
+                  <select value={displayCakeProduct} onChange={e => setDisplayCakeProduct(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+                    <option value="">Select product...</option>
+                    {productCatalog.filter(p => productCategoryMap[p] === "Display Cakes").map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Size</label>
+                  <select value={displayCakeSize} onChange={e => setDisplayCakeSize(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+                    <option value="">No size</option>
+                    {["Small","Regular","Large","6x1","6x2","6x3","8x1","8x2","8x3","10x1","10x2","10x3","12x1","12x2","14x1","14x2","16x1","Sheet"].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Qty</label>
+                  <input type="number" min={1} value={displayCakeQty || ""} onChange={e => setDisplayCakeQty(Number(e.target.value) || 0)} placeholder="0" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] font-mono outline-none focus:border-zinc-400" />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-5">
+                <button onClick={() => setShowAddDisplayCake(false)} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+                <button disabled={!displayCakeProduct || displayCakeQty <= 0} onClick={() => {
+                  const today = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+                  const newItem: FreezerItem = {
+                    id: `FRZ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    productName: displayCakeProduct,
+                    qty: displayCakeQty,
+                    unit: "pcs",
+                    batchRef: `DECO-${Date.now()}`,
+                    producedBy: "deco",
+                    dateProduced: today,
+                    status: "stored",
+                    notes: displayCakeSize ? `Size: ${displayCakeSize}` : undefined,
+                    size: displayCakeSize || undefined,
+                  };
+                  onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, newItem]);
+                  db.upsertFreezerItems([newItem]).then(() => {
+                    showToast("Display cake added to freezer");
+                  }).catch(err => {
+                    console.error(err);
+                    showToast("Failed to save: " + (err.message || "Unknown error"));
+                    onUpdateFreezer?.((prev: FreezerItem[]) => prev.filter(i => i.id !== newItem.id));
+                  });
+                  setShowAddDisplayCake(false);
+                }} className="flex-1 rounded-xl bg-rose-600 py-2.5 text-[13px] font-medium text-white hover:bg-rose-700 disabled:opacity-40">Add Item</button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </>
     );
   }
@@ -3777,13 +3952,15 @@ return (
     const sourceOptions = [
       { id: "freezer-display" as const, label: "Freezer - Display Cakes" },
       { id: "freezer-production" as const, label: "Freezer - Production Recipe" },
+      { id: "freezer-advanced" as const, label: "Freezer - Advanced Premix" },
       { id: "my-inventory" as const, label: "My Inventory" },
     ];
 
     const getSourceItems = () => {
       switch (wasteSource) {
-        case "freezer-display": return freezerItems.filter(i => i.producedBy === "deco" && !i.notes?.startsWith("Production Recipe")).map(i => ({ id: i.id, name: i.productName, qty: i.qty, unit: i.unit, source: "freezer" as const }));
-        case "freezer-production": return freezerItems.filter(i => i.producedBy === "deco" && i.notes?.startsWith("Production Recipe")).map(i => ({ id: i.id, name: i.productName, qty: i.qty, unit: i.unit, source: "freezer" as const }));
+        case "freezer-display": return freezerItems.filter(i => i.producedBy === "deco" && !i.notes?.startsWith("Production Recipe") && !i.batchRef?.startsWith("ADV-") && i.qty > 0).map(i => ({ id: i.id, name: i.productName, qty: i.qty, unit: i.unit, source: "freezer" as const }));
+        case "freezer-production": return freezerItems.filter(i => i.producedBy === "deco" && i.notes?.startsWith("Production Recipe") && !i.batchRef?.startsWith("ADV-") && i.qty > 0).map(i => ({ id: i.id, name: i.productName, qty: i.qty, unit: i.unit, source: "freezer" as const }));
+        case "freezer-advanced": return freezerItems.filter(i => i.producedBy === "deco" && i.batchRef?.startsWith("ADV-") && i.qty > 0).map(i => ({ id: i.id, name: i.productName, qty: i.qty, unit: i.unit, source: "freezer" as const }));
         case "my-inventory": return inventory.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes("deco")).map(i => ({ id: i.id, name: i.name, qty: i.onHand, unit: i.unit, source: "inventory" as const }));
       }
     };
@@ -3799,6 +3976,7 @@ return (
       const sourceLabels: Record<string, string> = {
         "freezer-display": "Deco - Freezer Display Cakes",
         "freezer-production": "Deco - Freezer Production Recipe",
+        "freezer-advanced": "Deco - Freezer Advanced Premix",
         "my-inventory": "Deco - My Inventory",
       };
 
@@ -3830,6 +4008,7 @@ return (
           const newOnHand = Math.max(0, currentItem.onHand - deductedQty);
           onUpdateInventory(prev => prev.map(i => i.id === currentItem.id ? { ...i, onHand: newOnHand } : i));
           await db.upsertInventoryItem({ ...currentItem, onHand: newOnHand });
+          onStockTransaction?.({ id: `STX-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type: "out", itemName: selectedItem.name, itemId: selectedItem.id, qty: deductedQty, unit: selectedItem.unit, reference: `Waste: ${wasteReason || "adjustment"}`, timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), target: "deco", group: currentItem.group, role: "deco" });
         } else {
           const currentFz = freezerItems.find(i => i.id === selectedItem.id);
           if (!currentFz) { alert("Item not found in freezer."); return; }
