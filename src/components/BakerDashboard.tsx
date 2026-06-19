@@ -312,13 +312,6 @@ export default function BakerDashboard({ production, dosItems, onCompleteTask, a
     }
   };
 
-  // Refetch freezer items from DB when freezer tab becomes active
-  useEffect(() => {
-    if (activeTab === "freezer") {
-      db.fetchFreezerItems().then(items => onUpdateFreezer?.(items)).catch(console.error);
-    }
-  }, [activeTab]);
-
   /* ── Conversion Tab ── */
   if (activeTab === "conversion") {
     const decoProductionItems = freezerItems.filter(i =>

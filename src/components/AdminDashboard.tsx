@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { createPortal } from "react-dom";
-import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, ProductPricingVariant, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage, Equipment } from "../types";
+import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, ProductPricingVariant, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage, Equipment, RepairRecord } from "../types";
 import type { ProductRoute } from "../lib/db";
 import * as db from "../lib/db";
 import DOSBuilderModal from "./DOSBuilderModal";
@@ -48,21 +48,35 @@ type Props = {
   decoProductionPrep: { dosId: string; productName: string; productQty: number; prepared: boolean; done: boolean; additionalIngredients: { name: string; qty: number; unit: string; reason: string; source: string }[] }[];
 };
 
-function EquipmentModal({ equipment, equipmentList, onSave, onClose }: {
+function EquipmentModal({ equipment, equipmentList, repairRecords, onSave, onAddRepair, onDeleteRepair, onClose }: {
   equipment: Equipment;
   equipmentList: Equipment[];
+  repairRecords: RepairRecord[];
   onSave: (item: Equipment) => Promise<void>;
+  onAddRepair: (equipmentId: string, date: string, cost: number, remarks: string) => Promise<void>;
+  onDeleteRepair: (id: string) => Promise<void>;
   onClose: () => void;
 }) {
   const [eqName, setEqName] = useState(equipment.name);
-  const [eqSku, setEqSku] = useState(equipment.sku);
   const [eqDatePurchased, setEqDatePurchased] = useState(equipment.datePurchased);
   const [eqCostPrice, setEqCostPrice] = useState(equipment.costPrice);
   const [eqSupplier, setEqSupplier] = useState(equipment.supplier);
   const [eqStatus, setEqStatus] = useState(equipment.status);
   const [eqNotes, setEqNotes] = useState(equipment.notes);
   const [eqSaving, setEqSaving] = useState(false);
+  const [newRepairDate, setNewRepairDate] = useState("");
+  const [newRepairCost, setNewRepairCost] = useState("");
+  const [newRepairRemarks, setNewRepairRemarks] = useState("");
+  const [repairAdding, setRepairAdding] = useState(false);
   const isNew = !equipmentList.some(e => e.id === equipment.id);
+
+  const eqRepairs = repairRecords.filter(r => r.equipmentId === equipment.id)
+    .sort((a, b) => b.repairDate.localeCompare(a.repairDate));
+
+  function formatDate(d: string) {
+    if (!d) return "";
+    return new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }).replace(/(\w{3})/, "$1.");
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -75,8 +89,18 @@ function EquipmentModal({ equipment, equipmentList, onSave, onClose }: {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">SKU</label>
-              <input value={eqSku} onChange={e => setEqSku(e.target.value)} placeholder="e.g. OVN-001" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Date Purchased</label>
+              <input type="date" value={eqDatePurchased} onChange={e => setEqDatePurchased(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Cost Price (₱)</label>
+              <input type="number" min="0" step="0.01" value={eqCostPrice || ""} onChange={e => setEqCostPrice(parseFloat(e.target.value) || 0)} placeholder="0.00" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] font-mono outline-none focus:border-zinc-400" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Supplier</label>
+              <input value={eqSupplier} onChange={e => setEqSupplier(e.target.value)} placeholder="Supplier name" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
             </div>
             <div>
               <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Status</label>
@@ -87,23 +111,59 @@ function EquipmentModal({ equipment, equipmentList, onSave, onClose }: {
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Date Purchased</label>
-              <input type="date" value={eqDatePurchased} onChange={e => setEqDatePurchased(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
-            </div>
-            <div>
-              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Cost Price (₱)</label>
-              <input type="number" min="0" step="0.01" value={eqCostPrice || ""} onChange={e => setEqCostPrice(parseFloat(e.target.value) || 0)} placeholder="0.00" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] font-mono outline-none focus:border-zinc-400" />
-            </div>
-          </div>
           <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Supplier</label>
-            <input value={eqSupplier} onChange={e => setEqSupplier(e.target.value)} placeholder="Supplier name" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Remarks</label>
+            <textarea value={eqNotes} onChange={e => setEqNotes(e.target.value)} placeholder="Optional remarks" rows={2} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400 resize-none" />
           </div>
+
+          {/* Repair History */}
           <div>
-            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Notes</label>
-            <textarea value={eqNotes} onChange={e => setEqNotes(e.target.value)} placeholder="Optional notes" rows={2} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400 resize-none" />
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2 block">Repairs and Maintenance</label>
+            {isNew ? (
+              <p className="text-[12px] text-zinc-400 italic">Save this equipment first, then you can add repairs.</p>
+            ) : (
+              <>
+                {eqRepairs.length === 0 ? (
+                  <p className="text-[12px] text-zinc-400 italic">No repairs recorded yet.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {eqRepairs.map((r, idx) => (
+                      <div key={r.id} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[13px] text-zinc-700">
+                            <span className="font-medium text-zinc-400 mr-2">#{idx + 1}</span>
+                            {formatDate(r.repairDate)}
+                          </span>
+                          {r.repairCost > 0 && <span className="ml-2 text-[12px] font-mono text-amber-700">{"\u20B1"}{r.repairCost.toFixed(2)}</span>}
+                          {r.remarks && <div className="text-[11px] text-zinc-400 mt-0.5 truncate" title={r.remarks}>{r.remarks}</div>}
+                        </div>
+                        <button onClick={() => onDeleteRepair(r.id)} className="text-[11px] text-red-500 hover:text-red-700 font-medium ml-2">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="space-y-2 mt-2">
+                  <div className="flex items-center gap-2">
+                    <input type="date" value={newRepairDate} onChange={e => setNewRepairDate(e.target.value)} className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[13px] outline-none focus:border-zinc-400" />
+                    <input type="number" min="0" step="0.01" value={newRepairCost} onChange={e => setNewRepairCost(e.target.value)} placeholder="Cost ₱" className="w-28 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[13px] font-mono outline-none focus:border-zinc-400" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="text" value={newRepairRemarks} onChange={e => setNewRepairRemarks(e.target.value)} placeholder="Remarks (optional)" className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-[13px] outline-none focus:border-zinc-400" />
+                    <button disabled={!newRepairDate || repairAdding} onClick={async () => {
+                      setRepairAdding(true);
+                      try {
+                        await onAddRepair(equipment.id, newRepairDate, parseFloat(newRepairCost) || 0, newRepairRemarks.trim());
+                        setNewRepairDate("");
+                        setNewRepairCost("");
+                        setNewRepairRemarks("");
+                      } finally {
+                        setRepairAdding(false);
+                      }
+                    }} className="rounded-xl bg-zinc-800 px-4 py-2 text-[12px] font-medium text-white hover:bg-zinc-700 disabled:opacity-40">{repairAdding ? "..." : "+ Add"}</button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
         <div className="flex gap-2 mt-5">
@@ -114,8 +174,8 @@ function EquipmentModal({ equipment, equipmentList, onSave, onClose }: {
               const updated: Equipment = {
                 ...equipment,
                 name: eqName.trim(),
-                sku: eqSku.trim(),
                 datePurchased: eqDatePurchased,
+                dateRepaired: eqRepairs.length > 0 ? eqRepairs[eqRepairs.length - 1].repairDate : "",
                 costPrice: eqCostPrice,
                 supplier: eqSupplier.trim(),
                 status: eqStatus,
@@ -130,6 +190,60 @@ function EquipmentModal({ equipment, equipmentList, onSave, onClose }: {
             }
           }} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 disabled:opacity-40">{eqSaving ? "Saving..." : isNew ? "Add Equipment" : "Save Changes"}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ReceiveEquipmentModal({ equipment, onSave, onClose }: {
+  equipment: Equipment[]; onSave: (item: Equipment) => Promise<void>; onClose: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState(equipment[0]?.id || "");
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split("T")[0]);
+  const [costPrice, setCostPrice] = useState("");
+  const [supplier, setSupplier] = useState("");
+  const [reference, setReference] = useState("PO-001");
+
+  const selected = equipment.find(e => e.id === selectedId);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected) return;
+    await onSave({
+      ...selected,
+      datePurchased: purchaseDate,
+      costPrice: parseFloat(costPrice) || selected.costPrice,
+      supplier: supplier || selected.supplier,
+      status: "active",
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[480px] rounded-[28px] border border-[#E8E0D5] bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
+          <div><h3 className="text-[16px] font-semibold text-zinc-900">Receive Equipment</h3><p className="mt-0.5 text-[12px] text-zinc-500">Record equipment received from supplier</p></div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-all">✕</button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4 px-6 pb-5 pt-4">
+          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Equipment</label>{equipment.length > 0 ? (<select value={selectedId} onChange={e => setSelectedId(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">{equipment.map(e => (<option key={e.id} value={e.id}>{e.name}</option>))}</select>) : (<div className="mt-1 flex h-[42px] items-center rounded-xl border border-dashed border-zinc-200 px-3.5 text-[13px] text-zinc-400">No equipment added yet</div>)}</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Date Received</label><input type="date" required value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cost Price (₱)</label><input type="number" min="0" step="0.01" value={costPrice} onChange={e => setCostPrice(e.target.value)} placeholder="0.00" className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Supplier</label><input value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="Supplier name" className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Reference / PO</label><input required value={reference} onChange={e => setReference(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+          </div>
+          <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Current Status</span>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${selected?.status === "active" ? "bg-emerald-100 text-emerald-700" : selected?.status === "maintenance" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{selected?.status || "\u2014"}</span>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1"><button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Cancel</button><button type="submit" disabled={!selectedId} className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-emerald-700 transition-all disabled:opacity-40">Receive Equipment</button></div>
+        </form>
       </div>
     </div>
   );
@@ -222,18 +336,22 @@ export default function AdminDashboard({
   });
 
   // Stockroom
-  const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "equipment" | "history" | "analytics">("ingredients");
+  const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "consumables" | "equipment" | "history" | "analytics">("ingredients");
   const [transactions, setTransactions] = useState<StockTransaction[]>([]);
   const [showReceive, setShowReceive] = useState(false);
-  const [equipment, setEquipment] = useState<import("../types").Equipment[]>([]);
+  const [showReceiveEquipment, setShowReceiveEquipment] = useState(false);
+  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [repairRecords, setRepairRecords] = useState<RepairRecord[]>([]);
   const [showEquipmentModal, setShowEquipmentModal] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
+  const [showRepairViewModal, setShowRepairViewModal] = useState(false);
+  const [viewingRepairEquipment, setViewingRepairEquipment] = useState<Equipment | null>(null);
   const [ingredientRoleFilter, setIngredientRoleFilter] = useState<"all" | "baker" | "deco" | "pastry">("all");
   const [historyRoleFilter, setHistoryRoleFilter] = useState<"all" | "admin" | "baker" | "deco" | "pastry">("all");
   const [historyTypeFilter, setHistoryTypeFilter] = useState<"all" | "in" | "out">("all");
-  const [historyGroupFilter, setHistoryGroupFilter] = useState<"all" | "ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies">("all");
+  const [historyGroupFilter, setHistoryGroupFilter] = useState<"all" | "ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "consumables">("all");
   const [analyticsRange, setAnalyticsRange] = useState<"all" | "day" | "week" | "month" | "year">("all");
-  const [analyticsTab, setAnalyticsTab] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies">("ingredients");
+  const [analyticsTab, setAnalyticsTab] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "consumables">("ingredients");
 
   // Delivery validation
   const [validations, setValidations] = useState<DeliveryValidation[]>([]);
@@ -351,6 +469,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
   useEffect(() => {
     if (activeTab !== "warehouse" || prevTab.current === "warehouse") { prevTab.current = activeTab; return; }
     db.fetchEquipment().then(setEquipment).catch(() => {});
+    db.fetchAllRepairRecords().then(setRepairRecords).catch(() => {});
     prevTab.current = activeTab;
     const now = new Date();
     const todayStr = now.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
@@ -1360,6 +1479,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         { key: "packaging-materials", label: "Packaging", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
         { key: "decoration-supplies", label: "Decoration", icon: "M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" },
         { key: "operational-supplies", label: "Operational", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z" },
+        { key: "consumables", label: "Consumables", icon: "M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" },
         { key: "equipment", label: "Equipment", icon: "M11.42 15.17l-5.5-5.5a2 2 0 010-2.83l2.83-2.83a2 2 0 012.83 0l5.5 5.5M11.42 15.17l5.5 5.5M11.42 15.17l-2.83 2.83a2 2 0 000 2.83l.7.7M11.42 15.17l4.24-4.24m-5.5 5.5l-4.24 4.24" },
       ],
       [
@@ -1410,11 +1530,14 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {warehouseSection === "equipment" ? (
-                <button onClick={() => { setEditingEquipment({ id: `EQ-${Date.now()}`, name: "", datePurchased: "", costPrice: 0, sku: "", supplier: "", status: "active", notes: "" }); setShowEquipmentModal(true); }} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Add Equipment</button>
+                <>
+                  <button onClick={() => setShowReceiveEquipment(true)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Receive from Supplier</button>
+                  <button onClick={() => { setEditingEquipment({ id: `EQ-${Date.now()}`, name: "", datePurchased: "", dateRepaired: "", costPrice: 0, supplier: "", status: "active", notes: "" }); setShowEquipmentModal(true); }} className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ Add Equipment</button>
+                </>
               ) : warehouseSection !== "history" ? (
                 <>
                   <button onClick={() => setShowReceive(true)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Receive from Supplier</button>
-                  <button onClick={() => setEditingInvItem({ id: `INV-${Date.now()}`, name: "", sku: "", unit: "", onHand: 0, threshold: 10, cost: 0, supplier: "", lastIn: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0], category: warehouseSection === "packaging-materials" ? "packaging" : "dry", group: warehouseSection, accessRoles: [] })} className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ New Item</button>
+                  <button onClick={() => setEditingInvItem({ id: `INV-${Date.now()}`, name: "", sku: "", unit: "", onHand: 0, threshold: 10, cost: 0, supplier: "", lastIn: new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0], category: warehouseSection === "ingredients" ? "dry" : warehouseSection === "packaging-materials" ? "boxes" : warehouseSection === "decoration-supplies" ? "colors" : "cleaning", group: warehouseSection, accessRoles: [] })} className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ New Item</button>
                 </>
               ) : null}
             </div>
@@ -1426,7 +1549,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
               <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Items</div><div className="text-[26px] font-bold mt-1">{roleFiltered(groupItems(warehouseSection)).length}</div></div>
               <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Low Stock</div><div className="text-[26px] font-bold mt-1 text-red-600">{roleFiltered(lowStock.filter(i => i.group === warehouseSection)).length}</div></button>
               <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">No Stock</div><div className="text-[26px] font-bold mt-1 text-zinc-800">{roleFiltered(noStock.filter(i => i.group === warehouseSection)).length}</div></button>
-              <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-purple-300 hover:bg-purple-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Expired</div><div className="text-[26px] font-bold mt-1 text-purple-600">{roleFiltered(expired.filter(i => i.group === warehouseSection)).length}</div></button>
+              <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Expired</div><div className="text-[26px] font-bold mt-1 text-red-600">{roleFiltered(expired.filter(i => i.group === warehouseSection)).length}</div></button>
               <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Expiring ≤30 Days</div><div className="text-[26px] font-bold mt-1 text-amber-600">{roleFiltered(expiring.filter(i => i.group === warehouseSection)).length}</div></button>
             </div>
           )}
@@ -1470,7 +1593,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   ))}
                 </div>
                 <div className="flex items-center gap-1 rounded-lg bg-zinc-100 p-1">
-                  {["all", "ingredients", "packaging-materials", "decoration-supplies", "operational-supplies"].map(g => (
+                  {["all", "ingredients", "packaging-materials", "decoration-supplies", "operational-supplies", "consumables"].map(g => (
                     <button key={g} onClick={() => setHistoryGroupFilter(g as typeof historyGroupFilter)}
                       className={`rounded-md px-3 py-1.5 text-[12px] font-medium transition-all ${historyGroupFilter === g ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>
                       {g === "all" ? "All Groups" : g.replace(/-/g, " ")}
@@ -1527,6 +1650,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   "packaging-materials": "bg-sky-900/40 text-sky-400",
                   "decoration-supplies": "bg-pink-900/40 text-pink-400",
                   "operational-supplies": "bg-orange-900/40 text-orange-400",
+                  consumables: "bg-teal-900/40 text-teal-400",
                 };
 
                 return filtered.length > 0 ? (
@@ -1588,6 +1712,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   "packaging-materials": { label: "Packaging Materials", color: "sky" },
                   "decoration-supplies": { label: "Decoration Supplies", color: "pink" },
                   "operational-supplies": { label: "Operational Supplies", color: "orange" },
+                  consumables: { label: "Consumables", color: "teal" },
                 };
 
                 // Date range filtering
@@ -1670,6 +1795,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   sky: { bg: "bg-sky-50 border-sky-200", text: "text-sky-700", bar: "bg-sky-500" },
                   pink: { bg: "bg-pink-50 border-pink-200", text: "text-pink-700", bar: "bg-pink-500" },
                   orange: { bg: "bg-orange-50 border-orange-200", text: "text-orange-700", bar: "bg-orange-500" },
+                  teal: { bg: "bg-teal-50 border-teal-200", text: "text-teal-700", bar: "bg-teal-500" },
                 };
 
                 const rangeLabels: Record<string, string> = {
@@ -1857,34 +1983,54 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 <table className="w-full text-left">
                   <thead className="bg-zinc-50 border-b border-zinc-200">
                     <tr className="text-[12px] uppercase tracking-wider text-zinc-500 font-semibold">
-                      <th className="px-5 py-3">Name</th>
-                      <th className="px-5 py-3">SKU</th>
-                      <th className="px-5 py-3">Date Purchased</th>
-                      <th className="px-5 py-3 text-right">Cost Price</th>
-                      <th className="px-5 py-3">Supplier</th>
-                      <th className="px-5 py-3">Status</th>
-                      <th className="px-5 py-3 text-right">Actions</th>
+                      <th className="px-3 py-3">Name</th>
+                      <th className="px-3 py-3">Date Purchased</th>
+                      <th className="px-3 py-3">Supplier</th>
+                      <th className="px-3 py-3 text-right">Cost Price</th>
+                      <th className="px-3 py-3">Repairs & Maintenance</th>
+                      <th className="px-3 py-3 text-right">Updated Cost</th>
+                      <th className="px-3 py-3 text-right">Total Cost</th>
+                      <th className="px-3 py-3">Remarks</th>
+                      <th className="px-3 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
-                    {equipment.filter(e => !invSearch || e.name.toLowerCase().includes(invSearch.toLowerCase()) || e.sku.toLowerCase().includes(invSearch.toLowerCase()) || e.supplier.toLowerCase().includes(invSearch.toLowerCase())).length === 0 ? (
-                      <tr><td colSpan={7} className="px-5 py-12 text-center text-[14px] text-zinc-400">No equipment added yet.</td></tr>
-                    ) : equipment.filter(e => !invSearch || e.name.toLowerCase().includes(invSearch.toLowerCase()) || e.sku.toLowerCase().includes(invSearch.toLowerCase()) || e.supplier.toLowerCase().includes(invSearch.toLowerCase())).map(eq => (
+                    {equipment.filter(e => !invSearch || e.name.toLowerCase().includes(invSearch.toLowerCase()) || e.supplier.toLowerCase().includes(invSearch.toLowerCase())).length === 0 ? (
+                      <tr><td colSpan={9} className="px-3 py-12 text-center text-[14px] text-zinc-400">No equipment added yet.</td></tr>
+                    ) : equipment.filter(e => !invSearch || e.name.toLowerCase().includes(invSearch.toLowerCase()) || e.supplier.toLowerCase().includes(invSearch.toLowerCase())).map(eq => {
+                      const reps = repairRecords.filter(r => r.equipmentId === eq.id).sort((a, b) => b.repairDate.localeCompare(a.repairDate));
+                      const latestRepairCost = reps.length > 0 ? reps[0].repairCost : 0;
+                      const totalRepairCost = reps.reduce((s, r) => s + (r.repairCost || 0), 0);
+                      return (
                       <tr key={eq.id} className="hover:bg-zinc-50 transition-colors">
-                        <td className="px-5 py-4"><div className="text-[14px] font-semibold text-zinc-900">{eq.name}</div>{eq.notes && <div className="text-[11px] text-zinc-400 mt-0.5">{eq.notes}</div>}</td>
-                        <td className="px-5 py-4 text-[13px] text-zinc-500 font-mono">{eq.sku || "\u2014"}</td>
-                        <td className="px-5 py-4 text-[13px] text-zinc-500">{eq.datePurchased || "\u2014"}</td>
-                        <td className="px-5 py-4 text-[14px] text-right font-mono font-semibold text-zinc-700">{"\u20B1"}{eq.costPrice.toFixed(2)}</td>
-                        <td className="px-5 py-4 text-[13px] text-zinc-500">{eq.supplier || "\u2014"}</td>
-                        <td className="px-5 py-4"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${eq.status === "active" ? "bg-emerald-100 text-emerald-700" : eq.status === "maintenance" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{eq.status}</span></td>
-                        <td className="px-5 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => { setEditingEquipment(eq); setShowEquipmentModal(true); }} className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
-                            <button onClick={() => { if (confirm(`Delete equipment "${eq.name}"?`)) { db.deleteEquipment(eq.id).catch(console.error); setEquipment(prev => prev.filter(e => e.id !== eq.id)); } }} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                        <td className="px-3 py-4">
+                          <div className="text-[14px] font-semibold text-zinc-900">{eq.name}</div>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${eq.status === "active" ? "bg-emerald-100 text-emerald-700" : eq.status === "maintenance" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{eq.status}</span>
+                        </td>
+                        <td className="px-3 py-4 text-[13px] text-zinc-500">{eq.datePurchased ? new Date(eq.datePurchased + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }).replace(/(\w{3})/, "$1.") : "—"}</td>
+                        <td className="px-3 py-4 text-[13px] text-zinc-500">{eq.supplier || "—"}</td>
+                        <td className="px-3 py-4 text-[13px] text-right font-mono font-semibold text-zinc-700">{"\u20B1"}{eq.costPrice.toFixed(2)}</td>
+                        <td className="px-3 py-4 text-[13px]">
+                          {reps.length === 0 ? (
+                            <span className="text-zinc-400">No repairs</span>
+                          ) : (
+                            <span className="cursor-pointer text-violet-600 hover:text-violet-800 font-medium" onClick={() => { setViewingRepairEquipment(eq); setShowRepairViewModal(true); }}>
+                              {reps.length}x repair{reps.length > 1 ? "s" : ""}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-4 text-[13px] text-right font-mono font-semibold text-emerald-700">{latestRepairCost > 0 ? `\u20B1${latestRepairCost.toFixed(2)}` : "—"}</td>
+                        <td className="px-3 py-4 text-[13px] text-right font-mono font-bold text-zinc-900">{"\u20B1"}{(eq.costPrice + totalRepairCost).toFixed(2)}</td>
+                        <td className="px-3 py-4 text-[12px] text-zinc-500 max-w-[150px] truncate" title={reps.length > 0 && reps[0].remarks ? reps[0].remarks : eq.notes || ""}>{reps.length > 0 && reps[0].remarks ? reps[0].remarks : eq.notes || "—"}</td>
+                        <td className="px-3 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button onClick={() => { setEditingEquipment(eq); setShowEquipmentModal(true); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
+                            <button onClick={() => { if (confirm(`Delete equipment "${eq.name}"?`)) { db.deleteEquipment(eq.id).catch(console.error); setEquipment(prev => prev.filter(e => e.id !== eq.id)); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1909,17 +2055,27 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                     const isCritical = item.onHand < item.threshold;
                     const isExpired = item.expiryDate && item.expiryDate < todayStr;
                     const isExpiring = item.expiryDate && item.expiryDate >= todayStr && new Date(item.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000;
+                    const noStock = item.onHand === 0;
+                    const lowStock = isCritical && !noStock;
+                    const statusParts: string[] = [];
+                    if (isExpired) statusParts.push("Expired");
+                    if (noStock) statusParts.push("No Stock");
+                    if (lowStock) statusParts.push("Low Stock");
+                    if (isExpiring) statusParts.push("Expiring");
+                    const statusLabel = statusParts.join(" · ");
+                    const statusColor = isExpired ? 'bg-red-600' : noStock ? 'bg-violet-600' : lowStock ? 'bg-orange-500' : isExpiring ? 'bg-amber-600' : '';
+                    const statusBorder = isExpired ? 'border-red-300 hover:border-red-400' : noStock ? 'border-violet-300 hover:border-violet-400' : lowStock ? 'border-orange-300 hover:border-orange-400' : isExpiring ? 'border-amber-300 hover:border-amber-400' : 'border-zinc-100 hover:border-zinc-200 odd:bg-zinc-50/30';
+                    const hasStatus = statusParts.length > 0;
                     return (
-                      <div key={item.id} className="rounded-2xl border border-zinc-100 bg-white p-5 shadow-sm hover:shadow-md hover:border-zinc-200 transition-all duration-200 odd:bg-zinc-50/30">
-                        <div className="flex items-start justify-between gap-4">
+                      <div key={item.id} className={'relative rounded-2xl border p-5 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden bg-white ' + statusBorder}>
+                        {hasStatus && <div className={'absolute top-0 left-0 right-0 py-2.5 text-center text-[15px] font-bold uppercase tracking-wider text-white shadow-md z-10 ' + statusColor}>{statusLabel}</div>}
+                        <div className={'flex items-start justify-between gap-4 ' + (hasStatus ? 'pt-12' : '')}>
                           {/* Left: Item info */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2.5 flex-wrap">
                               <h3 className="text-[15px] font-semibold text-zinc-900">{item.name}</h3>
                               <span className="text-[12px] text-zinc-400 font-mono">{item.sku}</span>
                               <span className="inline-flex items-center rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium text-zinc-600">{item.category}</span>
-                              {isExpired && <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-[11px] font-semibold text-purple-700">Expired</span>}
-                              {isExpiring && <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">Expiring</span>}
                             </div>
                             <div className="flex items-center gap-3 mt-2.5 flex-wrap">
                               <div className="flex items-center gap-1.5">
@@ -1949,7 +2105,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                           <div className="flex flex-col items-end gap-3 shrink-0">
                             {/* Stock level */}
                             <div className="text-right">
-                              <div className={'text-[22px] font-bold tracking-tight ' + (isExpired ? "text-purple-500" : isCritical ? "text-red-600" : item.onHand < item.threshold * 1.5 ? "text-amber-600" : "text-emerald-600")}>
+                              <div className={'text-[22px] font-bold tracking-tight ' + (isExpired ? "text-red-500" : isCritical ? "text-red-600" : item.onHand < item.threshold * 1.5 ? "text-amber-600" : "text-emerald-600")}>
                                 {item.onHand}
                                 <span className="text-[14px] font-normal text-zinc-400"> / {item.threshold}</span>
                               </div>
@@ -1957,7 +2113,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                             </div>
                             {/* Progress bar */}
                             <div className="w-32 h-2.5 rounded-full bg-zinc-100 overflow-hidden">
-                              <div className={'h-full rounded-full transition-all duration-500 ' + (isExpired ? "bg-purple-400" : isCritical ? "bg-red-500" : item.onHand < item.threshold * 1.5 ? "bg-amber-400" : "bg-emerald-500")} style={{ width: pct + '%' }} />
+                              <div className={'h-full rounded-full transition-all duration-500 ' + (isExpired ? "bg-red-400" : isCritical ? "bg-red-500" : item.onHand < item.threshold * 1.5 ? "bg-amber-400" : "bg-emerald-500")} style={{ width: pct + '%' }} />
                             </div>
                             {/* Actions */}
                             <div className="flex items-center gap-2">
@@ -2078,11 +2234,12 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         </>)}
 
 {/* Receive Modal */}
-        {showReceive && <ReceiveModal inventory={inventory} onUpdateInventory={onUpdateInventory} onTransaction={async (tx) => { setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); onAddAuditLog?.("STOCK_RECEIVED", `${tx.itemName} x${tx.qty} ${tx.unit} — ${tx.reference}`); }} onClose={() => setShowReceive(false)} />}
-        {editingInvItem && <EditInventoryModal item={editingInvItem} onSave={async (updated) => { try { const exists = inventory.some(i => i.id === updated.id); if (exists) { const old = inventory.find(i => i.id === updated.id); onUpdateInventory(inventory.map(i => i.id === updated.id ? updated : i)); onAddAuditLog?.("INVENTORY_EDITED", `${updated.name} (${updated.sku}) updated`); if (old && old.onHand !== updated.onHand) { const diff = updated.onHand - old.onHand; const tx: StockTransaction = { id: `STX-${Date.now()}`, type: diff > 0 ? "in" : "out", itemName: updated.name, itemId: updated.id, qty: Math.abs(diff), unit: updated.unit, reference: "Manual adjustment", timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), group: updated.group, role: "admin" }; setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); } } else { onUpdateInventory([...inventory, updated]); onAddAuditLog?.("INVENTORY_ADDED", `${updated.name} (${updated.sku}) added to ${updated.group}`); } } catch (err) { console.error("Save inventory failed:", err); alert("Failed to save item"); } setEditingInvItem(null); }} onClose={() => setEditingInvItem(null)} />}
+        {showReceive && <ReceiveModal inventory={inventory.filter(i => i.group === warehouseSection)} onUpdateInventory={onUpdateInventory} onTransaction={async (tx) => { setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); onAddAuditLog?.("STOCK_RECEIVED", `${tx.itemName} x${tx.qty} ${tx.unit} — ${tx.reference}`); }} onClose={() => setShowReceive(false)} />}
+        {editingInvItem && <EditInventoryModal item={editingInvItem} onSave={async (updated) => { try { const exists = inventory.some(i => i.id === updated.id); if (exists) { const old = inventory.find(i => i.id === updated.id); onUpdateInventory(inventory.map(i => i.id === updated.id ? updated : i)); onAddAuditLog?.("INVENTORY_EDITED", `${updated.name} (${updated.sku}) updated`); await db.upsertInventory([updated]); if (old && old.onHand !== updated.onHand) { const diff = updated.onHand - old.onHand; const tx: StockTransaction = { id: `STX-${Date.now()}`, type: diff > 0 ? "in" : "out", itemName: updated.name, itemId: updated.id, qty: Math.abs(diff), unit: updated.unit, reference: "Manual adjustment", timestamp: new Date().toLocaleString("en-PH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), group: updated.group, role: "admin" }; setTransactions(prev => [...prev, tx]); await db.insertStockTransaction(tx).catch(console.error); } } else { onUpdateInventory([...inventory, updated]); await db.upsertInventory([updated]); onAddAuditLog?.("INVENTORY_ADDED", `${updated.name} (${updated.sku}) added to ${updated.group}`); } } catch (err) { console.error("Save inventory failed:", err); alert("Failed to save item"); } setEditingInvItem(null); }} onClose={() => setEditingInvItem(null)} />}
         {showEquipmentModal && editingEquipment && createPortal(<EquipmentModal
           equipment={editingEquipment}
           equipmentList={equipment}
+          repairRecords={repairRecords}
           onSave={async (updated) => {
             const isNew = !equipment.some(e => e.id === editingEquipment.id);
             await db.upsertEquipment(updated);
@@ -2095,8 +2252,44 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             }
             setShowEquipmentModal(false);
           }}
+          onAddRepair={async (equipmentId, date, cost, remarks) => {
+            const record = await db.addRepairRecord(equipmentId, date, cost, remarks);
+            setRepairRecords(prev => [...prev, record]);
+          }}
+          onDeleteRepair={async (id) => {
+            await db.deleteRepairRecord(id);
+            setRepairRecords(prev => prev.filter(r => r.id !== id));
+          }}
           onClose={() => setShowEquipmentModal(false)}
         />, document.body)}
+        {showReceiveEquipment && <ReceiveEquipmentModal equipment={equipment} onSave={async (updated) => { await db.upsertEquipment(updated); setEquipment(prev => prev.map(e => e.id === updated.id ? updated : e)); onAddAuditLog?.("EQUIPMENT_RECEIVED", `${updated.name} received from supplier`); setShowReceiveEquipment(false); }} onClose={() => setShowReceiveEquipment(false)} />}
+        {showRepairViewModal && viewingRepairEquipment && createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowRepairViewModal(false)}>
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[18px] font-semibold text-zinc-900">{viewingRepairEquipment.name}</h2>
+              <button onClick={() => setShowRepairViewModal(false)} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600">✕</button>
+            </div>
+            <p className="text-[12px] text-zinc-500 mb-4">Repair History ({repairRecords.filter(r => r.equipmentId === viewingRepairEquipment.id).length} records)</p>
+            {(() => { const reps = repairRecords.filter(r => r.equipmentId === viewingRepairEquipment.id).sort((a, b) => a.repairDate.localeCompare(b.repairDate)); return reps.length === 0 ? (
+              <p className="text-[13px] text-zinc-400 italic">No repairs recorded yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {reps.map((r, idx) => (
+                  <div key={r.id} className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[13px] text-zinc-700">
+                        <span className="font-medium text-zinc-400 mr-2">#{idx + 1}</span>
+                        {new Date(r.repairDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }).replace(/(\w{3})/, "$1.")}
+                      </span>
+                      {r.repairCost > 0 && <span className="ml-2 text-[12px] font-mono font-semibold text-amber-700">{"\u20B1"}{r.repairCost.toFixed(2)}</span>}
+                      {r.remarks && <div className="text-[11px] text-zinc-400 mt-0.5">{r.remarks}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ); })()}
+          </div>
+        </div>, document.body)}
 
         {/* Toast Container */}
         {toast && (
@@ -4546,7 +4739,7 @@ return (
             const sections: { type: string; label: string; items: typeof inventory; icon: string; color: string; border: string; bg: string; iconBg: string }[] = [];
             if (noStock.length) sections.push({ type: "out", label: "Out of Stock", items: noStock, icon: "0", color: "text-zinc-700", border: "border-zinc-200", bg: "bg-zinc-50/80", iconBg: "bg-zinc-500" });
             if (lowStock.length) sections.push({ type: "low", label: "Low Stock", items: lowStock, icon: "!", color: "text-red-700", border: "border-red-200", bg: "bg-red-50/80", iconBg: "bg-red-600" });
-            if (expired.length) sections.push({ type: "exp", label: "Expired", items: expired, icon: "✕", color: "text-purple-700", border: "border-purple-200", bg: "bg-purple-50/80", iconBg: "bg-purple-600" });
+            if (expired.length) sections.push({ type: "exp", label: "Expired", items: expired, icon: "✕", color: "text-red-700", border: "border-red-200", bg: "bg-red-50/80", iconBg: "bg-red-600" });
             if (expiring.length) sections.push({ type: "expg", label: "Expiring Soon", items: expiring, icon: "~", color: "text-amber-700", border: "border-amber-200", bg: "bg-amber-50/80", iconBg: "bg-amber-600" });
             if (sections.length === 0) return <p className="text-[13px] text-zinc-400 text-center py-6">All inventory items are healthy.</p>;
             const allAlerts = [...sections].flatMap(s => s.items.map(item => ({ ...item, alertType: s })));
@@ -5462,6 +5655,7 @@ function ReceiveModal({ inventory, onUpdateInventory, onTransaction, onClose }: 
   inventory: InventoryItem[]; onUpdateInventory: (cb: InventoryItem[] | ((prev: InventoryItem[]) => InventoryItem[])) => void;
   onTransaction: (tx: StockTransaction) => void; onClose: () => void;
 }) {
+  const groupLabel = inventory.length > 0 ? inventory[0].group.replace(/-/g, " ") : "";
   const [selectedItem, setSelectedItem] = useState(inventory[0]?.id || "");
   const [qty, setQty] = useState("");
   const [reference, setReference] = useState("PO-001");
@@ -5497,7 +5691,7 @@ function ReceiveModal({ inventory, onUpdateInventory, onTransaction, onClose }: 
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-all">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 px-6 pb-5 pt-4">
-          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Item</label><select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">{inventory.map(i => (<option key={i.id} value={i.id}>{i.name} ({i.sku}) — {i.onHand} {i.unit}</option>))}</select></div>
+          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Item <span className="text-zinc-300 normal-case">({groupLabel})</span></label>{inventory.length > 0 ? (<select value={selectedItem} onChange={e => setSelectedItem(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">{inventory.map(i => (<option key={i.id} value={i.id}>{i.name} ({i.sku}) — {i.onHand} {i.unit}</option>))}</select>) : (<div className="mt-1 flex h-[42px] items-center rounded-xl border border-dashed border-zinc-200 px-3.5 text-[13px] text-zinc-400">No items in this group yet</div>)}</div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Quantity</label><input required type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Reference / PO</label><input required value={reference} onChange={e => setReference(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
@@ -5597,6 +5791,7 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
     "packaging-materials": ["Boxes", "Bags", "Wraps", "Labels", "Containers"],
     "decoration-supplies": ["Colors", "Toppings", "Glitters", "Fondant", "Sprinkles"],
     "operational-supplies": ["Cleaning", "Office", "Maintenance", "Safety"],
+    "consumables": ["Cleaning", "Sanitary", "Paper", "Gloves", "Aprons", "Cups"],
   };
   const currentCategories = categoriesByGroup[group] || ["General"];
 
@@ -5643,6 +5838,7 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
     <option value="rolls">rolls</option>
     <option value="sheets">sheets</option>
     <option value="cans">cans</option>
+    <option value="gal">gal</option>
   </select>
 </div>
             <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cost (₱)</label><input required type="number" min="0" step="0.01" value={cost} onChange={e => setCost(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
@@ -5676,12 +5872,13 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
             ) : (
               <>
                 <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Group</label>
-                  <select value={group} onChange={e => setGroup(e.target.value as InventoryItem["group"])} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">
-                    <option value="ingredients">Ingredients</option>
-                    <option value="packaging-materials">Packaging Materials</option>
-                    <option value="decoration-supplies">Decoration Supplies</option>
-                    <option value="operational-supplies">Operational Supplies</option>
-                  </select>
+                    <select value={group} onChange={e => setGroup(e.target.value as InventoryItem["group"])} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">
+                      <option value="ingredients">Ingredients</option>
+                      <option value="packaging-materials">Packaging Materials</option>
+                      <option value="decoration-supplies">Decoration Supplies</option>
+                      <option value="operational-supplies">Operational Supplies</option>
+                      <option value="consumables">Consumables</option>
+                    </select>
                 </div>
                 <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">On Hand</label><input required type="number" min="0" value={onHand} onChange={e => setOnHand(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
               </>

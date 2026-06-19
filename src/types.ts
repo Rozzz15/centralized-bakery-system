@@ -11,7 +11,7 @@ export type InventoryItem = {
   supplier: string;
   lastIn: string;
   category: "dry" | "dairy" | "produce" | "packaging" | "Cakes" | "Breads" | "Pastries" | "Fillings" | "Frostings" | "Toppings" | "Decorations";
-  group: "ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies";
+  group: "ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "consumables";
   expiryDate?: string;
   accessRoles?: Role[];
   source?: "production-prep" | "manual" | "came-from-baker";
@@ -393,11 +393,19 @@ export type Equipment = {
   id: string;
   name: string;
   datePurchased: string;
+  dateRepaired: string;
   costPrice: number;
-  sku: string;
   supplier: string;
   status: "active" | "maintenance" | "retired";
   notes: string;
+};
+
+export type RepairRecord = {
+  id: string;
+  equipmentId: string;
+  repairDate: string;
+  repairCost: number;
+  remarks: string;
 };
 
 export type ProductionPlan = {

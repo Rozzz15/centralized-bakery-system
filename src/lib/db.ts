@@ -5,7 +5,7 @@ import type {
   StockTransaction, DeliveryValidation, VerificationResult,
   BranchBatch, DeliveryReport, KitchenFeedback, DecoSubTask, DecoQCResult,
   ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog,
-  PromoPackage, ProductionPlan,
+  PromoPackage, ProductionPlan, Equipment, RepairRecord,
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
@@ -36,6 +36,7 @@ const INVENTORY_TABLES: Record<string, string> = {
   "packaging-materials": "packaging_materials",
   "decoration-supplies": "decoration_supplies",
   "operational-supplies": "operational_supplies",
+  "consumables": "consumables",
 };
 
 function parseInventoryItem(d: any, group: string): InventoryItem {
@@ -77,9 +78,9 @@ export async function upsertInventoryItem(item: InventoryItem) {
 
 export async function upsertInventory(items: InventoryItem[]) {
   // Tables that have 'size', 'source', 'access_roles' columns
-  const TABLES_WITH_SIZE = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies"]);
-  const TABLES_WITH_SOURCE = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies"]);
-  const TABLES_WITH_ACCESS = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies"]);
+  const TABLES_WITH_SIZE = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies", "consumables"]);
+  const TABLES_WITH_SOURCE = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies", "consumables"]);
+  const TABLES_WITH_ACCESS = new Set(["ingredients", "decoration_supplies", "packaging_materials", "operational_supplies", "consumables"]);
   // Group items by table, then batch-upsert each table with one call
   const grouped = new Map<string, InventoryItem[]>();
   for (const item of items) {
@@ -576,7 +577,7 @@ export async function replaceStockTransactions(txs: StockTransaction[]) {
   if (txs.length === 0) return;
   const { error } = await supabase.from("stock_transactions").insert(txs.map(t => ({
     id: t.id, type: t.type, item_name: t.itemName, item_id: t.itemId,
-    qty: t.qty, unit: t.unit, reference: t.reference, timestamp: t.timestamp, target: t.target, role: t.role || "",
+    qty: t.qty, unit: t.unit, reference: t.reference, timestamp: t.timestamp, target: t.target, group_name: t.group || "", role: t.role || "",
   })));
   if (error) throw error;
 }
@@ -926,12 +927,14 @@ export async function fetchFreezerItems(): Promise<FreezerItem[]> {
     return [];
   }
 }
-export async function upsertFreezerItems(items: FreezerItem[]) {
+export async function upsertFreezerItems(items: FreezerItem[]): Promise<boolean> {
   try {
     const { error } = await supabase.from("freezer_items").upsert(items.map(toFreezerRow), { onConflict: "id" });
     if (error) throw error;
+    return true;
   } catch (e) {
     console.error("freezer_items upsert failed:", e);
+    return false;
   }
 }
 export async function deleteFreezerItem(id: string) {
@@ -1285,45 +1288,98 @@ export async function deleteProductionPlan(id: string) {
 
 
 // ─── Equipment ───
-function parseEquipment(d: any): import("../types").Equipment {
+function parseEquipment(d: any): Equipment {
   return {
     id: d.id,
     name: d.name,
     datePurchased: d.date_purchased ?? "",
+    dateRepaired: d.date_repaired ?? "",
     costPrice: d.cost_price ?? 0,
-    sku: d.sku ?? "",
     supplier: d.supplier ?? "",
     status: d.status ?? "active",
     notes: d.notes ?? "",
   };
 }
 
-function toEquipmentRow(e: import("../types").Equipment) {
+function toEquipmentRow(e: Equipment) {
   return {
     id: e.id,
     name: e.name,
     date_purchased: e.datePurchased,
+    date_repaired: e.dateRepaired,
     cost_price: e.costPrice,
-    sku: e.sku,
     supplier: e.supplier,
     status: e.status,
     notes: e.notes,
   };
 }
 
-export async function fetchEquipment(): Promise<import("../types").Equipment[]> {
+export async function fetchEquipment(): Promise<Equipment[]> {
   const { data, error } = await supabase.from("equipment").select("*").order("name");
   if (error) throw error;
   return (data ?? []).map(parseEquipment);
 }
 
-export async function upsertEquipment(item: import("../types").Equipment) {
+export async function upsertEquipment(item: Equipment) {
   const { error } = await supabase.from("equipment").upsert(toEquipmentRow(item), { onConflict: "id" });
   if (error) throw error;
 }
 
 export async function deleteEquipment(id: string) {
   const { error } = await supabase.from("equipment").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ─── Repair History ───
+function parseRepairRecord(d: any): RepairRecord {
+  return {
+    id: d.id,
+    equipmentId: d.equipment_id,
+    repairDate: d.repair_date ?? "",
+    repairCost: d.repair_cost ?? 0,
+    remarks: d.remarks ?? "",
+  };
+}
+
+function toRepairRow(r: RepairRecord) {
+  return {
+    id: r.id,
+    equipment_id: r.equipmentId,
+    repair_date: r.repairDate,
+    repair_cost: r.repairCost,
+    remarks: r.remarks,
+  };
+}
+
+export async function fetchRepairRecords(equipmentId: string): Promise<RepairRecord[]> {
+  const { data, error } = await supabase
+    .from("repair_history")
+    .select("*")
+    .eq("equipment_id", equipmentId)
+    .order("repair_date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(parseRepairRecord);
+}
+
+export async function fetchAllRepairRecords(): Promise<RepairRecord[]> {
+  const { data, error } = await supabase
+    .from("repair_history")
+    .select("*")
+    .order("repair_date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(parseRepairRecord);
+}
+
+export async function addRepairRecord(equipmentId: string, repairDate: string, repairCost: number = 0, remarks: string = ""): Promise<RepairRecord> {
+  const id = `RPR-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const record: RepairRecord = { id, equipmentId, repairDate, repairCost, remarks };
+  const { error } = await supabase.from("repair_history").insert(toRepairRow(record));
+  if (error) throw error;
+  return record;
+}
+
+export async function deleteRepairRecord(id: string) {
+  const { error } = await supabase.from("repair_history").delete().eq("id", id);
   if (error) throw error;
 }
 
