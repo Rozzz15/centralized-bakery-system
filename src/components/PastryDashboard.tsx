@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import type { DOSItem, FreezerItem, FreezerHistory, InventoryItem, PromoPackage, PastryAssemblyTask, ProductRecipe, StockTransaction } from "../types";
+import type { DOSItem, FreezerItem, FreezerHistory, InventoryItem, PromoPackage, PastryAssemblyTask, ProductRecipe, StockTransaction, BatchInventoryItem } from "../types";
 import * as db from "../lib/db";
 
 type Props = {
@@ -65,7 +65,12 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
   const [newBatch, setNewBatch] = useState("");
   const [newNotes, setNewNotes] = useState("");
   const [freezerSearch, setFreezerSearch] = useState("");
-  const [freezerTab, setFreezerTab] = useState<"assembled" | "components" | "my-inventory">("assembled");
+  const [freezerTab, setFreezerTab] = useState<"assembled" | "my-inventory" | "batch-inventory">("assembled");
+  const [batchInventory, setBatchInventory] = useState<BatchInventoryItem[]>([]);
+  const [showAddBatch, setShowAddBatch] = useState(false);
+  const [showUseBatch, setShowUseBatch] = useState(false);
+  const [usingBatchItem, setUsingBatchItem] = useState<BatchInventoryItem | null>(null);
+  const [useBatchQty, setUseBatchQty] = useState("");
 
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [inventoryUsageSearch, setInventoryUsageSearch] = useState("");
@@ -75,6 +80,7 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
 
   useEffect(() => {
     db.fetchPastryAssemblyTasks().then(setAssemblyTasks).catch(console.error);
+    db.fetchBatchInventory().then(setBatchInventory).catch(() => {});
   }, [activeTab]);
 
   // Reset acquired products when entering Step 1 for a promo/package
@@ -428,6 +434,25 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
     };
     onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, assembledItem]);
     db.upsertFreezerItems([assembledItem]).catch(console.error);
+
+      const productNameLower = assembledItem.productName.toLowerCase();
+    if (productNameLower.includes("brownies") || productNameLower.includes("brownie")) {
+      const isPackage = productNameLower.includes("package") || productNameLower.includes("packaged");
+      const piecesPerPan = isPackage ? 60 : 20;
+      const batchItem: BatchInventoryItem = {
+        id: `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        productName: isPackage ? "Brownies (Package)" : "Brownies",
+        totalPieces: producedCount * piecesPerPan,
+        remainingPieces: producedCount * piecesPerPan,
+        unit: "pan",
+        piecesPerPan,
+        dateProduced: today,
+        status: "stored",
+        notes: `Auto-saved from Pastry Production — ${producedCount} pan(s) × ${piecesPerPan} pcs`,
+      };
+      await db.upsertBatchInventory(batchItem).catch(console.error);
+      setBatchInventory(prev => [batchItem, ...prev]);
+    }
 
     const historyEntry: FreezerHistory = {
       id: `FRZH-${Date.now()}`,
@@ -1664,9 +1689,7 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
   if (activeTab === "freezer") {
     const pastryItems = freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored");
     const assembledItems = pastryItems.filter(i => i.notes?.toLowerCase().includes("assembled") || i.notes?.toLowerCase().includes("packaged"));
-    const componentItems = freezerItems.filter(i => i.producedBy === "pastry" && i.status === "stored" && !i.notes?.toLowerCase().includes("assembled") && !i.notes?.toLowerCase().includes("packaged"));
-    const tabItems = freezerTab === "components" ? componentItems : assembledItems;
-    const filtered = tabItems.filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()));
+    const filtered = assembledItems.filter(i => !freezerSearch || i.productName.toLowerCase().includes(freezerSearch.toLowerCase()));
 
     return (
       <div className="space-y-5">
@@ -1681,16 +1704,16 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
 
         <div className="flex gap-2 rounded-2xl bg-zinc-100 p-1.5">
           <button onClick={() => setFreezerTab("assembled")} className={`flex-1 rounded-xl py-3 text-[14px] font-semibold transition-all ${freezerTab === "assembled" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>Assembled Packages</button>
-          <button onClick={() => setFreezerTab("components")} className={`flex-1 rounded-xl py-3 text-[14px] font-semibold transition-all ${freezerTab === "components" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>Component Stock</button>
           <button onClick={() => setFreezerTab("my-inventory")} className={`flex-1 rounded-xl py-3 text-[14px] font-semibold transition-all ${freezerTab === "my-inventory" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>My Inventory</button>
+          <button onClick={() => setFreezerTab("batch-inventory")} className={`flex-1 rounded-xl py-3 text-[14px] font-semibold transition-all ${freezerTab === "batch-inventory" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}>Batch Inventory</button>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {[{ tab: "assembled", label: "Assembled Packages", count: assembledItems.length },
-            { tab: "components", label: "Component Stock", count: componentItems.length },
-            { tab: "my-inventory", label: "My Inventory", count: pastryAccessInventory.length }
+            { tab: "my-inventory", label: "My Inventory", count: pastryAccessInventory.length },
+            { tab: "batch-inventory", label: "Batch Inventory", count: batchInventory.filter(b => b.status === "stored" && b.remainingPieces > 0).length }
           ].map(({ tab, label, count }) => (
-            <button key={tab} onClick={() => setFreezerTab(tab as "assembled" | "components" | "my-inventory")} className={`rounded-2xl border p-5 text-left transition-all hover:shadow-md ${freezerTab === tab ? "bg-amber-50 border-amber-300" : "bg-white border-zinc-200 hover:border-zinc-300"}`}>
+            <button key={tab} onClick={() => setFreezerTab(tab as typeof freezerTab)} className={`rounded-2xl border p-5 text-left transition-all hover:shadow-md ${freezerTab === tab ? "bg-amber-50 border-amber-300" : "bg-white border-zinc-200 hover:border-zinc-300"}`}>
               <div className="text-[12px] text-zinc-400 uppercase tracking-wider font-semibold">{label}</div>
               <div className="text-[28px] font-bold text-zinc-900 mt-2">{count}</div>
             </button>
@@ -1702,7 +1725,72 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
           <input value={freezerSearch} onChange={e => setFreezerSearch(e.target.value)} placeholder="Search products..." className="w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-3 py-2.5 text-[13px] focus:outline-none focus:border-zinc-400" />
         </div>
 
-        {freezerTab === "my-inventory" ? (
+        {freezerTab === "batch-inventory" ? (
+          <div className="rounded-[24px] border border-amber-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 bg-amber-50/60 border-b border-amber-100">
+              <div>
+                <span className="text-[11px] uppercase tracking-wider font-semibold text-amber-700">Batch Inventory</span>
+                <span className="ml-2 text-[10px] text-amber-600">({batchInventory.filter(b => b.status === "stored" && b.remainingPieces > 0).length} active pans)</span>
+              </div>
+              <button onClick={() => setShowAddBatch(true)} className="rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-amber-700 transition-colors">+ Add Pan</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-zinc-50 border-b border-zinc-100">
+                  <tr className="text-[11px] uppercase tracking-wider text-zinc-500" style={{ fontFamily: "Fragment Mono, monospace" }}>
+                    <th className="px-5 py-3">Product</th>
+                    <th className="px-5 py-3">Unit</th>
+                    <th className="px-5 py-3 text-right">Pcs/Pan</th>
+                    <th className="px-5 py-3 text-right">Total Pcs</th>
+                    <th className="px-5 py-3 text-right">Remaining Pcs</th>
+                    <th className="px-5 py-3">Date Produced</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Notes</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50">
+                  {batchInventory.filter(b => !freezerSearch || b.productName.toLowerCase().includes(freezerSearch.toLowerCase())).length === 0 ? (
+                    <tr><td colSpan={8} className="px-5 py-12 text-center text-[13px] text-zinc-400">No batch items yet. Add a pan to get started.</td></tr>
+                  ) : batchInventory.filter(b => !freezerSearch || b.productName.toLowerCase().includes(freezerSearch.toLowerCase())).map(batch => {
+                    const pct = batch.totalPieces > 0 ? (batch.remainingPieces / batch.totalPieces) * 100 : 0;
+                    const isEmpty = batch.remainingPieces === 0;
+                    const isPartial = batch.remainingPieces > 0 && batch.remainingPieces < batch.totalPieces;
+                    return (
+                    <tr key={batch.id} className={`transition-colors ${isEmpty ? 'bg-zinc-50' : isPartial ? 'bg-amber-50/50 hover:bg-amber-50' : 'hover:bg-zinc-50/50'}`}>
+                      <td className="px-5 py-3.5">
+                        <div className="text-[13px] font-medium text-zinc-900">{batch.productName}</div>
+                      </td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-500 uppercase font-medium">{batch.unit}</td>
+                      <td className="px-5 py-3.5 text-[13px] text-right font-mono text-zinc-700">{batch.piecesPerPan} pcs</td>
+                      <td className="px-5 py-3.5 text-[13px] text-right font-mono font-semibold text-zinc-700">{batch.totalPieces}</td>
+                      <td className="px-5 py-3.5 text-right">
+                        <div className={`text-[15px] font-bold font-mono ${isEmpty ? "text-zinc-400" : isPartial ? "text-amber-700" : "text-emerald-600"}`}>{batch.remainingPieces}</div>
+                        <div className="w-20 h-1.5 rounded-full bg-zinc-100 overflow-hidden mt-1 ml-auto">
+                          <div className={`h-full rounded-full transition-all ${isEmpty ? "bg-zinc-300" : isPartial ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: pct + '%' }} />
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5 text-[13px] text-zinc-500">{batch.dateProduced || "\u2014"}</td>
+                      <td className="px-5 py-3.5">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${batch.status === "stored" ? (isEmpty ? "bg-zinc-100 text-zinc-500" : "bg-emerald-100 text-emerald-700") : batch.status === "used" ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-600"}`}>{batch.status}{isEmpty ? " (empty)" : ""}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-[12px] text-zinc-500 max-w-[150px] truncate" title={batch.notes}>{batch.notes || "\u2014"}</td>
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {!isEmpty && batch.status === "stored" && (
+                            <button onClick={() => { setUsingBatchItem(batch); setUseBatchQty(""); setShowUseBatch(true); }} className="rounded-lg bg-amber-100 border border-amber-200 px-2.5 py-1.5 text-[11px] font-medium text-amber-700 hover:bg-amber-200 transition-all">Use</button>
+                          )}
+                          <button onClick={() => { if (confirm(`Delete ${batch.productName} batch?`)) { db.deleteBatchInventory(batch.id).catch(console.error); setBatchInventory(prev => prev.filter(b => b.id !== batch.id)); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                        </div>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : freezerTab === "my-inventory" ? (
           <div className="rounded-[24px] border border-rose-200 bg-white shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 bg-rose-50/60 border-b border-rose-100">
               <div>
@@ -1747,7 +1835,7 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
             g.items.push(f);
             g.totalQty += f.qty;
           });
-          const tabLabel = freezerTab === "assembled" ? "Assembled Packages" : "Component Stock";
+          const tabLabel = "Assembled Packages";
           return (
             <div className="rounded-[24px] border border-rose-200 bg-white shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-5 py-3 bg-rose-50/60 border-b border-rose-100">
@@ -1944,6 +2032,119 @@ export default function PastryDashboard({ dosItems, activeTab, newDOSIds, onMark
             </div>
           </div>
         )}
+
+        {showAddBatch && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowAddBatch(false)}>
+            <div className="w-full max-w-lg rounded-2xl bg-white p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <h2 className="text-xl font-bold mb-6">Add Pan to Batch Inventory</h2>
+              <div className="space-y-4">
+                <div><label className="text-xs font-medium uppercase tracking-wider text-zinc-500 mb-2 block">Product Name</label>
+                  <input value={newBatch} onChange={e => setNewBatch(e.target.value)} placeholder="e.g. Brownies, Butter Cake" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-base outline-none focus:border-zinc-400 transition-all" />
+                </div>
+                <div className="grid grid-cols-4 gap-4">
+                  <div><label className="text-xs font-medium uppercase tracking-wider text-zinc-500 mb-2 block">Quantity</label>
+                    <input type="number" min="1" value={newQty} onChange={e => setNewQty(e.target.value)} placeholder="e.g. 1" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-base outline-none focus:border-zinc-400 transition-all" />
+                  </div>
+                  <div><label className="text-xs font-medium uppercase tracking-wider text-zinc-500 mb-2 block">Unit</label>
+                    <select id="batch-unit" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-base outline-none focus:border-zinc-400 transition-all">
+                      <option value="pan">Pan</option>
+                      <option value="pcs">Pcs</option>
+                    </select>
+                  </div>
+                  <div><label className="text-xs font-medium uppercase tracking-wider text-zinc-500 mb-2 block">Pcs/Pan</label>
+                    <input type="number" min="1" id="batch-pps" defaultValue="20" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-base outline-none focus:border-zinc-400 transition-all" />
+                  </div>
+                  <div><label className="text-xs font-medium uppercase tracking-wider text-zinc-500 mb-2 block">Date Produced</label>
+                    <input type="date" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-base outline-none focus:border-zinc-400 transition-all" defaultValue={new Date().toISOString().split("T")[0]} id="batch-date" />
+                  </div>
+                </div>
+                <div><label className="text-xs font-medium uppercase tracking-wider text-zinc-500 mb-2 block">Notes (optional)</label>
+                  <input value={newNotes} onChange={e => setNewNotes(e.target.value)} placeholder="e.g. Cut into 60 pieces" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-base outline-none focus:border-zinc-400 transition-all" />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setShowAddBatch(false)} className="flex-1 rounded-xl border border-zinc-200 py-3 text-base font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Cancel</button>
+                <button disabled={!newBatch.trim() || !newQty} onClick={async () => {
+                  const dateInput = document.getElementById("batch-date") as HTMLInputElement;
+                  const unitInput = document.getElementById("batch-unit") as HTMLSelectElement;
+                  const ppsInput = document.getElementById("batch-pps") as HTMLInputElement;
+                  const item: BatchInventoryItem = {
+                    id: `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    productName: newBatch.trim(),
+                    totalPieces: parseInt(newQty) || 0,
+                    remainingPieces: parseInt(newQty) || 0,
+                    unit: unitInput?.value || "pan",
+                    piecesPerPan: parseInt(ppsInput?.value) || 20,
+                    dateProduced: dateInput?.value || new Date().toISOString().split("T")[0],
+                    status: "stored",
+                    notes: newNotes.trim(),
+                  };
+                  await db.upsertBatchInventory(item).catch(console.error);
+                  setBatchInventory(prev => [item, ...prev]);
+                  setShowAddBatch(false);
+                  setNewBatch(""); setNewQty(""); setNewNotes("");
+                }} className="flex-1 rounded-xl bg-amber-600 py-3 text-base font-medium text-white hover:bg-amber-700 transition-all disabled:opacity-40">Add Pan</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showUseBatch && usingBatchItem && (() => {
+          const pps = usingBatchItem.piecesPerPan || 20;
+          return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowUseBatch(false)}>
+            <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+              <h2 className="text-xl font-bold mb-2">Use Pieces from Pan</h2>
+              <p className="text-[13px] text-zinc-500 mb-6">{usingBatchItem.productName} — {usingBatchItem.remainingPieces} pcs remaining ({pps} pcs/pan)</p>
+              <div className="space-y-4">
+                <div><label className="text-xs font-medium uppercase tracking-wider text-zinc-500 mb-2 block">Pieces to Use</label>
+                  <input type="number" min="1" max={usingBatchItem.remainingPieces} value={useBatchQty} onChange={e => setUseBatchQty(e.target.value)} placeholder={`e.g. ${pps}`} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-base outline-none focus:border-zinc-400 transition-all" />
+                  <p className="text-[11px] text-zinc-400 mt-1">Remaining after use: {Math.max(0, usingBatchItem.remainingPieces - (parseInt(useBatchQty) || 0))} pcs</p>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setShowUseBatch(false)} className="flex-1 rounded-xl border border-zinc-200 py-3 text-base font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Cancel</button>
+                <button disabled={!useBatchQty || parseInt(useBatchQty) <= 0 || parseInt(useBatchQty) > usingBatchItem.remainingPieces} onClick={async () => {
+                  const usedPcs = parseInt(useBatchQty) || 0;
+                  const newRemaining = usingBatchItem.remainingPieces - usedPcs;
+
+                  const updatedBatch: BatchInventoryItem = {
+                    ...usingBatchItem,
+                    remainingPieces: newRemaining,
+                    status: newRemaining === 0 ? "used" : "stored",
+                  };
+                  await db.upsertBatchInventory(updatedBatch).catch(console.error);
+                  setBatchInventory(prev => prev.map(b => b.id === updatedBatch.id ? updatedBatch : b));
+
+                  const today = new Date().toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
+                  const assembledItem: FreezerItem = {
+                    id: `FRZ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    productName: usingBatchItem.productName,
+                    qty: usedPcs,
+                    unit: "pcs",
+                    batchRef: `BATCH-${usingBatchItem.id}`,
+                    producedBy: "pastry",
+                    dateProduced: today,
+                    status: "stored",
+                    notes: `Assembled — ${usedPcs} pcs from ${usingBatchItem.productName}`,
+                  };
+                  onUpdateFreezer?.((prev: FreezerItem[]) => [...prev, assembledItem]);
+                  db.upsertFreezerItems([assembledItem]).catch(console.error);
+
+                  const toastDiv = document.createElement("div");
+                  toastDiv.style.cssText = "position:fixed;top:16px;right:16px;z-index:99999;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:16px;padding:12px 20px;box-shadow:0 10px 25px rgba(0,0,0,0.15);display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500;color:#065f46;";
+                  toastDiv.innerHTML = '<svg style="width:20px;height:20px;color:#059669;flex-shrink:0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>' + `${usedPcs} pcs of ${usingBatchItem.productName} added to Assembled Packages (${newRemaining} pcs remaining)`;
+                  document.body.appendChild(toastDiv);
+                  setTimeout(() => { if (toastDiv.parentNode) toastDiv.parentNode.removeChild(toastDiv); }, 4000);
+
+                  setShowUseBatch(false);
+                  setUseBatchQty("");
+                }} className="flex-1 rounded-xl bg-amber-600 py-3 text-base font-medium text-white hover:bg-amber-700 transition-all disabled:opacity-40">Use Pieces</button>
+              </div>
+            </div>
+          </div>
+          );
+        })()}
       </div>
     );
   }

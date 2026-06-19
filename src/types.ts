@@ -250,6 +250,18 @@ export type FreezerHistory = {
   timestamp: string;
 };
 
+export type BatchInventoryItem = {
+  id: string;
+  productName: string;
+  totalPieces: number;
+  remainingPieces: number;
+  unit: string;
+  piecesPerPan: number;
+  dateProduced: string;
+  status: "stored" | "used" | "expired";
+  notes: string;
+};
+
 export type Purchase = {
   id: string;
   supplierName: string;
@@ -403,6 +415,28 @@ export type Equipment = {
 export type RepairRecord = {
   id: string;
   equipmentId: string;
+  repairDate: string;
+  repairCost: number;
+  remarks: string;
+};
+
+export type BakeryTool = {
+  id: string;
+  name: string;
+  datePurchased: string;
+  dateRepaired: string;
+  costPrice: number;
+  supplier: string;
+  status: "active" | "maintenance" | "retired";
+  notes: string;
+  onHand: number;
+  threshold: number;
+  category: string;
+};
+
+export type ToolRepairRecord = {
+  id: string;
+  toolId: string;
   repairDate: string;
   repairCost: number;
   remarks: string;

@@ -5,7 +5,7 @@ import type {
   StockTransaction, DeliveryValidation, VerificationResult,
   BranchBatch, DeliveryReport, KitchenFeedback, DecoSubTask, DecoQCResult,
   ProductPricing, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog,
-  PromoPackage, ProductionPlan, Equipment, RepairRecord,
+  PromoPackage, ProductionPlan, Equipment, RepairRecord, BakeryTool, ToolRepairRecord, BatchInventoryItem,
 } from "../types";
 
 function parseDOS(d: any): DOSItem {
@@ -1390,4 +1390,153 @@ export async function uploadReferenceImage(file: File, dosItemId: string): Promi
   if (error) throw error;
   const { data } = supabase.storage.from("reference-images").getPublicUrl(path);
   return data.publicUrl;
+}
+
+
+// ─── Bakery Tools ───
+function parseBakeryTool(d: any): BakeryTool {
+  return {
+    id: d.id,
+    name: d.name,
+    datePurchased: d.date_purchased ?? "",
+    dateRepaired: d.date_repaired ?? "",
+    costPrice: d.cost_price ?? 0,
+    supplier: d.supplier ?? "",
+    status: d.status ?? "active",
+    notes: d.notes ?? "",
+    onHand: d.on_hand ?? 0,
+    threshold: d.threshold ?? 0,
+    category: d.category ?? "",
+  };
+}
+
+function toBakeryToolRow(e: BakeryTool) {
+  return {
+    id: e.id,
+    name: e.name,
+    date_purchased: e.datePurchased,
+    date_repaired: e.dateRepaired,
+    cost_price: e.costPrice,
+    supplier: e.supplier,
+    status: e.status,
+    notes: e.notes,
+    on_hand: e.onHand,
+    threshold: e.threshold,
+    category: e.category,
+  };
+}
+
+export async function fetchBakeryTools(): Promise<BakeryTool[]> {
+  const { data, error } = await supabase.from("bakery_tools").select("*").order("name");
+  if (error) throw error;
+  return (data ?? []).map(parseBakeryTool);
+}
+
+export async function upsertBakeryTool(item: BakeryTool) {
+  const { error } = await supabase.from("bakery_tools").upsert(toBakeryToolRow(item), { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteBakeryTool(id: string) {
+  const { error } = await supabase.from("bakery_tools").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ─── Tool Repair History ───
+function parseToolRepairRecord(d: any): ToolRepairRecord {
+  return {
+    id: d.id,
+    toolId: d.tool_id,
+    repairDate: d.repair_date ?? "",
+    repairCost: d.repair_cost ?? 0,
+    remarks: d.remarks ?? "",
+  };
+}
+
+function toToolRepairRow(r: ToolRepairRecord) {
+  return {
+    id: r.id,
+    tool_id: r.toolId,
+    repair_date: r.repairDate,
+    repair_cost: r.repairCost,
+    remarks: r.remarks,
+  };
+}
+
+export async function fetchToolRepairRecords(toolId: string): Promise<ToolRepairRecord[]> {
+  const { data, error } = await supabase
+    .from("tool_repair_history")
+    .select("*")
+    .eq("tool_id", toolId)
+    .order("repair_date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(parseToolRepairRecord);
+}
+
+export async function fetchAllToolRepairRecords(): Promise<ToolRepairRecord[]> {
+  const { data, error } = await supabase
+    .from("tool_repair_history")
+    .select("*")
+    .order("repair_date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(parseToolRepairRecord);
+}
+
+export async function addToolRepairRecord(toolId: string, repairDate: string, repairCost: number = 0, remarks: string = ""): Promise<ToolRepairRecord> {
+  const id = `TRPR-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const record: ToolRepairRecord = { id, toolId, repairDate, repairCost, remarks };
+  const { error } = await supabase.from("tool_repair_history").insert(toToolRepairRow(record));
+  if (error) throw error;
+  return record;
+}
+
+export async function deleteToolRepairRecord(id: string) {
+  const { error } = await supabase.from("tool_repair_history").delete().eq("id", id);
+  if (error) throw error;
+}
+
+
+// ─── Batch Inventory ───
+function parseBatchInventory(d: any): BatchInventoryItem {
+  return {
+    id: d.id,
+    productName: d.product_name ?? "",
+    totalPieces: d.total_pieces ?? 0,
+    remainingPieces: d.remaining_pieces ?? 0,
+    unit: d.unit ?? "pcs",
+    piecesPerPan: d.pieces_per_pan ?? 20,
+    dateProduced: d.date_produced ?? "",
+    status: d.status ?? "stored",
+    notes: d.notes ?? "",
+  };
+}
+
+function toBatchInventoryRow(b: BatchInventoryItem) {
+  return {
+    id: b.id,
+    product_name: b.productName,
+    total_pieces: b.totalPieces,
+    remaining_pieces: b.remainingPieces,
+    unit: b.unit,
+    pieces_per_pan: b.piecesPerPan,
+    date_produced: b.dateProduced,
+    status: b.status,
+    notes: b.notes,
+  };
+}
+
+export async function fetchBatchInventory(): Promise<BatchInventoryItem[]> {
+  const { data, error } = await supabase.from("batch_inventory").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(parseBatchInventory);
+}
+
+export async function upsertBatchInventory(item: BatchInventoryItem) {
+  const { error } = await supabase.from("batch_inventory").upsert(toBatchInventoryRow(item), { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteBatchInventory(id: string) {
+  const { error } = await supabase.from("batch_inventory").delete().eq("id", id);
+  if (error) throw error;
 }

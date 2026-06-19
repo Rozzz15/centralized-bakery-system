@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { createPortal } from "react-dom";
-import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, ProductPricingVariant, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage, Equipment, RepairRecord } from "../types";
+import type { InventoryItem, DOSItem, ProductionTask, Delivery, AuditLog, KPIs, StockTransaction, DeliveryValidation, ProductRecipe, RecipeIngredient, MaterialRequest, BakerIngredientRequest, ProductPricing, ProductPricingVariant, Role, FreezerItem, FreezerHistory, Purchase, BillDue, Revenue, WasteLog, PromoPackage, Equipment, RepairRecord, BakeryTool } from "../types";
 import type { ProductRoute } from "../lib/db";
 import * as db from "../lib/db";
 import DOSBuilderModal from "./DOSBuilderModal";
@@ -249,6 +249,162 @@ function ReceiveEquipmentModal({ equipment, onSave, onClose }: {
   );
 }
 
+function BakeryToolModal({ tool, toolList, onSave, onClose }: {
+  tool: BakeryTool;
+  toolList: BakeryTool[];
+  onSave: (item: BakeryTool) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [toolName, setToolName] = useState(tool.name);
+  const [toolDatePurchased, setToolDatePurchased] = useState(tool.datePurchased);
+  const [toolCostPrice, setToolCostPrice] = useState(tool.costPrice);
+  const [toolSupplier, setToolSupplier] = useState(tool.supplier);
+  const [toolStatus, setToolStatus] = useState(tool.status);
+  const [toolNotes, setToolNotes] = useState(tool.notes);
+  const [toolOnHand, setToolOnHand] = useState(tool.onHand);
+  const [toolThreshold, setToolThreshold] = useState(tool.threshold);
+  const [toolCategory, setToolCategory] = useState(tool.category);
+  const [toolSaving, setToolSaving] = useState(false);
+  const isNew = !toolList.some(t => t.id === tool.id);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h2 className="text-[18px] font-semibold mb-4">{isNew ? "Add Bakery Tool" : "Edit Bakery Tool"}</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Name</label>
+            <input value={toolName} onChange={e => setToolName(e.target.value)} placeholder="Tool name" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">On Hand</label>
+              <input type="number" min="0" value={toolOnHand || ""} onChange={e => setToolOnHand(parseInt(e.target.value) || 0)} placeholder="0" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] font-mono outline-none focus:border-zinc-400" />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Threshold</label>
+              <input type="number" min="0" value={toolThreshold || ""} onChange={e => setToolThreshold(parseInt(e.target.value) || 0)} placeholder="0" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] font-mono outline-none focus:border-zinc-400" />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Category</label>
+              <input value={toolCategory} onChange={e => setToolCategory(e.target.value)} placeholder="e.g. Hand Tools" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Date Purchased</label>
+              <input type="date" value={toolDatePurchased} onChange={e => setToolDatePurchased(e.target.value)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Cost Price (₱)</label>
+              <input type="number" min="0" step="0.01" value={toolCostPrice || ""} onChange={e => setToolCostPrice(parseFloat(e.target.value) || 0)} placeholder="0.00" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] font-mono outline-none focus:border-zinc-400" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Supplier</label>
+              <input value={toolSupplier} onChange={e => setToolSupplier(e.target.value)} placeholder="Supplier name" className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400" />
+            </div>
+            <div>
+              <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Status</label>
+              <select value={toolStatus} onChange={e => setToolStatus(e.target.value as typeof toolStatus)} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400">
+                <option value="active">Active</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="retired">Retired</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-1 block">Remarks</label>
+            <textarea value={toolNotes} onChange={e => setToolNotes(e.target.value)} placeholder="Optional remarks" rows={2} className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-[13px] outline-none focus:border-zinc-400 resize-none" />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50">Cancel</button>
+          <button disabled={!toolName.trim() || toolSaving} onClick={async () => {
+            setToolSaving(true);
+            try {
+              const updated: BakeryTool = {
+                ...tool,
+                name: toolName.trim(),
+                datePurchased: toolDatePurchased,
+                dateRepaired: tool.dateRepaired,
+                costPrice: toolCostPrice,
+                supplier: toolSupplier.trim(),
+                status: toolStatus,
+                notes: toolNotes.trim(),
+                onHand: toolOnHand,
+                threshold: toolThreshold,
+                category: toolCategory.trim(),
+              };
+              await onSave(updated);
+            } catch (err) {
+              console.error("Save tool failed:", err);
+              alert("Failed to save tool");
+            } finally {
+              setToolSaving(false);
+            }
+          }} className="flex-1 rounded-xl bg-zinc-900 py-2.5 text-[13px] font-medium text-white hover:bg-zinc-800 disabled:opacity-40">{toolSaving ? "Saving..." : isNew ? "Add Tool" : "Save Changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReceiveBakeryToolModal({ tools, onSave, onClose }: {
+  tools: BakeryTool[]; onSave: (item: BakeryTool) => Promise<void>; onClose: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState(tools[0]?.id || "");
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split("T")[0]);
+  const [costPrice, setCostPrice] = useState("");
+  const [supplier, setSupplier] = useState("");
+  const [reference, setReference] = useState("PO-001");
+
+  const selected = tools.find(t => t.id === selectedId);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected) return;
+    await onSave({
+      ...selected,
+      datePurchased: purchaseDate,
+      costPrice: parseFloat(costPrice) || selected.costPrice,
+      supplier: supplier || selected.supplier,
+      status: "active",
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-[480px] rounded-[28px] border border-[#E8E0D5] bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-zinc-100 px-6 py-4">
+          <div><h3 className="text-[16px] font-semibold text-zinc-900">Receive Bakery Tool</h3><p className="mt-0.5 text-[12px] text-zinc-500">Record tool received from supplier</p></div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-all">✕</button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4 px-6 pb-5 pt-4">
+          <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Bakery Tool</label>{tools.length > 0 ? (<select value={selectedId} onChange={e => setSelectedId(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400">{tools.map(t => (<option key={t.id} value={t.id}>{t.name}</option>))}</select>) : (<div className="mt-1 flex h-[42px] items-center rounded-xl border border-dashed border-zinc-200 px-3.5 text-[13px] text-zinc-400">No tools added yet</div>)}</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Date Received</label><input type="date" required value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Cost Price (₱)</label><input type="number" min="0" step="0.01" value={costPrice} onChange={e => setCostPrice(e.target.value)} placeholder="0.00" className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Supplier</label><input value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="Supplier name" className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+            <div><label className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Reference / PO</label><input required value={reference} onChange={e => setReference(e.target.value)} className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13px] outline-none transition-all focus:border-zinc-400" /></div>
+          </div>
+          <div className="rounded-2xl border border-zinc-100 bg-zinc-50/60 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Current Status</span>
+              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${selected?.status === "active" ? "bg-emerald-100 text-emerald-700" : selected?.status === "maintenance" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{selected?.status || "\u2014"}</span>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1"><button type="button" onClick={onClose} className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-[13px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Cancel</button><button type="submit" disabled={!selectedId} className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-[13px] font-medium text-white shadow-sm hover:bg-emerald-700 transition-all disabled:opacity-40">Receive Tool</button></div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard({
   activeTab,
   setActiveTab,
@@ -336,7 +492,7 @@ export default function AdminDashboard({
   });
 
   // Stockroom
-  const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "consumables" | "equipment" | "history" | "analytics">("ingredients");
+  const [warehouseSection, setWarehouseSection] = useState<"ingredients" | "packaging-materials" | "decoration-supplies" | "operational-supplies" | "consumables" | "equipment" | "bakery-tools" | "history" | "analytics">("ingredients");
   const [transactions, setTransactions] = useState<StockTransaction[]>([]);
   const [showReceive, setShowReceive] = useState(false);
   const [showReceiveEquipment, setShowReceiveEquipment] = useState(false);
@@ -346,6 +502,11 @@ export default function AdminDashboard({
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [showRepairViewModal, setShowRepairViewModal] = useState(false);
   const [viewingRepairEquipment, setViewingRepairEquipment] = useState<Equipment | null>(null);
+  const [bakeryTools, setBakeryTools] = useState<BakeryTool[]>([]);
+  const [showBakeryToolModal, setShowBakeryToolModal] = useState(false);
+  const [editingBakeryTool, setEditingBakeryTool] = useState<BakeryTool | null>(null);
+  const [showReceiveBakeryTool, setShowReceiveBakeryTool] = useState(false);
+  const [bakeryStatModal, setBakeryStatModal] = useState<"low-stock" | "no-stock" | null>(null);
   const [ingredientRoleFilter, setIngredientRoleFilter] = useState<"all" | "baker" | "deco" | "pastry">("all");
   const [historyRoleFilter, setHistoryRoleFilter] = useState<"all" | "admin" | "baker" | "deco" | "pastry">("all");
   const [historyTypeFilter, setHistoryTypeFilter] = useState<"all" | "in" | "out">("all");
@@ -470,6 +631,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     if (activeTab !== "warehouse" || prevTab.current === "warehouse") { prevTab.current = activeTab; return; }
     db.fetchEquipment().then(setEquipment).catch(() => {});
     db.fetchAllRepairRecords().then(setRepairRecords).catch(() => {});
+    db.fetchBakeryTools().then(setBakeryTools).catch(() => {});
     prevTab.current = activeTab;
     const now = new Date();
     const todayStr = now.toLocaleString("en-CA", { timeZone: "Asia/Manila" }).split(",")[0];
@@ -1470,7 +1632,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
     const expired = inventory.filter(i => i.expiryDate && i.expiryDate < todayStr);
     const expiring = inventory.filter(i => i.expiryDate && i.expiryDate >= todayStr && new Date(i.expiryDate).getTime() - now.getTime() <= 30 * 24 * 60 * 60 * 1000);
 
-    const groupItems = (g: typeof warehouseSection) => g === "history" || g === "equipment" ? [] : inventory.filter(i => i.group === g);
+    const groupItems = (g: typeof warehouseSection) => g === "history" || g === "equipment" || g === "bakery-tools" ? [] : inventory.filter(i => i.group === g);
     const roleFiltered = (items: InventoryItem[]) => ingredientRoleFilter === "all" ? items : items.filter(i => !i.accessRoles || i.accessRoles.length === 0 || i.accessRoles.includes(ingredientRoleFilter));
 
     const sidebarSections: { key: typeof warehouseSection; label: string; icon: string }[][] = [
@@ -1481,6 +1643,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
         { key: "operational-supplies", label: "Operational", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z" },
         { key: "consumables", label: "Consumables", icon: "M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" },
         { key: "equipment", label: "Equipment", icon: "M11.42 15.17l-5.5-5.5a2 2 0 010-2.83l2.83-2.83a2 2 0 012.83 0l5.5 5.5M11.42 15.17l5.5 5.5M11.42 15.17l-2.83 2.83a2 2 0 000 2.83l.7.7M11.42 15.17l4.24-4.24m-5.5 5.5l-4.24 4.24" },
+        { key: "bakery-tools", label: "Bakery Tools", icon: "M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L4.939 4.939m7.061 7.061l2.879-2.879M12 12l2.879 2.879M12 12L4.939 4.939" },
       ],
       [
         { key: "history", label: "Stock History", icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
@@ -1510,7 +1673,7 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   </span>
                   <span className="flex-1">{item.label}</span>
                   {(item.key !== "history" && item.key !== "analytics") && (
-                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-all ${warehouseSection === item.key ? "bg-white/15 text-white" : "bg-zinc-100 text-zinc-500"}`}>{groupItems(item.key).length}</span>
+                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-all ${warehouseSection === item.key ? "bg-white/15 text-white" : "bg-zinc-100 text-zinc-500"}`}>{item.key === "equipment" ? equipment.length : item.key === "bakery-tools" ? bakeryTools.length : groupItems(item.key).length}</span>
                   )}
                 </button>
               ))}
@@ -1534,6 +1697,11 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                   <button onClick={() => setShowReceiveEquipment(true)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Receive from Supplier</button>
                   <button onClick={() => { setEditingEquipment({ id: `EQ-${Date.now()}`, name: "", datePurchased: "", dateRepaired: "", costPrice: 0, supplier: "", status: "active", notes: "" }); setShowEquipmentModal(true); }} className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ Add Equipment</button>
                 </>
+              ) : warehouseSection === "bakery-tools" ? (
+                <>
+                  <button onClick={() => setShowReceiveBakeryTool(true)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Receive from Supplier</button>
+                  <button onClick={() => { setEditingBakeryTool({ id: `BT-${Date.now()}`, name: "", datePurchased: "", dateRepaired: "", costPrice: 0, supplier: "", status: "active", notes: "", onHand: 0, threshold: 0, category: "" }); setShowBakeryToolModal(true); }} className="rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 hover:border-zinc-400 active:scale-[0.97] transition-all">+ Add Bakery Tool</button>
+                </>
               ) : warehouseSection !== "history" ? (
                 <>
                   <button onClick={() => setShowReceive(true)} className="rounded-xl bg-zinc-900 px-4 py-2.5 text-[14px] font-semibold text-white hover:bg-zinc-800">+ Receive from Supplier</button>
@@ -1546,16 +1714,26 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
           {/* Quick Stats (shown for group views, not history or equipment) */}
           {warehouseSection !== "history" && warehouseSection !== "equipment" && (
             <div className="grid grid-cols-5 gap-3">
-              <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Items</div><div className="text-[26px] font-bold mt-1">{roleFiltered(groupItems(warehouseSection)).length}</div></div>
-              <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Low Stock</div><div className="text-[26px] font-bold mt-1 text-red-600">{roleFiltered(lowStock.filter(i => i.group === warehouseSection)).length}</div></button>
-              <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">No Stock</div><div className="text-[26px] font-bold mt-1 text-zinc-800">{roleFiltered(noStock.filter(i => i.group === warehouseSection)).length}</div></button>
-              <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Expired</div><div className="text-[26px] font-bold mt-1 text-red-600">{roleFiltered(expired.filter(i => i.group === warehouseSection)).length}</div></button>
-              <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Expiring ≤30 Days</div><div className="text-[26px] font-bold mt-1 text-amber-600">{roleFiltered(expiring.filter(i => i.group === warehouseSection)).length}</div></button>
+              {warehouseSection === "bakery-tools" ? (
+                <>
+                  <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Tools</div><div className="text-[26px] font-bold mt-1">{bakeryTools.length}</div></div>
+                  <button onClick={() => setBakeryStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Low Stock</div><div className="text-[26px] font-bold mt-1 text-red-600">{bakeryTools.filter(t => t.onHand > 0 && t.onHand < t.threshold).length}</div></button>
+                  <button onClick={() => setBakeryStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">No Stock</div><div className="text-[26px] font-bold mt-1 text-zinc-800">{bakeryTools.filter(t => t.onHand === 0).length}</div></button>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-2xl border border-zinc-200 bg-white p-4"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Total Items</div><div className="text-[26px] font-bold mt-1">{roleFiltered(groupItems(warehouseSection)).length}</div></div>
+                  <button onClick={() => setStatModal("low-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Low Stock</div><div className="text-[26px] font-bold mt-1 text-red-600">{roleFiltered(lowStock.filter(i => i.group === warehouseSection)).length}</div></button>
+                  <button onClick={() => setStatModal("no-stock")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-zinc-400 hover:bg-zinc-50/60 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">No Stock</div><div className="text-[26px] font-bold mt-1 text-zinc-800">{roleFiltered(noStock.filter(i => i.group === warehouseSection)).length}</div></button>
+                  <button onClick={() => setStatModal("expired")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-red-300 hover:bg-red-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Expired</div><div className="text-[26px] font-bold mt-1 text-red-600">{roleFiltered(expired.filter(i => i.group === warehouseSection)).length}</div></button>
+                  <button onClick={() => setStatModal("expiring")} className="rounded-2xl border border-zinc-200 bg-white p-4 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"><div className="text-[12px] text-zinc-500 uppercase tracking-wider font-medium">Expiring ≤30 Days</div><div className="text-[26px] font-bold mt-1 text-amber-600">{roleFiltered(expiring.filter(i => i.group === warehouseSection)).length}</div></button>
+                </>
+              )}
             </div>
           )}
 
           {/* Role filter pills */}
-          {warehouseSection !== "history" && warehouseSection !== "equipment" && (
+          {warehouseSection !== "history" && warehouseSection !== "equipment" && warehouseSection !== "bakery-tools" && (
             <div className="flex items-center gap-1.5 rounded-xl bg-zinc-100 p-1">
               {[
                 { id: "all" as const, label: "All" },
@@ -2035,6 +2213,64 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
                 </table>
               </div>
             </div>
+          ) : warehouseSection === "bakery-tools" ? (
+            <div className="rounded-[24px] border border-[#E8E0D5] bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="text-[18px] font-semibold text-zinc-900">Bakery Tools</h2>
+                <div className="relative w-56">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+                  <input type="text" value={invSearch} onChange={e => setInvSearch(e.target.value)} placeholder="Search tools..." className="w-full rounded-xl border border-zinc-200 bg-white py-2.5 pl-9 pr-3 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-400" />
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-zinc-50 border-b border-zinc-200">
+                    <tr className="text-[12px] uppercase tracking-wider text-zinc-500 font-semibold">
+                      <th className="px-3 py-3">Name</th>
+                      <th className="px-3 py-3">Category</th>
+                      <th className="px-3 py-3 text-right">On Hand</th>
+                      <th className="px-3 py-3 text-right">Threshold</th>
+                      <th className="px-3 py-3">Supplier</th>
+                      <th className="px-3 py-3 text-right">Cost Price</th>
+                      <th className="px-3 py-3">Remarks</th>
+                      <th className="px-3 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {bakeryTools.filter(t => !invSearch || t.name.toLowerCase().includes(invSearch.toLowerCase()) || t.supplier.toLowerCase().includes(invSearch.toLowerCase()) || t.category.toLowerCase().includes(invSearch.toLowerCase())).length === 0 ? (
+                      <tr><td colSpan={8} className="px-3 py-12 text-center text-[14px] text-zinc-400">No bakery tools added yet.</td></tr>
+                    ) : bakeryTools.filter(t => !invSearch || t.name.toLowerCase().includes(invSearch.toLowerCase()) || t.supplier.toLowerCase().includes(invSearch.toLowerCase()) || t.category.toLowerCase().includes(invSearch.toLowerCase())).map(bt => {
+                      const isLow = bt.threshold > 0 && bt.onHand > 0 && bt.onHand < bt.threshold;
+                      const isOut = bt.onHand === 0;
+                      const isNoStock = bt.threshold > 0 && bt.onHand === 0;
+                      const rowBg = isNoStock ? 'bg-violet-200' : isLow ? 'bg-orange-200' : '';
+                      return (
+                      <tr key={bt.id} className={`hover:bg-zinc-50 transition-colors ${rowBg}`}>
+                        <td className="px-3 py-4">
+                          <div className="text-[14px] font-semibold text-zinc-900">{bt.name}</div>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${bt.status === "active" ? "bg-emerald-100 text-emerald-700" : bt.status === "maintenance" ? "bg-amber-100 text-amber-700" : "bg-zinc-100 text-zinc-600"}`}>{bt.status}</span>
+                        </td>
+                        <td className="px-3 py-4 text-[13px] text-zinc-500">{bt.category || "—"}</td>
+                        <td className="px-3 py-4 text-[13px] text-right font-mono font-semibold">
+                          {isNoStock ? <span className="text-violet-800 font-bold">{bt.onHand}</span> : isLow ? <span className="text-orange-800 font-bold">{bt.onHand}</span> : <span className="text-zinc-700">{bt.onHand}</span>}
+                        </td>
+                        <td className="px-3 py-4 text-[13px] text-right font-mono text-zinc-500">{bt.threshold}</td>
+                        <td className="px-3 py-4 text-[13px] text-zinc-500">{bt.supplier || "—"}</td>
+                        <td className="px-3 py-4 text-[13px] text-right font-mono font-semibold text-zinc-700">{"\u20B1"}{bt.costPrice.toFixed(2)}</td>
+                        <td className="px-3 py-4 text-[12px] text-zinc-500 max-w-[150px] truncate" title={bt.notes || ""}>{bt.notes || "—"}</td>
+                        <td className="px-3 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button onClick={() => { setEditingBakeryTool(bt); setShowBakeryToolModal(true); }} className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 transition-all">Edit</button>
+                            <button onClick={() => { if (confirm(`Delete tool "${bt.name}"?`)) { db.deleteBakeryTool(bt.id).catch(console.error); setBakeryTools(prev => prev.filter(t => t.id !== bt.id)); } }} className="rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-all">Del</button>
+                          </div>
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           ) : (
             <>
 {/* Items filtered by group — redesigned card layout */}
@@ -2290,6 +2526,38 @@ const [productCategoryMap, setProductCategoryMap] = useState<Record<string, stri
             ); })()}
           </div>
         </div>, document.body)}
+        {showBakeryToolModal && editingBakeryTool && createPortal(<BakeryToolModal
+          tool={editingBakeryTool}
+          toolList={bakeryTools}
+          onSave={async (updated) => {
+            const isNew = !bakeryTools.some(t => t.id === editingBakeryTool.id);
+            await db.upsertBakeryTool(updated);
+            if (isNew) {
+              setBakeryTools(prev => [...prev, updated]);
+              onAddAuditLog?.("BAKERY_TOOL_ADDED", `${updated.name} added`);
+            } else {
+              setBakeryTools(prev => prev.map(t => t.id === updated.id ? updated : t));
+              onAddAuditLog?.("BAKERY_TOOL_EDITED", `${updated.name} updated`);
+            }
+            setShowBakeryToolModal(false);
+          }}
+          onClose={() => setShowBakeryToolModal(false)}
+        />, document.body)}
+        {showReceiveBakeryTool && <ReceiveBakeryToolModal tools={bakeryTools} onSave={async (updated) => { await db.upsertBakeryTool(updated); setBakeryTools(prev => prev.map(t => t.id === updated.id ? updated : t)); onAddAuditLog?.("BAKERY_TOOL_RECEIVED", `${updated.name} received from supplier`); setShowReceiveBakeryTool(false); }} onClose={() => setShowReceiveBakeryTool(false)} />}
+        {bakeryStatModal && (() => {
+          const btLowStock = bakeryTools.filter(t => t.onHand > 0 && t.onHand < t.threshold);
+          const btNoStock = bakeryTools.filter(t => t.onHand === 0);
+          const items = bakeryStatModal === "low-stock" ? btLowStock.map(t => ({ name: t.name, detail: `${t.onHand}/${t.threshold}` })) : btNoStock.map(t => ({ name: t.name, detail: "0 on hand" }));
+          const colors = bakeryStatModal === "low-stock" ? ["red", "red"] as const : ["zinc", "zinc"] as const;
+          return (
+            <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/40 p-4 backdrop-blur-sm" onClick={() => setBakeryStatModal(null)}>
+              <div className="w-full max-w-[420px] rounded-[24px] border border-[#E8E0D5] bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-3"><h3 className="text-[15px] font-semibold text-zinc-900 capitalize">{bakeryStatModal.replace("-", " ")}</h3><button onClick={() => setBakeryStatModal(null)} className="grid h-7 w-7 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-all">✕</button></div>
+                {items.length === 0 ? <p className="text-[13px] text-zinc-400 py-2 text-center">No items in this category.</p> : <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">{items.map((it, i) => (<div key={i} className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/60 px-3.5 py-2.5"><span className="text-[13px] font-medium text-zinc-800">{it.name}</span><span className={`text-[12px] font-medium ${colors[0] === "red" ? "text-red-600" : "text-zinc-500"}`}>{it.detail}</span></div>))}</div>}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Toast Container */}
         {toast && (
@@ -5787,7 +6055,7 @@ function EditInventoryModal({ item, onSave, onClose }: { item: InventoryItem; on
   const toggleRole = (role: Role) => setAccessRoles(prev => prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]);
 
   const categoriesByGroup: Record<string, string[]> = {
-    "ingredients": ["Dry", "Dairy", "Produce", "Frozen", "Spices"],
+    "ingredients": ["Dry", "Wet", "Dairy", "Produce", "Frozen", "Spices"],
     "packaging-materials": ["Boxes", "Bags", "Wraps", "Labels", "Containers"],
     "decoration-supplies": ["Colors", "Toppings", "Glitters", "Fondant", "Sprinkles"],
     "operational-supplies": ["Cleaning", "Office", "Maintenance", "Safety"],
